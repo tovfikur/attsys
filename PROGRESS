@@ -1,0 +1,74 @@
+ATTENDANCE & PAYROLL SAAS PLATFORM — PROGRESS TRACKING
+
+Tracking rules:
+- Update once per day (or after each meaningful change).
+- Keep entries short, outcome-based, and verifiable.
+- If blocked, write the blocker and the next unblocked action.
+
+References:
+- Requirements: p:\AttSystem\requirement
+- Master TODO:  p:\AttSystem\TODO
+
+================================================================================
+STATUS SNAPSHOT
+================================================================================
+
+Date: 2026-01-09
+Owner: Engineering
+Current Phase: Foundation (M0)
+Overall Progress (rough): 0%
+
+Top 3 Goals (this phase):
+1) Tenant resolution + RBAC skeleton
+2) Core schema + audit logging baseline
+3) Superadmin + tenant authentication entrypoints
+
+================================================================================
+DONE (VERIFIED)
+================================================================================
+
+- [ ] Nothing yet
+
+================================================================================
+IN PROGRESS (WIP)
+================================================================================
+
+- [ ] Set up repository structure for React + PHP
+- [ ] Decide tenant isolation strategy (shared DB tenant_id vs per-tenant DB)
+- [ ] Define RBAC matrix and map to API routes
+
+================================================================================
+NEXT (READY TO START)
+================================================================================
+
+- [ ] Implement hostname-based tenant resolution (backend)
+- [ ] Create tenants and tenant_users schema
+- [ ] Implement superadmin login endpoint and session strategy
+- [ ] Implement tenant login endpoint and session strategy
+
+================================================================================
+BLOCKERS / RISKS
+================================================================================
+
+- [ ] Cloudflare: zone_id + DNS record strategy (A vs CNAME) not decided
+- [ ] TLS for wildcard subdomains requires certificate approach decision
+- [ ] Device integration method depends on available Hikvision models/APIs
+
+================================================================================
+DECISIONS LOG
+================================================================================
+
+2026-01-09:
+- Decision: Pending — tenant isolation strategy
+- Decision: Pending — auth/session approach (cookie sessions vs tokens)
+- Decision: Pending — database choice (MySQL/MariaDB) and migration approach
+
+================================================================================
+WEEKLY CHECKLIST (ENGINEERING)
+================================================================================
+
+- [ ] Security checklist reviewed for new endpoints (auth, RBAC, validation, SQL)
+- [ ] Tenant isolation regression checks run
+- [ ] Backups/logging strategy reviewed (no secrets in logs)
+- [ ] Performance risks reviewed (imports, payroll batch, PDF generation)
+
