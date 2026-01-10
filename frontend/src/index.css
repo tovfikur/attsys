@@ -1,0 +1,16 @@
+/* Reset & Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  /* Reset the "flex center" that Vite default adds, causing layout issues */
+  display: block; 
+}

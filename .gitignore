@@ -1,0 +1,15 @@
+.env
+.trae/
+
+**/node_modules/
+**/dist/
+**/.vite/
+**/test-results/
+**/playwright-report/
+
+backend/data/
+backend/debug.log
+backend/*.log
+
+docker/mysql/data/
+.DS_Store

@@ -1,0 +1,29 @@
+version: '3.9'
+services:
+  db:
+    image: mysql:8.0
+    container_name: attendance_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: attendance_saas
+      MYSQL_ROOT_PASSWORD: attroot
+      MYSQL_USER: attendance
+      MYSQL_PASSWORD: attpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./docker/mysql/data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: attendance_pma
+    restart: unless-stopped
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+    ports:
+      - "8081:80"
+    depends_on:
+      - db
+

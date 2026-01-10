@@ -1,0 +1,11 @@
+{
+    "name": "attsys/backend",
+    "description": "Secure Vanilla PHP Backend for Attendance System",
+    "type": "project",
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    },
+    "require": {}
+}
