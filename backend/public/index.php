@@ -95,6 +95,12 @@ $router->postAuth('/api/employees', ['App\Controller\EmployeeController', 'creat
 $router->postAuth('/api/employees/update', ['App\Controller\EmployeeController', 'update'], 'perm:employees.write');
 $router->postAuth('/api/employees/delete', ['App\Controller\EmployeeController', 'delete'], 'perm:employees.write');
 
+// Leaves
+$router->getAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesList'], 'perm:employees.read');
+$router->postAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesCreate'], 'perm:employees.write');
+$router->postAuth('/api/leaves/update', ['App\Controller\AttendanceController', 'leavesUpdate'], 'perm:employees.write');
+$router->postAuth('/api/leaves/delete', ['App\Controller\AttendanceController', 'leavesDelete'], 'perm:employees.write');
+
 // Attendance
 $router->getAuth('/api/attendance', ['App\Controller\AttendanceController', 'list'], 'perm:attendance.read');
 $router->getAuth('/api/attendance/dashboard', ['App\Controller\AttendanceController', 'dashboard'], 'perm:attendance.read');

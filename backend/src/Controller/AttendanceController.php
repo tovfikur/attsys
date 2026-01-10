@@ -21,6 +21,15 @@ class AttendanceController
         return null;
     }
 
+    private function normalizeLeaveStatus(?string $raw): string
+    {
+        if (!is_string($raw)) return 'approved';
+        $v = strtolower(trim($raw));
+        if ($v === '') return 'approved';
+        $allowed = ['approved' => true, 'pending' => true, 'rejected' => true];
+        return isset($allowed[$v]) ? $v : 'approved';
+    }
+
     private function normalizeRange(string $start, string $end): array
     {
         $s = $this->normalizeDate($start) ?? date('Y-m-d');
@@ -140,7 +149,11 @@ class AttendanceController
             'status' => $r['status']
         ], $dStmt->fetchAll());
 
-        echo json_encode(['employees' => $employees, 'attendance' => $attendance, 'days' => $days]);
+        $lStmt = $pdo->prepare('SELECT id, employee_id, date, reason, status, created_at FROM leaves WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date DESC, employee_id DESC, id DESC');
+        $lStmt->execute([(int)$tenantId, $start, $end]);
+        $leaves = $lStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        echo json_encode(['employees' => $employees, 'attendance' => $attendance, 'days' => $days, 'leaves' => $leaves]);
     }
 
     public function days()
@@ -430,8 +443,8 @@ class AttendanceController
         }
 
         // Fetch Leaves
-        $lStmt = $pdo->prepare('SELECT * FROM leaves WHERE employee_id=? AND date BETWEEN ? AND ? ORDER BY date ASC');
-        $lStmt->execute([(int)$employeeId, $start, $end]);
+        $lStmt = $pdo->prepare('SELECT id, employee_id, date, reason, status, created_at FROM leaves WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? ORDER BY date ASC');
+        $lStmt->execute([(int)$tenantId, (int)$employeeId, $start, $end]);
         $leaves = $lStmt->fetchAll(\PDO::FETCH_ASSOC);
 
         echo json_encode([
@@ -439,5 +452,200 @@ class AttendanceController
             'leaves' => $leaves,
             'month' => $month
         ]);
+    }
+
+    public function leavesList()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $employeeId = $_GET['employee_id'] ?? null;
+        $month = $_GET['month'] ?? null;
+        if (is_string($month) && preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $start = $month . '-01';
+            $end = date('Y-m-t', strtotime($start));
+        } else {
+            $startRaw = $_GET['start'] ?? date('Y-m-d');
+            $endRaw = $_GET['end'] ?? $startRaw;
+            [$start, $end] = $this->normalizeRange((string)$startRaw, (string)$endRaw);
+        }
+
+        $where = 'WHERE tenant_id=? AND date BETWEEN ? AND ?';
+        $params = [(int)$tenantId, $start, $end];
+        if ($employeeId !== null && $employeeId !== '') {
+            $where .= ' AND employee_id=?';
+            $params[] = (int)$employeeId;
+        }
+
+        $stmt = $pdo->prepare("SELECT id, tenant_id, employee_id, date, reason, status, created_at FROM leaves $where ORDER BY date ASC, employee_id ASC, id ASC");
+        $stmt->execute($params);
+        echo json_encode(['leaves' => $stmt->fetchAll(\PDO::FETCH_ASSOC)]);
+    }
+
+    public function leavesCreate()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+
+        $employeeId = (int)($in['employee_id'] ?? 0);
+        $date = $this->normalizeDate($in['date'] ?? null);
+        $reason = trim((string)($in['reason'] ?? ''));
+        $status = $this->normalizeLeaveStatus($in['status'] ?? null);
+
+        if ($employeeId <= 0 || !$date) {
+            http_response_code(400);
+            echo json_encode(['error' => 'employee_id and valid date required']);
+            return;
+        }
+
+        $empCheck = $pdo->prepare('SELECT 1 FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+        $empCheck->execute([(int)$tenantId, (int)$employeeId]);
+        if (!$empCheck->fetchColumn()) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Employee not found']);
+            return;
+        }
+
+        $existingStmt = $pdo->prepare('SELECT id FROM leaves WHERE tenant_id=? AND employee_id=? AND date=? ORDER BY id DESC LIMIT 1');
+        $existingStmt->execute([(int)$tenantId, (int)$employeeId, $date]);
+        $existingId = $existingStmt->fetchColumn();
+
+        if ($existingId) {
+            $up = $pdo->prepare('UPDATE leaves SET reason=?, status=? WHERE tenant_id=? AND id=?');
+            $up->execute([$reason !== '' ? $reason : null, $status, (int)$tenantId, (int)$existingId]);
+            $id = (int)$existingId;
+        } else {
+            $ins = $pdo->prepare('INSERT INTO leaves(tenant_id, employee_id, date, reason, status) VALUES(?, ?, ?, ?, ?)');
+            $ins->execute([(int)$tenantId, (int)$employeeId, $date, $reason !== '' ? $reason : null, $status]);
+            $id = (int)$pdo->lastInsertId();
+        }
+
+        $outStmt = $pdo->prepare('SELECT id, tenant_id, employee_id, date, reason, status, created_at FROM leaves WHERE tenant_id=? AND id=?');
+        $outStmt->execute([(int)$tenantId, $id]);
+        $row = $outStmt->fetch(\PDO::FETCH_ASSOC);
+        echo json_encode(['leave' => $row]);
+    }
+
+    public function leavesUpdate()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+
+        $id = (int)($in['id'] ?? 0);
+        if ($id <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'id required']);
+            return;
+        }
+
+        $curStmt = $pdo->prepare('SELECT id, employee_id, date, reason, status FROM leaves WHERE tenant_id=? AND id=? LIMIT 1');
+        $curStmt->execute([(int)$tenantId, $id]);
+        $cur = $curStmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$cur) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        $employeeId = (int)($cur['employee_id'] ?? 0);
+        $newDate = array_key_exists('date', $in) ? $this->normalizeDate($in['date'] ?? null) : (string)($cur['date'] ?? '');
+        if (!$newDate) {
+            http_response_code(400);
+            echo json_encode(['error' => 'valid date required']);
+            return;
+        }
+
+        if ($newDate !== (string)($cur['date'] ?? '')) {
+            $dup = $pdo->prepare('SELECT 1 FROM leaves WHERE tenant_id=? AND employee_id=? AND date=? AND id<>? LIMIT 1');
+            $dup->execute([(int)$tenantId, $employeeId, $newDate, $id]);
+            if ($dup->fetchColumn()) {
+                http_response_code(409);
+                echo json_encode(['error' => 'Leave already exists for this date']);
+                return;
+            }
+        }
+
+        $newReason = array_key_exists('reason', $in) ? trim((string)($in['reason'] ?? '')) : (string)($cur['reason'] ?? '');
+        $newStatus = array_key_exists('status', $in) ? $this->normalizeLeaveStatus($in['status'] ?? null) : (string)($cur['status'] ?? 'approved');
+
+        $up = $pdo->prepare('UPDATE leaves SET date=?, reason=?, status=? WHERE tenant_id=? AND id=?');
+        $up->execute([$newDate, $newReason !== '' ? $newReason : null, $newStatus, (int)$tenantId, $id]);
+
+        $outStmt = $pdo->prepare('SELECT id, tenant_id, employee_id, date, reason, status, created_at FROM leaves WHERE tenant_id=? AND id=?');
+        $outStmt->execute([(int)$tenantId, $id]);
+        echo json_encode(['leave' => $outStmt->fetch(\PDO::FETCH_ASSOC)]);
+    }
+
+    public function leavesDelete()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+        $id = (int)($in['id'] ?? 0);
+        if ($id <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'id required']);
+            return;
+        }
+
+        $del = $pdo->prepare('DELETE FROM leaves WHERE tenant_id=? AND id=?');
+        $del->execute([(int)$tenantId, $id]);
+        echo json_encode(['ok' => true]);
     }
 }

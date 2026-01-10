@@ -62,9 +62,13 @@ interface AttendanceRecord {
 }
 
 interface LeaveRecord {
+  id?: string | number;
+  tenant_id?: string | number;
+  employee_id?: string | number;
   date: string;
-  reason: string;
-  status: string;
+  reason?: string | null;
+  status?: string | null;
+  created_at?: string;
 }
 
 // --- Main Component ---
@@ -663,6 +667,16 @@ function AttendanceDialog({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [leaveForm, setLeaveForm] = useState<{
+    reason: string;
+    status: string;
+  }>({
+    reason: "",
+    status: "approved",
+  });
+  const [leaveBusy, setLeaveBusy] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
+  const [leaveOk, setLeaveOk] = useState("");
   const theme = useTheme();
   const lastRefreshAtRef = useRef(0);
 
@@ -880,6 +894,63 @@ function AttendanceDialog({
     (r) => !!r.clock_out
   ).length;
   const selectedSummary = getDaySummary(selectedAttendance);
+
+  useEffect(() => {
+    if (!selectedDate) return;
+    const leave = records.leaves.find((r) => r.date === selectedDate) || null;
+    setLeaveForm({
+      reason: (leave?.reason ?? "") || "",
+      status: (leave?.status ?? "approved") || "approved",
+    });
+    setLeaveError("");
+    setLeaveOk("");
+  }, [records.leaves, selectedDate]);
+
+  const saveLeave = async () => {
+    if (!selectedDate) return;
+    setLeaveBusy(true);
+    setLeaveError("");
+    setLeaveOk("");
+    try {
+      if (selectedLeave?.id) {
+        await api.post("/api/leaves/update", {
+          id: selectedLeave.id,
+          reason: leaveForm.reason,
+          status: leaveForm.status,
+        });
+      } else {
+        await api.post("/api/leaves", {
+          employee_id: employee.id,
+          date: selectedDate,
+          reason: leaveForm.reason,
+          status: leaveForm.status,
+        });
+      }
+      setLeaveOk("Saved");
+      await fetchData();
+    } catch (err: unknown) {
+      setLeaveError(getErrorMessage(err, "Failed to save leave"));
+    } finally {
+      setLeaveBusy(false);
+    }
+  };
+
+  const deleteLeave = async () => {
+    if (!selectedLeave?.id) return;
+    if (!window.confirm("Delete this leave record?")) return;
+    setLeaveBusy(true);
+    setLeaveError("");
+    setLeaveOk("");
+    try {
+      await api.post("/api/leaves/delete", { id: selectedLeave.id });
+      setLeaveOk("Deleted");
+      await fetchData();
+    } catch (err: unknown) {
+      setLeaveError(getErrorMessage(err, "Failed to delete leave"));
+    } finally {
+      setLeaveBusy(false);
+    }
+  };
 
   return (
     <Dialog
@@ -1192,6 +1263,69 @@ function AttendanceDialog({
               />
             ) : null}
           </Stack>
+
+          {leaveError ? (
+            <Alert severity="error" sx={{ mt: 2, borderRadius: 2 }}>
+              {leaveError}
+            </Alert>
+          ) : null}
+          {leaveOk ? (
+            <Alert severity="success" sx={{ mt: 2, borderRadius: 2 }}>
+              {leaveOk}
+            </Alert>
+          ) : null}
+
+          <Paper
+            elevation={0}
+            sx={{
+              mt: 2,
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 2,
+              p: 2,
+              bgcolor: "background.default",
+            }}
+          >
+            <Stack spacing={1.5}>
+              <TextField
+                label="Leave Reason"
+                value={leaveForm.reason}
+                onChange={(e) =>
+                  setLeaveForm((prev) => ({ ...prev, reason: e.target.value }))
+                }
+                fullWidth
+              />
+              <TextField
+                label="Leave Status"
+                value={leaveForm.status}
+                onChange={(e) =>
+                  setLeaveForm((prev) => ({ ...prev, status: e.target.value }))
+                }
+                fullWidth
+              />
+              <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant="contained"
+                  onClick={() => void saveLeave()}
+                  disabled={leaveBusy}
+                >
+                  {leaveBusy
+                    ? "Saving..."
+                    : selectedLeave
+                    ? "Update Leave"
+                    : "Add Leave"}
+                </Button>
+                <Button
+                  color="error"
+                  variant="outlined"
+                  onClick={() => void deleteLeave()}
+                  disabled={leaveBusy || !selectedLeave}
+                >
+                  Delete Leave
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
 
           <Box mt={2}>
             {selectedAttendance.length === 0 ? (

@@ -69,6 +69,15 @@ interface Day {
   overtime_minutes?: number;
 }
 
+interface LeaveRecord {
+  id: string | number;
+  employee_id: string | number;
+  date: string;
+  reason: string | null;
+  status: string | null;
+  created_at?: string;
+}
+
 type DayKey = `${string}-${string}-${string}`;
 
 type DaySummary = {
@@ -82,6 +91,7 @@ type DaySummary = {
   lateCount: number;
   earlyLeaveCount: number;
   openShift: boolean;
+  leave?: LeaveRecord;
 };
 
 type EmployeeSummary = {
@@ -178,6 +188,7 @@ export default function Attendance() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [days, setDays] = useState<Day[]>([]);
+  const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
 
   const chipSx = useMemo(() => {
     const base = {
@@ -285,6 +296,7 @@ export default function Attendance() {
       setEmployees(dashRes.data.employees || []);
       setRows(dashRes.data.attendance || []);
       setDays(dashRes.data.days || []);
+      setLeaves(dashRes.data.leaves || []);
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Failed to load attendance"));
     } finally {
@@ -363,6 +375,20 @@ export default function Attendance() {
     }
     return m;
   }, [days]);
+
+  const leavesByEmployee = useMemo(() => {
+    const m = new Map<string, LeaveRecord[]>();
+    for (const l of leaves) {
+      const id = String(l.employee_id);
+      const list = m.get(id);
+      if (list) list.push(l);
+      else m.set(id, [l]);
+    }
+    for (const list of m.values()) {
+      list.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    }
+    return m;
+  }, [leaves]);
 
   const combinedRows = useMemo(() => {
     const base = Array.isArray(rows) ? rows.slice() : [];
@@ -606,8 +632,22 @@ export default function Attendance() {
       else byDate.set(date, [r]);
     }
 
+    const employeeLeaves = leavesByEmployee.get(selectedEmployeeId) || [];
+    const leaveByDate = new Map<DayKey, LeaveRecord>();
+    for (const l of employeeLeaves) {
+      if (!l?.date) continue;
+      leaveByDate.set(l.date as DayKey, l);
+    }
+
+    const allDates = new Set<DayKey>();
+    for (const date of byDate.keys()) allDates.add(date);
+    for (const date of leaveByDate.keys()) allDates.add(date);
+
     const result: DaySummary[] = [];
-    for (const [date, list] of byDate) {
+    for (const date of Array.from(allDates).sort((a, b) =>
+      a.localeCompare(b)
+    )) {
+      const list = byDate.get(date) || [];
       const sorted = list
         .slice()
         .sort((a, b) => String(a.clock_in).localeCompare(String(b.clock_in)));
@@ -645,12 +685,13 @@ export default function Attendance() {
         lateCount,
         earlyLeaveCount,
         openShift,
+        leave: leaveByDate.get(date),
       });
     }
 
     result.sort((a, b) => b.date.localeCompare(a.date));
     return result;
-  }, [selectedEmployeeId, selectedEmployeeRows]);
+  }, [selectedEmployeeId, selectedEmployeeRows, leavesByEmployee]);
 
   const selectedDayRows = useMemo(() => {
     if (!selectedDay) return [];
@@ -690,6 +731,14 @@ export default function Attendance() {
       stayMinutes,
     };
   }, [selectedDayRows]);
+
+  const selectedDayLeave = useMemo(() => {
+    if (!selectedDay) return null;
+    const list = leavesByEmployee.get(String(selectedDay.employee_id)) || [];
+    return (
+      list.find((l) => String(l.date) === String(selectedDay.date)) || null
+    );
+  }, [selectedDay, leavesByEmployee]);
 
   const cardSx = {
     borderRadius: 3,
@@ -1301,8 +1350,16 @@ export default function Attendance() {
                         >
                           In/Out: {d.checkins}/{d.checkouts} • Stay:{" "}
                           {formatMinutes(d.stayMinutes)}
+                          {d.leave ? ` • Leave: ${d.leave.reason || "—"}` : ""}
                         </Typography>
                         <Stack direction="row" spacing={0.75} sx={{ mt: 0.5 }}>
+                          {d.leave && (
+                            <Chip
+                              size="small"
+                              label="Leave"
+                              sx={chipSx.warning}
+                            />
+                          )}
                           {d.openShift && (
                             <Chip
                               size="small"
@@ -1405,11 +1462,19 @@ export default function Attendance() {
               label={`Stay: ${formatMinutes(selectedDaySummary.stayMinutes)}`}
               sx={{ fontWeight: 800, bgcolor: "background.default" }}
             />
+            {selectedDayLeave && (
+              <Chip
+                label={`Leave: ${selectedDayLeave.reason || "—"}`}
+                sx={chipSx.warning}
+              />
+            )}
           </Stack>
 
           {selectedDayRows.length === 0 ? (
             <Typography color="text.secondary">
-              No records for this day.
+              {selectedDayLeave
+                ? "No attendance records for this day."
+                : "No records for this day."}
             </Typography>
           ) : (
             <TableContainer component={Paper} elevation={0} sx={{ ...cardSx }}>

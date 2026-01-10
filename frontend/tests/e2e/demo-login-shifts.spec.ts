@@ -160,10 +160,10 @@ test("demo tenant: login, create a shift, and clock in/out", async ({
 
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Attendance & Leaves")).toBeVisible();
-  await expect(dialog.getByText(/In \d{2}:\d{2}/)).toBeVisible({
+  await expect(dialog.getByText(/In \d{2}:\d{2}/).first()).toBeVisible({
     timeout: 30_000,
   });
-  await expect(dialog.getByText(/Out \d{2}:\d{2}/)).toBeVisible({
+  await expect(dialog.getByText(/Out \d{2}:\d{2}/).first()).toBeVisible({
     timeout: 30_000,
   });
 });
