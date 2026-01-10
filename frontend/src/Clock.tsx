@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "./api";
 import { getErrorMessage } from "./utils/errors";
 import {
@@ -34,6 +34,8 @@ export default function Clock() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeId, setEmployeeId] = useState("");
   const [loading, setLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [openShift, setOpenShift] = useState<boolean | null>(null);
   const [result, setResult] = useState<{
     type: "success" | "error";
     message: string;
@@ -44,6 +46,46 @@ export default function Clock() {
   useEffect(() => {
     api.get("/api/employees").then((r) => setEmployees(r.data.employees));
   }, []);
+
+  const refreshOpenShift = useCallback(
+    async (id: string) => {
+      if (!id) {
+        setOpenShift(null);
+        return;
+      }
+      setStatusLoading(true);
+      try {
+        const res = await api.get(
+          `/api/attendance/open?employee_id=${encodeURIComponent(id)}`,
+          { timeout: 8000 }
+        );
+        setOpenShift(Boolean(res.data?.open));
+      } catch {
+        setOpenShift(null);
+      } finally {
+        setStatusLoading(false);
+      }
+    },
+    [setOpenShift]
+  );
+
+  useEffect(() => {
+    setResult(null);
+    setOpenShift(null);
+    if (!employeeId) return;
+    void refreshOpenShift(employeeId);
+  }, [employeeId, refreshOpenShift]);
+
+  const notifyAttendanceUpdated = (id: string) => {
+    window.dispatchEvent(
+      new CustomEvent("attendance:updated", { detail: { employeeId: id } })
+    );
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      const bc = new BroadcastChannel("attendance");
+      bc.postMessage({ type: "updated", employeeId: id, ts: Date.now() });
+      bc.close();
+    }
+  };
 
   const clock = async (type: "in" | "out") => {
     setLoading(true);
@@ -66,15 +108,25 @@ export default function Clock() {
       }
 
       setResult({ type: "success", message: msg, record });
+      setOpenShift(type === "in");
+      notifyAttendanceUpdated(employeeId);
     } catch (err: unknown) {
+      const message = getErrorMessage(err, "Failed to record attendance");
+      if (message.includes("Open shift exists")) setOpenShift(true);
+      if (message.includes("No open shift")) setOpenShift(false);
       setResult({
         type: "error",
-        message: getErrorMessage(err, "Failed to record attendance"),
+        message,
       });
     } finally {
       setLoading(false);
     }
   };
+
+  const showClockIn =
+    !employeeId || (openShift === null ? true : openShift === false);
+  const showClockOut =
+    !employeeId || (openShift === null ? true : openShift === true);
 
   return (
     <Container maxWidth="sm" sx={{ mt: 8 }}>
@@ -102,31 +154,35 @@ export default function Clock() {
           </FormControl>
 
           <Stack direction="row" spacing={2} width="100%">
-            <Button
-              variant="contained"
-              color="success"
-              size="large"
-              fullWidth
-              startIcon={<Login />}
-              onClick={() => clock("in")}
-              disabled={!employeeId || loading}
-            >
-              Clock In
-            </Button>
-            <Button
-              variant="contained"
-              color="warning"
-              size="large"
-              fullWidth
-              startIcon={<ExitToApp />}
-              onClick={() => clock("out")}
-              disabled={!employeeId || loading}
-            >
-              Clock Out
-            </Button>
+            {showClockIn && (
+              <Button
+                variant="contained"
+                color="success"
+                size="large"
+                fullWidth
+                startIcon={<Login />}
+                onClick={() => clock("in")}
+                disabled={!employeeId || loading || statusLoading}
+              >
+                Clock In
+              </Button>
+            )}
+            {showClockOut && (
+              <Button
+                variant="contained"
+                color="warning"
+                size="large"
+                fullWidth
+                startIcon={<ExitToApp />}
+                onClick={() => clock("out")}
+                disabled={!employeeId || loading || statusLoading}
+              >
+                Clock Out
+              </Button>
+            )}
           </Stack>
 
-          {loading && <CircularProgress />}
+          {(loading || statusLoading) && <CircularProgress />}
 
           {result && (
             <Alert

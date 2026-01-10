@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import api from "./api";
 import { getErrorMessage } from "./utils/errors";
 import {
@@ -24,6 +24,7 @@ import {
   Stack,
   Tooltip,
   CircularProgress,
+  Alert,
   useTheme,
   alpha,
 } from "@mui/material";
@@ -407,10 +408,13 @@ function AttendanceDialog({
     leaves: LeaveRecord[];
   }>({ attendance: [], leaves: [] });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const theme = useTheme();
+  const lastRefreshAtRef = useRef(0);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth();
@@ -420,7 +424,7 @@ function AttendanceDialog({
       );
       setRecords(res.data);
     } catch (err) {
-      console.error(err);
+      setError(getErrorMessage(err, "Failed to load attendance"));
     } finally {
       setLoading(false);
     }
@@ -428,6 +432,43 @@ function AttendanceDialog({
 
   useEffect(() => {
     if (open) fetchData();
+  }, [fetchData, open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const triggerRefresh = () => {
+      const now = Date.now();
+      if (now - lastRefreshAtRef.current < 750) return;
+      lastRefreshAtRef.current = now;
+      fetchData();
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) triggerRefresh();
+    };
+
+    window.addEventListener("attendance:updated", triggerRefresh);
+    window.addEventListener("focus", triggerRefresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      bc = new BroadcastChannel("attendance");
+      bc.onmessage = (ev) => {
+        if (ev?.data?.type === "updated") triggerRefresh();
+      };
+    }
+
+    const pollId = window.setInterval(triggerRefresh, 15_000);
+
+    return () => {
+      window.removeEventListener("attendance:updated", triggerRefresh);
+      window.removeEventListener("focus", triggerRefresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (bc) bc.close();
+      window.clearInterval(pollId);
+    };
   }, [fetchData, open]);
 
   const year = currentDate.getFullYear();
@@ -441,6 +482,19 @@ function AttendanceDialog({
   const firstDay = new Date(year, month, 1).getDay();
   const todayStr = new Date().toISOString().split("T")[0];
 
+  const formatTime = (value: string | null | undefined): string => {
+    if (!value) return "—";
+    const spaceIdx = value.indexOf(" ");
+    if (spaceIdx >= 0 && value.length >= spaceIdx + 6) {
+      return value.slice(spaceIdx + 1, spaceIdx + 6);
+    }
+    const tIdx = value.indexOf("T");
+    if (tIdx >= 0 && value.length >= tIdx + 6) {
+      return value.slice(tIdx + 1, tIdx + 6);
+    }
+    return value;
+  };
+
   const getDayStatus = (day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(
       day
@@ -450,6 +504,7 @@ function AttendanceDialog({
       return {
         type: "present",
         label: "Present",
+        attendance,
         color: theme.palette.success.main,
         bg: alpha(theme.palette.success.main, 0.1),
       };
@@ -459,6 +514,7 @@ function AttendanceDialog({
       return {
         type: "leave",
         label: "Leave",
+        leave,
         color: theme.palette.warning.main,
         bg: alpha(theme.palette.warning.main, 0.1),
       };
@@ -550,6 +606,12 @@ function AttendanceDialog({
             </IconButton>
           </Box>
 
+          {error && (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+              {error}
+            </Alert>
+          )}
+
           {/* Loading State */}
           {loading ? (
             <Box
@@ -596,7 +658,7 @@ function AttendanceDialog({
                       <Paper
                         elevation={0}
                         sx={{
-                          height: 80,
+                          height: 96,
                           display: "flex",
                           flexDirection: "column",
                           alignItems: "center",
@@ -624,7 +686,42 @@ function AttendanceDialog({
                         >
                           {day}
                         </Typography>
-                        {status.label && (
+                        {status.type === "present" && status.attendance ? (
+                          <Box
+                            sx={{
+                              mt: 0.5,
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              gap: 0.25,
+                            }}
+                          >
+                            <Typography
+                              variant="caption"
+                              fontWeight={700}
+                              sx={{ color: theme.palette.success.main }}
+                            >
+                              In {formatTime(status.attendance.clock_in)}
+                            </Typography>
+                            {status.attendance.clock_out ? (
+                              <Typography
+                                variant="caption"
+                                fontWeight={700}
+                                sx={{ color: theme.palette.success.main }}
+                              >
+                                Out {formatTime(status.attendance.clock_out)}
+                              </Typography>
+                            ) : (
+                              <Typography
+                                variant="caption"
+                                fontWeight={700}
+                                sx={{ color: theme.palette.warning.main }}
+                              >
+                                No Checkout
+                              </Typography>
+                            )}
+                          </Box>
+                        ) : status.label ? (
                           <Chip
                             label={status.label}
                             size="small"
@@ -636,7 +733,7 @@ function AttendanceDialog({
                               mt: 0.5,
                             }}
                           />
-                        )}
+                        ) : null}
                       </Paper>
                     </Box>
                   );

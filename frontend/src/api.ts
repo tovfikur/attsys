@@ -22,6 +22,13 @@ api.interceptors.request.use((config) => {
   const host = typeof window !== "undefined" ? window.location.hostname : "";
   const sub = host.split(".")[0];
   if (host.includes(".") && sub !== "superadmin") {
+    if (
+      typeof window !== "undefined" &&
+      !localStorage.getItem("tenant") &&
+      !sessionStorage.getItem("tenant")
+    ) {
+      sessionStorage.setItem("tenant", sub);
+    }
     config.headers = config.headers || {};
     config.headers["X-Tenant-ID"] = sub;
   } else {

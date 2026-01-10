@@ -45,6 +45,67 @@ class AttendanceController
         }
     }
 
+    public function openShift()
+    {
+        header('Content-Type: application/json');
+        $employeeId = $_GET['employee_id'] ?? null;
+        if (!$employeeId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Missing employee id']);
+            return;
+        }
+
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            $records = $this->store->all();
+            foreach ($records as $r) {
+                if ((string)($r['employee_id'] ?? '') === (string)$employeeId && empty($r['clock_out'])) {
+                    echo json_encode(['open' => true, 'record' => $r]);
+                    return;
+                }
+            }
+            echo json_encode(['open' => false]);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        $tenantId = $user['tenant_id'] ?? null;
+        if (!$tenantId) {
+            $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
+            if ($hint) {
+                $t = $pdo->prepare('SELECT id FROM tenants WHERE subdomain=?');
+                $t->execute([$hint]);
+                $row = $t->fetch();
+                if ($row) $tenantId = (int)$row['id'];
+            }
+        }
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Tenant context missing']);
+            return;
+        }
+
+        $empCheck = $pdo->prepare('SELECT id FROM employees WHERE id=? AND tenant_id=?');
+        $empCheck->execute([(int)$employeeId, (int)$tenantId]);
+        if (!$empCheck->fetch()) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Employee not found']);
+            return;
+        }
+
+        $stmt = $pdo->prepare('SELECT id, employee_id, clock_in, clock_out, duration_minutes, date, status, late_minutes, early_leave_minutes FROM attendance_records WHERE employee_id=? AND clock_out IS NULL ORDER BY id DESC LIMIT 1');
+        $stmt->execute([(int)$employeeId]);
+        $r = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$r) {
+            echo json_encode(['open' => false]);
+            return;
+        }
+        $r['id'] = (string)$r['id'];
+        $r['employee_id'] = (string)$r['employee_id'];
+
+        echo json_encode(['open' => true, 'record' => $r]);
+    }
+
     public function process()
     {
         \App\Core\Auth::requireRole('perm:attendance.read');

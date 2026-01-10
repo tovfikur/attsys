@@ -10,7 +10,34 @@ class EmployeesStore
     {
         $pdo = Database::get();
         if ($pdo) {
-            $stmt = $pdo->query('SELECT id, tenant_id, name, code, status, created_at FROM employees ORDER BY id DESC');
+            $user = Auth::currentUser() ?? [];
+            $role = $user['role'] ?? null;
+            if ($role === 'superadmin') {
+                $stmt = $pdo->query('SELECT id, tenant_id, name, code, status, created_at FROM employees ORDER BY id DESC');
+                return array_map(fn($r) => [
+                    'id' => (string)$r['id'],
+                    'tenant_id' => (string)$r['tenant_id'],
+                    'name' => $r['name'],
+                    'code' => $r['code'],
+                    'status' => $r['status'],
+                    'created_at' => $r['created_at']
+                ], $stmt->fetchAll());
+            }
+
+            $tenantId = $user['tenant_id'] ?? null;
+            if (!$tenantId) {
+                $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
+                if ($hint) {
+                    $t = $pdo->prepare('SELECT id FROM tenants WHERE subdomain=?');
+                    $t->execute([$hint]);
+                    $row = $t->fetch();
+                    if ($row) $tenantId = (int)$row['id'];
+                }
+            }
+            if (!$tenantId) return [];
+
+            $stmt = $pdo->prepare('SELECT id, tenant_id, name, code, status, created_at FROM employees WHERE tenant_id=? ORDER BY id DESC');
+            $stmt->execute([(int)$tenantId]);
             return array_map(fn($r) => [
                 'id' => (string)$r['id'],
                 'tenant_id' => (string)$r['tenant_id'],

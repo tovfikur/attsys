@@ -92,6 +92,7 @@ $router->postAuth('/api/employees/delete', ['App\Controller\EmployeeController',
 // Attendance
 $router->getAuth('/api/attendance', ['App\Controller\AttendanceController', 'list'], 'perm:attendance.read');
 $router->getAuth('/api/attendance/employee', ['App\Controller\AttendanceController', 'employeeStats'], 'perm:attendance.read');
+$router->getAuth('/api/attendance/open', ['App\Controller\AttendanceController', 'openShift'], 'perm:attendance.clock');
 $router->postAuth('/api/attendance/clockin', ['App\Controller\AttendanceController', 'clockIn'], 'perm:attendance.clock');
 $router->postAuth('/api/attendance/clockout', ['App\Controller\AttendanceController', 'clockOut'], 'perm:attendance.clock');
 $router->postAuth('/api/attendance/process', ['App\Controller\AttendanceController', 'process'], 'perm:attendance.read');
