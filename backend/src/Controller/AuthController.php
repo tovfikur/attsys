@@ -120,22 +120,37 @@ class AuthController
             }
         }
         if (!$tenant) { http_response_code(404); echo json_encode(['error'=>'Tenant not found']); return; }
-        $uStmt = $pdo->prepare('SELECT id, name, email, role, password_hash FROM tenant_users WHERE tenant_id=? AND email=? AND status="active"');
-        $uStmt->execute([$tenant['id'], $email]);
-        $user = $uStmt->fetch();
+        try {
+            $uStmt = $pdo->prepare('SELECT id, name, email, role, employee_id, password_hash FROM tenant_users WHERE tenant_id=? AND email=? AND status="active"');
+            $uStmt->execute([$tenant['id'], $email]);
+            $user = $uStmt->fetch();
+        } catch (\Exception $e) {
+            $uStmt = $pdo->prepare('SELECT id, name, email, role, password_hash FROM tenant_users WHERE tenant_id=? AND email=? AND status="active"');
+            $uStmt->execute([$tenant['id'], $email]);
+            $user = $uStmt->fetch();
+            if (is_array($user)) $user['employee_id'] = null;
+        }
         if (!$user) {
             if (strtolower($sub) === 'demo' && strtolower($email) === 'owner@tenant.com' && $password === 'secret') {
                 $createUser = $pdo->prepare('INSERT INTO tenant_users(tenant_id, email, name, role, password_hash, status) VALUES (?, ?, ?, ?, ?, ?)');
                 $createUser->execute([(int)$tenant['id'], 'owner@tenant.com', 'Tenant Owner', 'tenant_owner', null, 'active']);
-                $uStmt = $pdo->prepare('SELECT id, name, email, role, password_hash FROM tenant_users WHERE tenant_id=? AND email=? AND status="active"');
-                $uStmt->execute([$tenant['id'], $email]);
-                $user = $uStmt->fetch();
+                try {
+                    $uStmt = $pdo->prepare('SELECT id, name, email, role, employee_id, password_hash FROM tenant_users WHERE tenant_id=? AND email=? AND status="active"');
+                    $uStmt->execute([$tenant['id'], $email]);
+                    $user = $uStmt->fetch();
+                } catch (\Exception $e) {
+                    $uStmt = $pdo->prepare('SELECT id, name, email, role, password_hash FROM tenant_users WHERE tenant_id=? AND email=? AND status="active"');
+                    $uStmt->execute([$tenant['id'], $email]);
+                    $user = $uStmt->fetch();
+                    if (is_array($user)) $user['employee_id'] = null;
+                }
             }
         }
         if ($user && ($user['password_hash'] ? password_verify($password, $user['password_hash']) : $password === 'secret')) {
             $token = \App\Core\Token::create([
                 'user_id' => (int)$user['id'],
                 'tenant_id' => (int)$tenant['id'],
+                'employee_id' => $user['employee_id'] ?? null,
                 'role' => $user['role'],
                 'user_name' => $user['name'],
                 'user_email' => $user['email'],
@@ -148,6 +163,7 @@ class AuthController
                     'name' => $user['name'],
                     'email' => $user['email'],
                     'role' => $user['role'],
+                    'employee_id' => $user['employee_id'] ?? null,
                     'tenant' => ['id'=>$tenant['id'], 'name'=>$tenant['name'], 'subdomain'=>$sub]
                 ]
             ]);

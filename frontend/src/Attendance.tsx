@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "./api";
 import { getErrorMessage } from "./utils/errors";
+import { getUser } from "./utils/session";
 import {
   Alert,
   alpha,
@@ -37,6 +38,9 @@ import {
 
 interface Employee {
   id: string;
+  shift_id?: string;
+  shift_name?: string;
+  working_days?: string;
   name: string;
   code: string;
   status: string;
@@ -73,8 +77,17 @@ interface LeaveRecord {
   id: string | number;
   employee_id: string | number;
   date: string;
+  leave_type?: string | null;
+  day_part?: string | null;
   reason: string | null;
   status: string | null;
+  created_at?: string;
+}
+
+interface HolidayRecord {
+  id: string | number;
+  date: string;
+  name: string;
   created_at?: string;
 }
 
@@ -185,10 +198,15 @@ const isEarlyLeave = (r: AttendanceRow): boolean => {
 
 export default function Attendance() {
   const theme = useTheme();
+  const role = getUser()?.role || "";
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [days, setDays] = useState<Day[]>([]);
   const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
+  const [holidays, setHolidays] = useState<HolidayRecord[]>([]);
+  const [leaveTotals, setLeaveTotals] = useState<
+    Record<string, { paid: number; unpaid: number; total: number }>
+  >({});
 
   const chipSx = useMemo(() => {
     const base = {
@@ -213,6 +231,12 @@ export default function Attendance() {
         bgcolor: alpha(theme.palette.warning.main, 0.16),
         borderColor: alpha(theme.palette.warning.main, 0.32),
         color: theme.palette.warning.dark,
+      },
+      error: {
+        ...base,
+        bgcolor: alpha(theme.palette.error.main, 0.14),
+        borderColor: alpha(theme.palette.error.main, 0.26),
+        color: theme.palette.error.dark,
       },
       neutral: {
         ...base,
@@ -251,6 +275,8 @@ export default function Attendance() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [leaveActionBusy, setLeaveActionBusy] = useState(false);
+  const [leaveActionError, setLeaveActionError] = useState("");
 
   const setRangeStart = useCallback(
     (raw: string) => {
@@ -297,6 +323,8 @@ export default function Attendance() {
       setRows(dashRes.data.attendance || []);
       setDays(dashRes.data.days || []);
       setLeaves(dashRes.data.leaves || []);
+      setHolidays(dashRes.data.holidays || []);
+      setLeaveTotals(dashRes.data.leave_totals || {});
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Failed to load attendance"));
     } finally {
@@ -617,6 +645,11 @@ export default function Attendance() {
     return summaries.find((s) => s.employeeId === selectedEmployeeId) || null;
   }, [selectedEmployeeId, summaries]);
 
+  const selectedEmployeeLeaveTotals = useMemo(() => {
+    if (!selectedEmployeeId) return null;
+    return leaveTotals[String(selectedEmployeeId)] || null;
+  }, [leaveTotals, selectedEmployeeId]);
+
   const selectedEmployeeRows = useMemo(() => {
     if (!selectedEmployeeId) return [];
     return (rowsByEmployee.get(selectedEmployeeId) || []).slice();
@@ -739,6 +772,54 @@ export default function Attendance() {
       list.find((l) => String(l.date) === String(selectedDay.date)) || null
     );
   }, [selectedDay, leavesByEmployee]);
+
+  const notifyAttendanceUpdated = () => {
+    window.dispatchEvent(new Event("attendance:updated"));
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      const bc = new BroadcastChannel("attendance");
+      bc.postMessage({ type: "updated" });
+      bc.close();
+    }
+  };
+
+  const getLeaveStatusChipSx = useCallback(
+    (status: string | null | undefined) => {
+      const s = String(status || "")
+        .trim()
+        .toLowerCase();
+      if (!s) return chipSx.neutral;
+      if (s === "approved") return chipSx.warning;
+      if (s === "rejected") return chipSx.error;
+      if (s === "cancelled") return chipSx.neutral;
+      if (s.startsWith("pending")) return chipSx.neutral;
+      return chipSx.neutral;
+    },
+    [chipSx]
+  );
+
+  useEffect(() => {
+    setLeaveActionError("");
+  }, [selectedDay]);
+
+  const updateSelectedDayLeaveStatus = async (nextStatus: string) => {
+    if (!selectedDayLeave?.id) return;
+    setLeaveActionBusy(true);
+    setLeaveActionError("");
+    try {
+      await api.post("/api/leaves/update", {
+        id: selectedDayLeave.id,
+        status: nextStatus,
+      });
+      await load();
+      notifyAttendanceUpdated();
+    } catch (err: unknown) {
+      setLeaveActionError(
+        getErrorMessage(err, "Failed to update leave status")
+      );
+    } finally {
+      setLeaveActionBusy(false);
+    }
+  };
 
   const cardSx = {
     borderRadius: 3,
@@ -1285,6 +1366,24 @@ export default function Attendance() {
                 )}`}
                 sx={{ fontWeight: 800, bgcolor: "background.default" }}
               />
+              {selectedEmployeeLeaveTotals && (
+                <>
+                  <Chip
+                    label={`Paid Leave: ${selectedEmployeeLeaveTotals.paid}`}
+                    sx={{ fontWeight: 800, bgcolor: "background.default" }}
+                  />
+                  <Chip
+                    label={`Unpaid Leave: ${selectedEmployeeLeaveTotals.unpaid}`}
+                    sx={{ fontWeight: 800, bgcolor: "background.default" }}
+                  />
+                </>
+              )}
+              {holidays.length > 0 && (
+                <Chip
+                  label={`Holidays: ${holidays.length}`}
+                  sx={{ fontWeight: 800, bgcolor: "background.default" }}
+                />
+              )}
               {selectedEmployee.openShift && (
                 <Chip label="Open shift" sx={chipSx.openShift} />
               )}
@@ -1350,14 +1449,22 @@ export default function Attendance() {
                         >
                           In/Out: {d.checkins}/{d.checkouts} • Stay:{" "}
                           {formatMinutes(d.stayMinutes)}
-                          {d.leave ? ` • Leave: ${d.leave.reason || "—"}` : ""}
+                          {d.leave
+                            ? ` • Leave: ${(
+                                d.leave.leave_type || "leave"
+                              ).toString()}`
+                            : ""}
                         </Typography>
                         <Stack direction="row" spacing={0.75} sx={{ mt: 0.5 }}>
                           {d.leave && (
                             <Chip
                               size="small"
-                              label="Leave"
-                              sx={chipSx.warning}
+                              label={`${(
+                                d.leave.status || "pending"
+                              ).toString()} • ${(
+                                d.leave.day_part || "full"
+                              ).toString()}`}
+                              sx={getLeaveStatusChipSx(d.leave.status)}
                             />
                           )}
                           {d.openShift && (
@@ -1464,11 +1571,62 @@ export default function Attendance() {
             />
             {selectedDayLeave && (
               <Chip
-                label={`Leave: ${selectedDayLeave.reason || "—"}`}
-                sx={chipSx.warning}
+                label={`Leave: ${(
+                  selectedDayLeave.leave_type || "leave"
+                ).toString()} • ${(
+                  selectedDayLeave.day_part || "full"
+                ).toString()} • ${(
+                  selectedDayLeave.status || "pending"
+                ).toString()}`}
+                sx={getLeaveStatusChipSx(selectedDayLeave.status)}
               />
             )}
           </Stack>
+
+          {leaveActionError ? (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+              {leaveActionError}
+            </Alert>
+          ) : null}
+
+          {selectedDayLeave?.id ? (
+            <Stack
+              direction="row"
+              spacing={1.5}
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ mb: 2 }}
+            >
+              {String(selectedDayLeave.status || "").toLowerCase() ===
+              "pending" ? (
+                role === "manager" ||
+                role === "hr_admin" ||
+                role === "tenant_owner" ? (
+                  <>
+                    <Button
+                      variant="contained"
+                      onClick={() =>
+                        void updateSelectedDayLeaveStatus("approved")
+                      }
+                      disabled={leaveActionBusy}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      color="error"
+                      variant="outlined"
+                      onClick={() =>
+                        void updateSelectedDayLeaveStatus("rejected")
+                      }
+                      disabled={leaveActionBusy}
+                    >
+                      Reject
+                    </Button>
+                  </>
+                ) : null
+              ) : null}
+            </Stack>
+          ) : null}
 
           {selectedDayRows.length === 0 ? (
             <Typography color="text.secondary">

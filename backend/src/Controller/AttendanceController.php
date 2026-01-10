@@ -23,11 +23,54 @@ class AttendanceController
 
     private function normalizeLeaveStatus(?string $raw): string
     {
-        if (!is_string($raw)) return 'approved';
+        if (!is_string($raw)) return 'pending';
         $v = strtolower(trim($raw));
-        if ($v === '') return 'approved';
-        $allowed = ['approved' => true, 'pending' => true, 'rejected' => true];
-        return isset($allowed[$v]) ? $v : 'approved';
+        if ($v === '') return 'pending';
+        if ($v === 'pending') return 'pending';
+        if ($v === 'pending_manager') return 'pending';
+        if ($v === 'pending_hr') return 'pending';
+        if ($v === 'hr_pending') return 'pending';
+        if ($v === 'approved') return 'approved';
+        if ($v === 'rejected') return 'rejected';
+        if ($v === 'cancelled') return 'rejected';
+        if ($v === 'canceled') return 'rejected';
+        return 'pending';
+    }
+
+    private function normalizeLeaveType(?string $raw): string
+    {
+        if (!is_string($raw)) return 'casual';
+        $v = strtolower(trim($raw));
+        if ($v === '') return 'casual';
+        $allowed = ['casual' => true, 'sick' => true, 'annual' => true, 'unpaid' => true];
+        return isset($allowed[$v]) ? $v : 'casual';
+    }
+
+    private function normalizeDayPart(?string $raw): string
+    {
+        if (!is_string($raw)) return 'full';
+        $v = strtolower(trim($raw));
+        if ($v === '') return 'full';
+        if ($v === 'half') return 'full';
+        if ($v === 'first_half') return 'am';
+        if ($v === 'second_half') return 'pm';
+        $allowed = ['full' => true, 'am' => true, 'pm' => true];
+        return isset($allowed[$v]) ? $v : 'full';
+    }
+
+    private function getEmployeeWorkingDays($pdo, int $tenantId, int $employeeId): array
+    {
+        $stmt = $pdo->prepare('SELECT s.working_days FROM employees e JOIN shifts s ON s.id = e.shift_id WHERE e.tenant_id=? AND e.id=? LIMIT 1');
+        $stmt->execute([(int)$tenantId, (int)$employeeId]);
+        $raw = $stmt->fetchColumn();
+        if (!is_string($raw) || trim($raw) === '') return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+        $parts = array_map('trim', explode(',', $raw));
+        $out = [];
+        foreach ($parts as $p) {
+            if ($p === '') continue;
+            $out[$p] = true;
+        }
+        return array_keys($out);
     }
 
     private function normalizeRange(string $start, string $end): array
@@ -102,11 +145,14 @@ class AttendanceController
             return;
         }
 
-        $eStmt = $pdo->prepare('SELECT id, tenant_id, name, code, status, created_at FROM employees WHERE tenant_id=? ORDER BY id DESC');
+        $eStmt = $pdo->prepare('SELECT e.id, e.tenant_id, e.shift_id, s.name AS shift_name, s.working_days, e.name, e.code, e.status, e.created_at FROM employees e JOIN shifts s ON s.id = e.shift_id WHERE e.tenant_id=? ORDER BY e.id DESC');
         $eStmt->execute([(int)$tenantId]);
         $employees = array_map(fn($r) => [
             'id' => (string)$r['id'],
             'tenant_id' => (string)$r['tenant_id'],
+            'shift_id' => (string)($r['shift_id'] ?? ''),
+            'shift_name' => (string)($r['shift_name'] ?? ''),
+            'working_days' => (string)($r['working_days'] ?? ''),
             'name' => $r['name'],
             'code' => $r['code'],
             'status' => $r['status'],
@@ -149,11 +195,126 @@ class AttendanceController
             'status' => $r['status']
         ], $dStmt->fetchAll());
 
-        $lStmt = $pdo->prepare('SELECT id, employee_id, date, reason, status, created_at FROM leaves WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date DESC, employee_id DESC, id DESC');
+        $lStmt = $pdo->prepare('SELECT id, employee_id, date, leave_type, day_part, reason, status, created_at FROM leaves WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date DESC, employee_id DESC, id DESC');
         $lStmt->execute([(int)$tenantId, $start, $end]);
         $leaves = $lStmt->fetchAll(\PDO::FETCH_ASSOC);
+        foreach ($leaves as &$l) {
+            $l['status'] = $this->normalizeLeaveStatus($l['status'] ?? null);
+        }
+        unset($l);
 
-        echo json_encode(['employees' => $employees, 'attendance' => $attendance, 'days' => $days, 'leaves' => $leaves]);
+        $hStmt = $pdo->prepare('SELECT id, date, name, created_at FROM holidays WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date ASC, id ASC');
+        $hStmt->execute([(int)$tenantId, $start, $end]);
+        $holidays = $hStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $leaveByEmpDate = [];
+        foreach ($leaves as $l) {
+            $empId = (int)($l['employee_id'] ?? 0);
+            $dateStr = (string)($l['date'] ?? '');
+            if ($empId <= 0 || $dateStr === '') continue;
+            $key = $empId . '|' . $dateStr;
+            $curId = isset($leaveByEmpDate[$key]) ? (int)($leaveByEmpDate[$key]['id'] ?? 0) : 0;
+            $newId = (int)($l['id'] ?? 0);
+            if ($newId >= $curId) $leaveByEmpDate[$key] = $l;
+        }
+
+        $daysByEmpDate = [];
+        foreach ($days as $d) {
+            $empId = (int)($d['employee_id'] ?? 0);
+            $dateStr = (string)($d['date'] ?? '');
+            if ($empId <= 0 || $dateStr === '') continue;
+            $daysByEmpDate[$empId . '|' . $dateStr] = $d;
+        }
+
+        foreach ($leaveByEmpDate as $key => $l) {
+            $status = strtolower((string)($l['status'] ?? ''));
+            if ($status !== 'approved') continue;
+            $dayPart = strtolower((string)($l['day_part'] ?? 'full'));
+            $leaveStatus = $dayPart === 'full' ? 'Leave' : 'Half Leave';
+
+            if (isset($daysByEmpDate[$key])) {
+                $d = $daysByEmpDate[$key];
+                $d['late_minutes'] = 0;
+                $d['early_leave_minutes'] = 0;
+                if ($dayPart === 'full') {
+                    $d['status'] = $leaveStatus;
+                } elseif ((string)($d['status'] ?? '') === 'Absent' && (int)($d['worked_minutes'] ?? 0) <= 0) {
+                    $d['status'] = $leaveStatus;
+                }
+                $daysByEmpDate[$key] = $d;
+            } else {
+                [$empIdRaw, $dateStr] = explode('|', $key, 2);
+                $daysByEmpDate[$key] = [
+                    'employee_id' => (int)$empIdRaw,
+                    'date' => $dateStr,
+                    'in_time' => null,
+                    'out_time' => null,
+                    'worked_minutes' => 0,
+                    'late_minutes' => 0,
+                    'early_leave_minutes' => 0,
+                    'overtime_minutes' => 0,
+                    'status' => $leaveStatus,
+                ];
+            }
+        }
+
+        $days = array_values($daysByEmpDate);
+        usort($days, function ($a, $b) {
+            $d = strcmp((string)($b['date'] ?? ''), (string)($a['date'] ?? ''));
+            if ($d !== 0) return $d;
+            return (int)($b['employee_id'] ?? 0) <=> (int)($a['employee_id'] ?? 0);
+        });
+
+        $workingDaysByEmployee = [];
+        foreach ($employees as $e) {
+            $raw = (string)($e['working_days'] ?? '');
+            $parts = $raw !== '' ? array_map('trim', explode(',', $raw)) : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+            $set = [];
+            foreach ($parts as $p) {
+                if ($p === '') continue;
+                $set[strtolower($p)] = true;
+            }
+            $workingDaysByEmployee[(int)$e['id']] = $set;
+        }
+
+        $holidaySet = [];
+        foreach ($holidays as $h) {
+            $d = (string)($h['date'] ?? '');
+            if ($d !== '') $holidaySet[$d] = true;
+        }
+
+        $leaveTotalsByEmployee = [];
+        foreach ($leaveByEmpDate as $key => $l) {
+            $status = strtolower((string)($l['status'] ?? ''));
+            if ($status !== 'approved') continue;
+            $empId = (int)($l['employee_id'] ?? 0);
+            $dateStr = (string)($l['date'] ?? '');
+            if ($empId <= 0 || $dateStr === '') continue;
+            if (isset($holidaySet[$dateStr])) continue;
+
+            $wd = $workingDaysByEmployee[$empId] ?? null;
+            if (is_array($wd)) {
+                $dowKey = strtolower((new \DateTimeImmutable($dateStr, new \DateTimeZone('Asia/Dhaka')))->format('D'));
+                if (!isset($wd[$dowKey])) continue;
+            }
+
+            $dayPart = strtolower((string)($l['day_part'] ?? 'full'));
+            $amount = $dayPart === 'full' ? 1.0 : 0.5;
+            $type = strtolower((string)($l['leave_type'] ?? 'casual'));
+            $isUnpaid = $type === 'unpaid';
+            if (!isset($leaveTotalsByEmployee[$empId])) {
+                $leaveTotalsByEmployee[$empId] = [
+                    'paid' => 0.0,
+                    'unpaid' => 0.0,
+                    'total' => 0.0,
+                ];
+            }
+            $leaveTotalsByEmployee[$empId]['total'] += $amount;
+            if ($isUnpaid) $leaveTotalsByEmployee[$empId]['unpaid'] += $amount;
+            else $leaveTotalsByEmployee[$empId]['paid'] += $amount;
+        }
+
+        echo json_encode(['employees' => $employees, 'attendance' => $attendance, 'days' => $days, 'leaves' => $leaves, 'holidays' => $holidays, 'leave_totals' => $leaveTotalsByEmployee]);
     }
 
     public function days()
@@ -443,20 +604,67 @@ class AttendanceController
         }
 
         // Fetch Leaves
-        $lStmt = $pdo->prepare('SELECT id, employee_id, date, reason, status, created_at FROM leaves WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? ORDER BY date ASC');
+        $lStmt = $pdo->prepare('SELECT id, employee_id, date, leave_type, day_part, reason, status, created_at FROM leaves WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? ORDER BY date ASC, id ASC');
         $lStmt->execute([(int)$tenantId, (int)$employeeId, $start, $end]);
         $leaves = $lStmt->fetchAll(\PDO::FETCH_ASSOC);
+        foreach ($leaves as &$l) {
+            $l['status'] = $this->normalizeLeaveStatus($l['status'] ?? null);
+        }
+        unset($l);
+
+        $hStmt = $pdo->prepare('SELECT id, date, name, created_at FROM holidays WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date ASC, id ASC');
+        $hStmt->execute([(int)$tenantId, $start, $end]);
+        $holidays = $hStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $workingDays = $this->getEmployeeWorkingDays($pdo, (int)$tenantId, (int)$employeeId);
+
+        $workingDaysSet = [];
+        foreach ($workingDays as $d) $workingDaysSet[strtolower($d)] = true;
+        $holidaySet = [];
+        foreach ($holidays as $h) {
+            $d = (string)($h['date'] ?? '');
+            if ($d !== '') $holidaySet[$d] = true;
+        }
+        $totals = ['paid' => 0.0, 'unpaid' => 0.0, 'total' => 0.0];
+        foreach ($leaves as $l) {
+            $status = strtolower((string)($l['status'] ?? ''));
+            if ($status !== 'approved') continue;
+            $dateStr = (string)($l['date'] ?? '');
+            if ($dateStr === '' || isset($holidaySet[$dateStr])) continue;
+            $dowKey = strtolower((new \DateTimeImmutable($dateStr, new \DateTimeZone('Asia/Dhaka')))->format('D'));
+            if (!isset($workingDaysSet[$dowKey])) continue;
+            $dayPart = strtolower((string)($l['day_part'] ?? 'full'));
+            $amount = $dayPart === 'full' ? 1.0 : 0.5;
+            $type = strtolower((string)($l['leave_type'] ?? 'casual'));
+            $isUnpaid = $type === 'unpaid';
+            $totals['total'] += $amount;
+            if ($isUnpaid) $totals['unpaid'] += $amount;
+            else $totals['paid'] += $amount;
+        }
 
         echo json_encode([
             'attendance' => $attendance,
             'leaves' => $leaves,
+            'holidays' => $holidays,
+            'working_days' => implode(',', $workingDays),
+            'leave_totals' => $totals,
             'month' => $month
         ]);
     }
 
-    public function leavesList()
+    public function payslipPreview()
     {
         header('Content-Type: application/json');
+        $employeeId = (int)($_GET['employee_id'] ?? 0);
+        $month = $_GET['month'] ?? date('Y-m');
+        $baseSalaryRaw = $_GET['base_salary'] ?? null;
+
+        if ($employeeId <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'employee_id required']);
+            return;
+        }
+
         $pdo = \App\Core\Database::get();
         if (!$pdo) {
             http_response_code(500);
@@ -471,7 +679,128 @@ class AttendanceController
             return;
         }
 
+        if (!is_string($month) || !preg_match('/^\d{4}-\d{2}$/', $month)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'month must be YYYY-MM']);
+            return;
+        }
+
+        $empCheck = $pdo->prepare('SELECT 1 FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+        $empCheck->execute([(int)$tenantId, (int)$employeeId]);
+        if (!$empCheck->fetchColumn()) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Employee not found']);
+            return;
+        }
+
+        $start = $month . '-01';
+        $end = date('Y-m-t', strtotime($start));
+
+        $workingDays = $this->getEmployeeWorkingDays($pdo, (int)$tenantId, (int)$employeeId);
+        $workingDaysSet = [];
+        foreach ($workingDays as $d) $workingDaysSet[strtolower($d)] = true;
+
+        $hStmt = $pdo->prepare('SELECT date FROM holidays WHERE tenant_id=? AND date BETWEEN ? AND ?');
+        $hStmt->execute([(int)$tenantId, $start, $end]);
+        $holidaySet = [];
+        foreach ($hStmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+            $holidaySet[(string)($r['date'] ?? '')] = true;
+        }
+
+        $workdayCount = 0;
+        $cursor = new \DateTimeImmutable($start, new \DateTimeZone('Asia/Dhaka'));
+        $endDt = new \DateTimeImmutable($end, new \DateTimeZone('Asia/Dhaka'));
+        while ($cursor <= $endDt) {
+            $dateStr = $cursor->format('Y-m-d');
+            $dowKey = strtolower($cursor->format('D'));
+            if (!isset($holidaySet[$dateStr]) && isset($workingDaysSet[$dowKey])) {
+                $workdayCount += 1;
+            }
+            $cursor = $cursor->modify('+1 day');
+        }
+
+        $lStmt = $pdo->prepare('SELECT date, leave_type, day_part, status FROM leaves WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ?');
+        $lStmt->execute([(int)$tenantId, (int)$employeeId, $start, $end]);
+        $leaves = $lStmt->fetchAll(\PDO::FETCH_ASSOC);
+        foreach ($leaves as &$l) {
+            $l['status'] = $this->normalizeLeaveStatus($l['status'] ?? null);
+        }
+        unset($l);
+
+        $paid = 0.0;
+        $unpaid = 0.0;
+        foreach ($leaves as $l) {
+            $status = strtolower((string)($l['status'] ?? ''));
+            if ($status !== 'approved') continue;
+            $dateStr = (string)($l['date'] ?? '');
+            if ($dateStr === '' || isset($holidaySet[$dateStr])) continue;
+            $dowKey = strtolower((new \DateTimeImmutable($dateStr, new \DateTimeZone('Asia/Dhaka')))->format('D'));
+            if (!isset($workingDaysSet[$dowKey])) continue;
+
+            $dayPart = strtolower((string)($l['day_part'] ?? 'full'));
+            $amount = $dayPart === 'full' ? 1.0 : 0.5;
+            $type = strtolower((string)($l['leave_type'] ?? 'casual'));
+            if ($type === 'unpaid') $unpaid += $amount;
+            else $paid += $amount;
+        }
+
+        $baseSalary = null;
+        if ($baseSalaryRaw !== null && $baseSalaryRaw !== '') {
+            $baseSalary = (float)$baseSalaryRaw;
+        }
+        $unpaidDeduction = null;
+        $netSalary = null;
+        if ($baseSalary !== null && $workdayCount > 0) {
+            $unpaidDeduction = round(($baseSalary / $workdayCount) * $unpaid, 2);
+            $netSalary = round($baseSalary - $unpaidDeduction, 2);
+        }
+
+        echo json_encode([
+            'employee_id' => $employeeId,
+            'month' => $month,
+            'workdays' => $workdayCount,
+            'paid_leave_days' => $paid,
+            'unpaid_leave_days' => $unpaid,
+            'base_salary' => $baseSalary,
+            'unpaid_deduction' => $unpaidDeduction,
+            'net_salary' => $netSalary,
+        ]);
+    }
+
+    public function leavesList()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
         $employeeId = $_GET['employee_id'] ?? null;
+        if (($user['role'] ?? null) === 'employee') {
+            $mapped = (int)($user['employee_id'] ?? 0);
+            if ($mapped <= 0) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Employee account not linked']);
+                return;
+            }
+            $employeeId = $mapped;
+        }
         $month = $_GET['month'] ?? null;
         if (is_string($month) && preg_match('/^\d{4}-\d{2}$/', $month)) {
             $start = $month . '-01';
@@ -489,9 +818,14 @@ class AttendanceController
             $params[] = (int)$employeeId;
         }
 
-        $stmt = $pdo->prepare("SELECT id, tenant_id, employee_id, date, reason, status, created_at FROM leaves $where ORDER BY date ASC, employee_id ASC, id ASC");
+        $stmt = $pdo->prepare("SELECT id, tenant_id, employee_id, date, leave_type, day_part, reason, status, created_at FROM leaves $where ORDER BY date ASC, employee_id ASC, id ASC");
         $stmt->execute($params);
-        echo json_encode(['leaves' => $stmt->fetchAll(\PDO::FETCH_ASSOC)]);
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        foreach ($rows as &$r) {
+            $r['status'] = $this->normalizeLeaveStatus($r['status'] ?? null);
+        }
+        unset($r);
+        echo json_encode(['leaves' => $rows]);
     }
 
     public function leavesCreate()
@@ -516,6 +850,8 @@ class AttendanceController
 
         $employeeId = (int)($in['employee_id'] ?? 0);
         $date = $this->normalizeDate($in['date'] ?? null);
+        $leaveType = $this->normalizeLeaveType($in['leave_type'] ?? null);
+        $dayPart = $this->normalizeDayPart($in['day_part'] ?? null);
         $reason = trim((string)($in['reason'] ?? ''));
         $status = $this->normalizeLeaveStatus($in['status'] ?? null);
 
@@ -538,18 +874,21 @@ class AttendanceController
         $existingId = $existingStmt->fetchColumn();
 
         if ($existingId) {
-            $up = $pdo->prepare('UPDATE leaves SET reason=?, status=? WHERE tenant_id=? AND id=?');
-            $up->execute([$reason !== '' ? $reason : null, $status, (int)$tenantId, (int)$existingId]);
+            $up = $pdo->prepare('UPDATE leaves SET leave_type=?, day_part=?, reason=?, status=? WHERE tenant_id=? AND id=?');
+            $up->execute([$leaveType, $dayPart, $reason !== '' ? $reason : null, $status, (int)$tenantId, (int)$existingId]);
             $id = (int)$existingId;
         } else {
-            $ins = $pdo->prepare('INSERT INTO leaves(tenant_id, employee_id, date, reason, status) VALUES(?, ?, ?, ?, ?)');
-            $ins->execute([(int)$tenantId, (int)$employeeId, $date, $reason !== '' ? $reason : null, $status]);
+            $ins = $pdo->prepare('INSERT INTO leaves(tenant_id, employee_id, date, leave_type, day_part, reason, status) VALUES(?, ?, ?, ?, ?, ?, ?)');
+            $ins->execute([(int)$tenantId, (int)$employeeId, $date, $leaveType, $dayPart, $reason !== '' ? $reason : null, $status]);
             $id = (int)$pdo->lastInsertId();
         }
 
-        $outStmt = $pdo->prepare('SELECT id, tenant_id, employee_id, date, reason, status, created_at FROM leaves WHERE tenant_id=? AND id=?');
+        $outStmt = $pdo->prepare('SELECT id, tenant_id, employee_id, date, leave_type, day_part, reason, status, created_at FROM leaves WHERE tenant_id=? AND id=?');
         $outStmt->execute([(int)$tenantId, $id]);
         $row = $outStmt->fetch(\PDO::FETCH_ASSOC);
+        if (is_array($row)) {
+            $row['status'] = $this->normalizeLeaveStatus($row['status'] ?? null);
+        }
         echo json_encode(['leave' => $row]);
     }
 
@@ -560,6 +899,13 @@ class AttendanceController
         if (!$pdo) {
             http_response_code(500);
             echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
             return;
         }
 
@@ -580,7 +926,7 @@ class AttendanceController
             return;
         }
 
-        $curStmt = $pdo->prepare('SELECT id, employee_id, date, reason, status FROM leaves WHERE tenant_id=? AND id=? LIMIT 1');
+        $curStmt = $pdo->prepare('SELECT id, employee_id, date, leave_type, day_part, reason, status FROM leaves WHERE tenant_id=? AND id=? LIMIT 1');
         $curStmt->execute([(int)$tenantId, $id]);
         $cur = $curStmt->fetch(\PDO::FETCH_ASSOC);
         if (!$cur) {
@@ -589,15 +935,17 @@ class AttendanceController
             return;
         }
 
+        $canManage = \App\Core\Auth::hasPermission($user, 'leaves.manage');
+
         $employeeId = (int)($cur['employee_id'] ?? 0);
-        $newDate = array_key_exists('date', $in) ? $this->normalizeDate($in['date'] ?? null) : (string)($cur['date'] ?? '');
+        $newDate = $canManage && array_key_exists('date', $in) ? $this->normalizeDate($in['date'] ?? null) : (string)($cur['date'] ?? '');
         if (!$newDate) {
             http_response_code(400);
             echo json_encode(['error' => 'valid date required']);
             return;
         }
 
-        if ($newDate !== (string)($cur['date'] ?? '')) {
+        if ($canManage && $newDate !== (string)($cur['date'] ?? '')) {
             $dup = $pdo->prepare('SELECT 1 FROM leaves WHERE tenant_id=? AND employee_id=? AND date=? AND id<>? LIMIT 1');
             $dup->execute([(int)$tenantId, $employeeId, $newDate, $id]);
             if ($dup->fetchColumn()) {
@@ -607,15 +955,306 @@ class AttendanceController
             }
         }
 
-        $newReason = array_key_exists('reason', $in) ? trim((string)($in['reason'] ?? '')) : (string)($cur['reason'] ?? '');
+        $newType = $canManage && array_key_exists('leave_type', $in) ? $this->normalizeLeaveType($in['leave_type'] ?? null) : $this->normalizeLeaveType($cur['leave_type'] ?? null);
+        $newDayPart = $canManage && array_key_exists('day_part', $in) ? $this->normalizeDayPart($in['day_part'] ?? null) : $this->normalizeDayPart($cur['day_part'] ?? null);
+        $newReason = $canManage && array_key_exists('reason', $in) ? trim((string)($in['reason'] ?? '')) : (string)($cur['reason'] ?? '');
         $newStatus = array_key_exists('status', $in) ? $this->normalizeLeaveStatus($in['status'] ?? null) : (string)($cur['status'] ?? 'approved');
 
-        $up = $pdo->prepare('UPDATE leaves SET date=?, reason=?, status=? WHERE tenant_id=? AND id=?');
-        $up->execute([$newDate, $newReason !== '' ? $newReason : null, $newStatus, (int)$tenantId, $id]);
+        if (!$canManage) {
+            $currentStatus = strtolower((string)($cur['status'] ?? 'pending_manager'));
+            $currentStatus = $this->normalizeLeaveStatus($currentStatus);
+            if (!in_array($newStatus, ['pending', 'approved', 'rejected'], true)) {
+                http_response_code(400);
+                echo json_encode(['error' => 'invalid status transition']);
+                return;
+            }
+            if ($currentStatus !== 'pending') {
+                http_response_code(409);
+                echo json_encode(['error' => 'already reviewed']);
+                return;
+            }
+        }
 
-        $outStmt = $pdo->prepare('SELECT id, tenant_id, employee_id, date, reason, status, created_at FROM leaves WHERE tenant_id=? AND id=?');
+        $up = $pdo->prepare('UPDATE leaves SET date=?, leave_type=?, day_part=?, reason=?, status=? WHERE tenant_id=? AND id=?');
+        $up->execute([$newDate, $newType, $newDayPart, $newReason !== '' ? $newReason : null, $newStatus, (int)$tenantId, $id]);
+
+        $outStmt = $pdo->prepare('SELECT id, tenant_id, employee_id, date, leave_type, day_part, reason, status, created_at FROM leaves WHERE tenant_id=? AND id=?');
         $outStmt->execute([(int)$tenantId, $id]);
-        echo json_encode(['leave' => $outStmt->fetch(\PDO::FETCH_ASSOC)]);
+        $row = $outStmt->fetch(\PDO::FETCH_ASSOC);
+        if (is_array($row)) {
+            $row['status'] = $this->normalizeLeaveStatus($row['status'] ?? null);
+        }
+        echo json_encode(['leave' => $row]);
+    }
+
+    public function leavesApply()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+
+        $canManage = \App\Core\Auth::hasPermission($user, 'leaves.manage');
+        $employeeId = (int)($in['employee_id'] ?? 0);
+        if (($user['role'] ?? null) === 'employee' && !$canManage) {
+            $mapped = (int)($user['employee_id'] ?? 0);
+            if ($mapped <= 0) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Employee account not linked']);
+                return;
+            }
+            $employeeId = $mapped;
+        }
+        $start = $this->normalizeDate($in['start_date'] ?? null);
+        $end = $this->normalizeDate($in['end_date'] ?? null);
+        $leaveType = $this->normalizeLeaveType($in['leave_type'] ?? null);
+        $dayPart = $this->normalizeDayPart($in['day_part'] ?? null);
+        $reason = trim((string)($in['reason'] ?? ''));
+        $status = $this->normalizeLeaveStatus($in['status'] ?? null);
+        if (($user['role'] ?? null) === 'employee' && !$canManage) $status = 'pending';
+
+        if ($employeeId <= 0 || !$start || !$end) {
+            http_response_code(400);
+            echo json_encode(['error' => 'employee_id, start_date, end_date required']);
+            return;
+        }
+
+        if ($start !== $end && $dayPart !== 'full') {
+            http_response_code(400);
+            echo json_encode(['error' => 'day_part must be full for multi-day leave']);
+            return;
+        }
+
+        $empCheck = $pdo->prepare('SELECT 1 FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+        $empCheck->execute([(int)$tenantId, (int)$employeeId]);
+        if (!$empCheck->fetchColumn()) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Employee not found']);
+            return;
+        }
+
+        $workingDays = $this->getEmployeeWorkingDays($pdo, (int)$tenantId, (int)$employeeId);
+        $workingDaysSet = [];
+        foreach ($workingDays as $d) $workingDaysSet[strtolower($d)] = true;
+
+        $hStmt = $pdo->prepare('SELECT date FROM holidays WHERE tenant_id=? AND date BETWEEN ? AND ?');
+        $hStmt->execute([(int)$tenantId, $start, $end]);
+        $holidaySet = [];
+        foreach ($hStmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+            $holidaySet[(string)($r['date'] ?? '')] = true;
+        }
+
+        $dates = [];
+        $cursor = new \DateTimeImmutable($start, new \DateTimeZone('Asia/Dhaka'));
+        $endDt = new \DateTimeImmutable($end, new \DateTimeZone('Asia/Dhaka'));
+        while ($cursor <= $endDt) {
+            $dateStr = $cursor->format('Y-m-d');
+            $dowKey = strtolower($cursor->format('D'));
+            if (!isset($holidaySet[$dateStr]) && isset($workingDaysSet[$dowKey])) {
+                $dates[] = $dateStr;
+            }
+            $cursor = $cursor->modify('+1 day');
+        }
+
+        if (!$dates) {
+            echo json_encode(['created' => 0, 'skipped' => 0, 'dates' => []]);
+            return;
+        }
+
+        $skipped = 0;
+        $created = 0;
+        $ins = $pdo->prepare('INSERT INTO leaves(tenant_id, employee_id, date, leave_type, day_part, reason, status) VALUES(?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE leave_type=VALUES(leave_type), day_part=VALUES(day_part), reason=VALUES(reason), status=VALUES(status)');
+        foreach ($dates as $dateStr) {
+            try {
+                $ins->execute([(int)$tenantId, (int)$employeeId, $dateStr, $leaveType, $dayPart, $reason !== '' ? $reason : null, $status]);
+                $created += 1;
+            } catch (\Exception $e) {
+                $skipped += 1;
+            }
+        }
+
+        echo json_encode(['created' => $created, 'skipped' => $skipped, 'dates' => $dates]);
+    }
+
+    public function holidaysList()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $month = $_GET['month'] ?? null;
+        if (is_string($month) && preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $start = $month . '-01';
+            $end = date('Y-m-t', strtotime($start));
+        } else {
+            $startRaw = $_GET['start'] ?? date('Y-m-d');
+            $endRaw = $_GET['end'] ?? $startRaw;
+            [$start, $end] = $this->normalizeRange((string)$startRaw, (string)$endRaw);
+        }
+
+        $stmt = $pdo->prepare('SELECT id, tenant_id, date, name, created_at FROM holidays WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date ASC, id ASC');
+        $stmt->execute([(int)$tenantId, $start, $end]);
+        echo json_encode(['holidays' => $stmt->fetchAll(\PDO::FETCH_ASSOC)]);
+    }
+
+    public function holidaysCreate()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+        $date = $this->normalizeDate($in['date'] ?? null);
+        $name = trim((string)($in['name'] ?? ''));
+        if (!$date || $name === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'date and name required']);
+            return;
+        }
+
+        $stmt = $pdo->prepare('INSERT INTO holidays(tenant_id, date, name) VALUES(?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name)');
+        $stmt->execute([(int)$tenantId, $date, $name]);
+
+        $out = $pdo->prepare('SELECT id, tenant_id, date, name, created_at FROM holidays WHERE tenant_id=? AND date=? ORDER BY id DESC LIMIT 1');
+        $out->execute([(int)$tenantId, $date]);
+        echo json_encode(['holiday' => $out->fetch(\PDO::FETCH_ASSOC)]);
+    }
+
+    public function holidaysUpdate()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+        $id = (int)($in['id'] ?? 0);
+        $date = array_key_exists('date', $in) ? $this->normalizeDate($in['date'] ?? null) : null;
+        $name = array_key_exists('name', $in) ? trim((string)($in['name'] ?? '')) : null;
+        if ($id <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'id required']);
+            return;
+        }
+
+        $curStmt = $pdo->prepare('SELECT id, date, name FROM holidays WHERE tenant_id=? AND id=? LIMIT 1');
+        $curStmt->execute([(int)$tenantId, $id]);
+        $cur = $curStmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$cur) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        $newDate = $date ?: (string)($cur['date'] ?? '');
+        $newName = $name !== null ? $name : (string)($cur['name'] ?? '');
+        if (!$newDate || $newName === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'date and name required']);
+            return;
+        }
+
+        if ($newDate !== (string)($cur['date'] ?? '')) {
+            $dup = $pdo->prepare('SELECT 1 FROM holidays WHERE tenant_id=? AND date=? AND id<>? LIMIT 1');
+            $dup->execute([(int)$tenantId, $newDate, $id]);
+            if ($dup->fetchColumn()) {
+                http_response_code(409);
+                echo json_encode(['error' => 'Holiday already exists for this date']);
+                return;
+            }
+        }
+
+        $stmt = $pdo->prepare('UPDATE holidays SET date=?, name=? WHERE tenant_id=? AND id=?');
+        $stmt->execute([$newDate, $newName, (int)$tenantId, $id]);
+
+        $out = $pdo->prepare('SELECT id, tenant_id, date, name, created_at FROM holidays WHERE tenant_id=? AND id=?');
+        $out->execute([(int)$tenantId, $id]);
+        echo json_encode(['holiday' => $out->fetch(\PDO::FETCH_ASSOC)]);
+    }
+
+    public function holidaysDelete()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+        $id = (int)($in['id'] ?? 0);
+        if ($id <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'id required']);
+            return;
+        }
+
+        $stmt = $pdo->prepare('DELETE FROM holidays WHERE tenant_id=? AND id=?');
+        $stmt->execute([(int)$tenantId, $id]);
+        echo json_encode(['ok' => true]);
     }
 
     public function leavesDelete()

@@ -14,16 +14,30 @@ class Token
         $pdo = Database::get();
         if (!$pdo) return null;
         $token = self::generate();
-        $stmt = $pdo->prepare('INSERT INTO auth_tokens(token, user_id, tenant_id, role, user_name, user_email, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        $success = $stmt->execute([
-            $token,
-            $payload['user_id'] ?? null,
-            $payload['tenant_id'] ?? null,
-            $payload['role'] ?? 'unknown',
-            $payload['user_name'] ?? null,
-            $payload['user_email'] ?? null,
-            $payload['expires_at'] ?? null,
-        ]);
+        try {
+            $stmt = $pdo->prepare('INSERT INTO auth_tokens(token, user_id, tenant_id, employee_id, role, user_name, user_email, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+            $success = $stmt->execute([
+                $token,
+                $payload['user_id'] ?? null,
+                $payload['tenant_id'] ?? null,
+                $payload['employee_id'] ?? null,
+                $payload['role'] ?? 'unknown',
+                $payload['user_name'] ?? null,
+                $payload['user_email'] ?? null,
+                $payload['expires_at'] ?? null,
+            ]);
+        } catch (\Exception $e) {
+            $stmt = $pdo->prepare('INSERT INTO auth_tokens(token, user_id, tenant_id, role, user_name, user_email, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $success = $stmt->execute([
+                $token,
+                $payload['user_id'] ?? null,
+                $payload['tenant_id'] ?? null,
+                $payload['role'] ?? 'unknown',
+                $payload['user_name'] ?? null,
+                $payload['user_email'] ?? null,
+                $payload['expires_at'] ?? null,
+            ]);
+        }
         
         if (!$success) {
             // Log error for debugging
@@ -38,9 +52,16 @@ class Token
     {
         $pdo = Database::get();
         if (!$pdo) return null;
-        $stmt = $pdo->prepare('SELECT token, user_id, tenant_id, role, user_name, user_email, expires_at FROM auth_tokens WHERE token=? LIMIT 1');
-        $stmt->execute([$token]);
-        $row = $stmt->fetch();
+        try {
+            $stmt = $pdo->prepare('SELECT token, user_id, tenant_id, employee_id, role, user_name, user_email, expires_at FROM auth_tokens WHERE token=? LIMIT 1');
+            $stmt->execute([$token]);
+            $row = $stmt->fetch();
+        } catch (\Exception $e) {
+            $stmt = $pdo->prepare('SELECT token, user_id, tenant_id, role, user_name, user_email, expires_at FROM auth_tokens WHERE token=? LIMIT 1');
+            $stmt->execute([$token]);
+            $row = $stmt->fetch();
+            if (is_array($row)) $row['employee_id'] = null;
+        }
         if (!$row) return null;
         if ($row['expires_at'] && strtotime($row['expires_at']) < time()) return null;
         return [
@@ -49,7 +70,7 @@ class Token
             'email' => $row['user_email'],
             'role' => $row['role'],
             'tenant_id' => $row['tenant_id'],
+            'employee_id' => $row['employee_id'],
         ];
     }
 }
-

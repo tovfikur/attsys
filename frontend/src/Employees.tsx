@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "./api";
 import { getErrorMessage } from "./utils/errors";
+import { getUser } from "./utils/session";
 import {
   Box,
   Button,
@@ -10,6 +11,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  MenuItem,
   Paper,
   Table,
   TableBody,
@@ -66,8 +68,18 @@ interface LeaveRecord {
   tenant_id?: string | number;
   employee_id?: string | number;
   date: string;
+  leave_type?: string | null;
+  day_part?: string | null;
   reason?: string | null;
   status?: string | null;
+  created_at?: string;
+}
+
+interface HolidayRecord {
+  id?: string | number;
+  tenant_id?: string | number;
+  date: string;
+  name: string;
   created_at?: string;
 }
 
@@ -663,22 +675,44 @@ function AttendanceDialog({
   const [records, setRecords] = useState<{
     attendance: AttendanceRecord[];
     leaves: LeaveRecord[];
-  }>({ attendance: [], leaves: [] });
+    holidays?: HolidayRecord[];
+    working_days?: string;
+    leave_totals?: { paid: number; unpaid: number; total: number };
+  }>({ attendance: [], leaves: [], holidays: [], working_days: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [leaveForm, setLeaveForm] = useState<{
     reason: string;
     status: string;
+    leave_type: string;
+    day_part: string;
   }>({
     reason: "",
-    status: "approved",
+    status: "pending",
+    leave_type: "casual",
+    day_part: "full",
   });
   const [leaveBusy, setLeaveBusy] = useState(false);
   const [leaveError, setLeaveError] = useState("");
   const [leaveOk, setLeaveOk] = useState("");
+  const [applyOpen, setApplyOpen] = useState(false);
+  const [applyForm, setApplyForm] = useState<{
+    start_date: string;
+    end_date: string;
+    leave_type: string;
+    day_part: string;
+    reason: string;
+  }>({
+    start_date: "",
+    end_date: "",
+    leave_type: "casual",
+    day_part: "full",
+    reason: "",
+  });
   const theme = useTheme();
   const lastRefreshAtRef = useRef(0);
+  const role = getUser()?.role || "";
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -849,15 +883,54 @@ function AttendanceDialog({
       };
     }
 
-    const leave = records.leaves.find((r) => r.date === dateStr);
-    if (leave)
+    const holiday = holidayByDate.get(dateStr);
+    if (holiday)
       return {
-        type: "leave",
-        label: "Leave",
-        leave,
-        color: theme.palette.warning.main,
-        bg: alpha(theme.palette.warning.main, 0.1),
+        type: "holiday",
+        label: holiday.name || "Holiday",
+        color: theme.palette.info.main,
+        bg: alpha(theme.palette.info.main, 0.12),
       };
+
+    if (!isWorkingDay(dateStr))
+      return {
+        type: "off",
+        label: "Off",
+        color: theme.palette.text.secondary,
+        bg: alpha(theme.palette.text.secondary, 0.08),
+      };
+
+    const leave = records.leaves.find((r) => r.date === dateStr);
+    if (leave) {
+      const status = String(leave.status || "pending").toLowerCase();
+      const approved = status === "approved";
+      const rejected = status === "rejected";
+      return {
+        type: approved
+          ? "leave"
+          : rejected
+          ? "leave_rejected"
+          : "leave_pending",
+        label: approved
+          ? leave.day_part && leave.day_part !== "full"
+            ? "Half Leave"
+            : "Leave"
+          : rejected
+          ? "Leave (Rejected)"
+          : "Leave (Pending)",
+        leave,
+        color: approved
+          ? theme.palette.warning.main
+          : rejected
+          ? theme.palette.error.main
+          : theme.palette.text.secondary,
+        bg: approved
+          ? alpha(theme.palette.warning.main, 0.1)
+          : rejected
+          ? alpha(theme.palette.error.main, 0.1)
+          : alpha(theme.palette.text.secondary, 0.08),
+      };
+    }
 
     if (dateStr < todayStr)
       return {
@@ -900,34 +973,86 @@ function AttendanceDialog({
     const leave = records.leaves.find((r) => r.date === selectedDate) || null;
     setLeaveForm({
       reason: (leave?.reason ?? "") || "",
-      status: (leave?.status ?? "approved") || "approved",
+      status: (leave?.status ?? "pending") || "pending",
+      leave_type: (leave?.leave_type ?? "casual") || "casual",
+      day_part: (leave?.day_part ?? "full") || "full",
     });
     setLeaveError("");
     setLeaveOk("");
   }, [records.leaves, selectedDate]);
 
-  const saveLeave = async () => {
+  useEffect(() => {
+    if (!selectedDate) return;
+    setApplyForm((prev) => ({
+      ...prev,
+      start_date: selectedDate,
+      end_date: selectedDate,
+    }));
+  }, [selectedDate]);
+
+  const workingDaysSet = (() => {
+    const raw = String(records.working_days || "");
+    const parts = raw
+      ? raw.split(",").map((p) => p.trim())
+      : ["Mon", "Tue", "Wed", "Thu", "Fri"];
+    const set = new Set(parts.filter(Boolean).map((p) => p.toLowerCase()));
+    return set;
+  })();
+
+  const holidayByDate = (() => {
+    const m = new Map<string, HolidayRecord>();
+    for (const h of records.holidays || []) {
+      if (!h?.date) continue;
+      m.set(h.date, h);
+    }
+    return m;
+  })();
+
+  const isWorkingDay = (dateStr: string): boolean => {
+    const dt = new Date(`${dateStr}T00:00:00`);
+    const dow = dt
+      .toLocaleDateString("en-US", { weekday: "short" })
+      .toLowerCase();
+    return workingDaysSet.has(dow);
+  };
+
+  const notifyAttendanceUpdated = () => {
+    window.dispatchEvent(new Event("attendance:updated"));
+    if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+      const bc = new BroadcastChannel("attendance");
+      bc.postMessage({ type: "updated" });
+      bc.close();
+    }
+  };
+
+  const saveLeave = async (statusOverride?: string) => {
     if (!selectedDate) return;
     setLeaveBusy(true);
     setLeaveError("");
     setLeaveOk("");
     try {
+      const status = statusOverride ?? leaveForm.status;
       if (selectedLeave?.id) {
         await api.post("/api/leaves/update", {
           id: selectedLeave.id,
           reason: leaveForm.reason,
-          status: leaveForm.status,
+          status,
+          leave_type: leaveForm.leave_type,
+          day_part: leaveForm.day_part,
         });
       } else {
         await api.post("/api/leaves", {
           employee_id: employee.id,
           date: selectedDate,
           reason: leaveForm.reason,
-          status: leaveForm.status,
+          status,
+          leave_type: leaveForm.leave_type,
+          day_part: leaveForm.day_part,
         });
       }
       setLeaveOk("Saved");
       await fetchData();
+      notifyAttendanceUpdated();
     } catch (err: unknown) {
       setLeaveError(getErrorMessage(err, "Failed to save leave"));
     } finally {
@@ -945,8 +1070,38 @@ function AttendanceDialog({
       await api.post("/api/leaves/delete", { id: selectedLeave.id });
       setLeaveOk("Deleted");
       await fetchData();
+      notifyAttendanceUpdated();
     } catch (err: unknown) {
       setLeaveError(getErrorMessage(err, "Failed to delete leave"));
+    } finally {
+      setLeaveBusy(false);
+    }
+  };
+
+  const applyLeaveRange = async () => {
+    if (!applyForm.start_date || !applyForm.end_date) return;
+    setLeaveBusy(true);
+    setLeaveError("");
+    setLeaveOk("");
+    try {
+      await api.post("/api/leaves/apply", {
+        employee_id: employee.id,
+        start_date: applyForm.start_date,
+        end_date: applyForm.end_date,
+        leave_type: applyForm.leave_type,
+        day_part:
+          applyForm.start_date === applyForm.end_date
+            ? applyForm.day_part
+            : "full",
+        reason: applyForm.reason,
+        status: "pending",
+      });
+      setLeaveOk("Applied");
+      setApplyOpen(false);
+      await fetchData();
+      notifyAttendanceUpdated();
+    } catch (err: unknown) {
+      setLeaveError(getErrorMessage(err, "Failed to apply leave"));
     } finally {
       setLeaveBusy(false);
     }
@@ -1018,9 +1173,18 @@ function AttendanceDialog({
                 year: "numeric",
               })}
             </Typography>
-            <IconButton onClick={handleNextMonth}>
-              <ChevronRight />
-            </IconButton>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setApplyOpen(true)}
+              >
+                Apply Leave
+              </Button>
+              <IconButton onClick={handleNextMonth}>
+                <ChevronRight />
+              </IconButton>
+            </Stack>
           </Box>
 
           {error && (
@@ -1257,7 +1421,11 @@ function AttendanceDialog({
             />
             {selectedLeave ? (
               <Chip
-                label={`Leave: ${selectedLeave.reason || "—"}`}
+                label={`Leave: ${(
+                  selectedLeave.leave_type || "leave"
+                ).toString()} • ${(
+                  selectedLeave.day_part || "full"
+                ).toString()}`}
                 color="info"
                 variant="outlined"
               />
@@ -1287,6 +1455,45 @@ function AttendanceDialog({
             }}
           >
             <Stack spacing={1.5}>
+              {selectedLeave?.id &&
+              (role === "manager" ||
+                role === "hr_admin" ||
+                role === "tenant_owner") ? (
+                <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
+                  {String(selectedLeave.status || "").toLowerCase() ===
+                  "pending" ? (
+                    <>
+                      <Button
+                        variant="contained"
+                        onClick={() => {
+                          setLeaveForm((prev) => ({
+                            ...prev,
+                            status: "approved",
+                          }));
+                          void saveLeave("approved");
+                        }}
+                        disabled={leaveBusy}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        color="error"
+                        variant="outlined"
+                        onClick={() => {
+                          setLeaveForm((prev) => ({
+                            ...prev,
+                            status: "rejected",
+                          }));
+                          void saveLeave("rejected");
+                        }}
+                        disabled={leaveBusy}
+                      >
+                        Reject
+                      </Button>
+                    </>
+                  ) : null}
+                </Stack>
+              ) : null}
               <TextField
                 label="Leave Reason"
                 value={leaveForm.reason}
@@ -1302,7 +1509,50 @@ function AttendanceDialog({
                   setLeaveForm((prev) => ({ ...prev, status: e.target.value }))
                 }
                 fullWidth
-              />
+                select
+              >
+                {["pending", "approved", "rejected"].map((s) => (
+                  <MenuItem key={s} value={s}>
+                    {s}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                label="Leave Type"
+                value={leaveForm.leave_type}
+                onChange={(e) =>
+                  setLeaveForm((prev) => ({
+                    ...prev,
+                    leave_type: e.target.value,
+                  }))
+                }
+                fullWidth
+                select
+              >
+                {["casual", "sick", "annual", "unpaid"].map((t) => (
+                  <MenuItem key={t} value={t}>
+                    {t}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                label="Day Part"
+                value={leaveForm.day_part}
+                onChange={(e) =>
+                  setLeaveForm((prev) => ({
+                    ...prev,
+                    day_part: e.target.value,
+                  }))
+                }
+                fullWidth
+                select
+              >
+                {["full", "am", "pm"].map((p) => (
+                  <MenuItem key={p} value={p}>
+                    {p}
+                  </MenuItem>
+                ))}
+              </TextField>
               <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
                 <Button
                   variant="contained"
@@ -1389,6 +1639,108 @@ function AttendanceDialog({
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDayDetails}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={applyOpen}
+        onClose={() => setApplyOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ display: "flex", justifyContent: "space-between" }}>
+          <Typography variant="h6" fontWeight={800}>
+            Apply Leave
+          </Typography>
+          <IconButton onClick={() => setApplyOpen(false)}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1.5}>
+            <TextField
+              label="Start"
+              type="date"
+              value={applyForm.start_date}
+              onChange={(e) =>
+                setApplyForm((p) => ({ ...p, start_date: e.target.value }))
+              }
+              InputLabelProps={{ shrink: true }}
+              fullWidth
+            />
+            <TextField
+              label="End"
+              type="date"
+              value={applyForm.end_date}
+              onChange={(e) =>
+                setApplyForm((p) => ({ ...p, end_date: e.target.value }))
+              }
+              InputLabelProps={{ shrink: true }}
+              fullWidth
+            />
+            <TextField
+              label="Leave Type"
+              value={applyForm.leave_type}
+              onChange={(e) =>
+                setApplyForm((p) => ({ ...p, leave_type: e.target.value }))
+              }
+              fullWidth
+              select
+            >
+              {["casual", "sick", "annual", "unpaid"].map((t) => (
+                <MenuItem key={t} value={t}>
+                  {t}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Day Part"
+              value={
+                applyForm.start_date &&
+                applyForm.end_date &&
+                applyForm.start_date !== applyForm.end_date
+                  ? "full"
+                  : applyForm.day_part
+              }
+              onChange={(e) =>
+                setApplyForm((p) => ({ ...p, day_part: e.target.value }))
+              }
+              fullWidth
+              select
+              disabled={
+                !!applyForm.start_date &&
+                !!applyForm.end_date &&
+                applyForm.start_date !== applyForm.end_date
+              }
+            >
+              {["full", "am", "pm"].map((p) => (
+                <MenuItem key={p} value={p}>
+                  {p}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              label="Reason"
+              value={applyForm.reason}
+              onChange={(e) =>
+                setApplyForm((p) => ({ ...p, reason: e.target.value }))
+              }
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setApplyOpen(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void applyLeaveRange()}
+            disabled={leaveBusy}
+          >
+            {leaveBusy ? "Applying..." : "Apply"}
+          </Button>
         </DialogActions>
       </Dialog>
     </Dialog>

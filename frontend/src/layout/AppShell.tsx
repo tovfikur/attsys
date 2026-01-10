@@ -34,6 +34,7 @@ import {
   ApartmentRounded,
   DashboardRounded,
   DevicesRounded,
+  EventNoteRounded,
   LogoutRounded,
   MenuRounded,
   PeopleAltRounded,
@@ -62,6 +63,7 @@ const navItems: NavItem[] = [
   { label: "Employees", to: "/employees", icon: <PeopleAltRounded /> },
   { label: "Clock", to: "/clock", icon: <AccessTimeRounded /> },
   { label: "Attendance", to: "/attendance", icon: <QueryStatsRounded /> },
+  { label: "Leaves", to: "/leaves", icon: <EventNoteRounded /> },
   {
     label: "Shifts",
     to: "/shifts",
@@ -137,6 +139,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (location.pathname.startsWith("/employees")) return "Employees";
     if (location.pathname.startsWith("/clock")) return "Clock";
     if (location.pathname.startsWith("/attendance")) return "Attendance";
+    if (location.pathname.startsWith("/leaves")) return "Leaves";
     if (location.pathname.startsWith("/devices")) return "Devices";
     if (location.pathname.startsWith("/sites")) return "Sites";
     return role === "superadmin" ? "Super Admin" : "Workspace";

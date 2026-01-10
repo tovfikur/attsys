@@ -74,9 +74,31 @@ class Auth
 
         $builtin = [
             'tenant_owner' => ['*'],
-            'hr_admin' => ['employees.read', 'employees.write', 'attendance.read', 'attendance.write', 'attendance.clock', 'devices.manage', 'sites.manage'],
-            'manager' => ['employees.read', 'attendance.read'],
-            'employee' => ['attendance.clock', 'attendance.read'],
+            'hr_admin' => [
+                'employees.read',
+                'employees.write',
+                'attendance.read',
+                'attendance.write',
+                'attendance.clock',
+                'devices.manage',
+                'sites.manage',
+                'leaves.read',
+                'leaves.apply',
+                'leaves.approve',
+                'leaves.manage',
+            ],
+            'manager' => [
+                'employees.read',
+                'attendance.read',
+                'leaves.read',
+                'leaves.approve',
+            ],
+            'employee' => [
+                'attendance.clock',
+                'attendance.read',
+                'leaves.read',
+                'leaves.apply',
+            ],
         ];
 
         $roleName = (string)($user['role'] ?? '');

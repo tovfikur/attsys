@@ -41,10 +41,13 @@ class EmployeesStore
             $user = Auth::currentUser() ?? [];
             $role = $user['role'] ?? null;
             if ($role === 'superadmin') {
-                $stmt = $pdo->query('SELECT id, tenant_id, name, code, status, created_at FROM employees ORDER BY id DESC');
+                $stmt = $pdo->query('SELECT e.id, e.tenant_id, e.shift_id, s.name AS shift_name, s.working_days, e.name, e.code, e.status, e.created_at FROM employees e JOIN shifts s ON s.id = e.shift_id ORDER BY e.id DESC');
                 return array_map(fn($r) => [
                     'id' => (string)$r['id'],
                     'tenant_id' => (string)$r['tenant_id'],
+                    'shift_id' => (string)($r['shift_id'] ?? ''),
+                    'shift_name' => (string)($r['shift_name'] ?? ''),
+                    'working_days' => (string)($r['working_days'] ?? ''),
                     'name' => $r['name'],
                     'code' => $r['code'],
                     'status' => $r['status'],
@@ -64,11 +67,14 @@ class EmployeesStore
             }
             if (!$tenantId) return [];
 
-            $stmt = $pdo->prepare('SELECT id, tenant_id, name, code, status, created_at FROM employees WHERE tenant_id=? ORDER BY id DESC');
+            $stmt = $pdo->prepare('SELECT e.id, e.tenant_id, e.shift_id, s.name AS shift_name, s.working_days, e.name, e.code, e.status, e.created_at FROM employees e JOIN shifts s ON s.id = e.shift_id WHERE e.tenant_id=? ORDER BY e.id DESC');
             $stmt->execute([(int)$tenantId]);
             return array_map(fn($r) => [
                 'id' => (string)$r['id'],
                 'tenant_id' => (string)$r['tenant_id'],
+                'shift_id' => (string)($r['shift_id'] ?? ''),
+                'shift_name' => (string)($r['shift_name'] ?? ''),
+                'working_days' => (string)($r['working_days'] ?? ''),
                 'name' => $r['name'],
                 'code' => $r['code'],
                 'status' => $r['status'],
@@ -131,9 +137,15 @@ class EmployeesStore
 
             $stmt = $pdo->prepare('INSERT INTO employees (tenant_id, shift_id, name, code, status) VALUES (?, ?, ?, ?, ?)');
             $stmt->execute([(int)$tenantId, (int)$shiftId, $name, $code, 'active']);
+            $shiftInfoStmt = $pdo->prepare('SELECT name, working_days FROM shifts WHERE tenant_id=? AND id=? LIMIT 1');
+            $shiftInfoStmt->execute([(int)$tenantId, (int)$shiftId]);
+            $shiftInfo = $shiftInfoStmt->fetch(\PDO::FETCH_ASSOC) ?: [];
             return [
                 'id' => (string)$pdo->lastInsertId(),
                 'tenant_id' => (string)$tenantId,
+                'shift_id' => (string)$shiftId,
+                'shift_name' => (string)($shiftInfo['name'] ?? ''),
+                'working_days' => (string)($shiftInfo['working_days'] ?? ''),
                 'name' => $name,
                 'code' => $code,
                 'status' => 'active',

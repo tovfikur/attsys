@@ -11,6 +11,7 @@ import DeviceEvents from "./DeviceEvents";
 import DeviceIngestTest from "./DeviceIngestTest";
 import Sites from "./Sites";
 import Shifts from "./Shifts";
+import Leaves from "./Leaves";
 import AppShell from "./layout/AppShell";
 import "./App.css";
 import { getToken } from "./utils/session";
@@ -70,6 +71,14 @@ function App() {
           element={
             <PrivateRoute>
               <Attendance />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/leaves"
+          element={
+            <PrivateRoute>
+              <Leaves />
             </PrivateRoute>
           }
         />

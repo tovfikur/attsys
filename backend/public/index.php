@@ -96,10 +96,17 @@ $router->postAuth('/api/employees/update', ['App\Controller\EmployeeController',
 $router->postAuth('/api/employees/delete', ['App\Controller\EmployeeController', 'delete'], 'perm:employees.write');
 
 // Leaves
-$router->getAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesList'], 'perm:employees.read');
-$router->postAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesCreate'], 'perm:employees.write');
-$router->postAuth('/api/leaves/update', ['App\Controller\AttendanceController', 'leavesUpdate'], 'perm:employees.write');
-$router->postAuth('/api/leaves/delete', ['App\Controller\AttendanceController', 'leavesDelete'], 'perm:employees.write');
+$router->getAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesList'], 'perm:leaves.read');
+$router->postAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesCreate'], 'perm:leaves.manage');
+$router->postAuth('/api/leaves/apply', ['App\Controller\AttendanceController', 'leavesApply'], 'perm:leaves.apply');
+$router->postAuth('/api/leaves/update', ['App\Controller\AttendanceController', 'leavesUpdate'], 'perm:leaves.approve');
+$router->postAuth('/api/leaves/delete', ['App\Controller\AttendanceController', 'leavesDelete'], 'perm:leaves.manage');
+
+// Holidays
+$router->getAuth('/api/holidays', ['App\Controller\AttendanceController', 'holidaysList'], 'perm:attendance.read');
+$router->postAuth('/api/holidays', ['App\Controller\AttendanceController', 'holidaysCreate'], 'perm:attendance.write');
+$router->postAuth('/api/holidays/update', ['App\Controller\AttendanceController', 'holidaysUpdate'], 'perm:attendance.write');
+$router->postAuth('/api/holidays/delete', ['App\Controller\AttendanceController', 'holidaysDelete'], 'perm:attendance.write');
 
 // Attendance
 $router->getAuth('/api/attendance', ['App\Controller\AttendanceController', 'list'], 'perm:attendance.read');
