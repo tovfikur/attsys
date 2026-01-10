@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hik_device_manager,hik.device.manager,model_hik_device,kio_hik_attendance.group_hik_manager,1,1,1,1
+access_hik_device_user,hik.device.user,model_hik_device,kio_hik_attendance.group_hik_user,1,1,1,1
+access_hik_log_manager,hik.attendance.log.manager,model_hik_attendance_log,kio_hik_attendance.group_hik_manager,1,1,1,1
+access_hik_log_user,hik.attendance.log.user,model_hik_attendance_log,kio_hik_attendance.group_hik_user,1,1,1,1

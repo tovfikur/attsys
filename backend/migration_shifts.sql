@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS shifts (
     end_time TIME NOT NULL,
     late_tolerance_minutes INT DEFAULT 0,
     early_exit_tolerance_minutes INT DEFAULT 0,
+    break_duration_minutes INT DEFAULT 0,
+    working_days VARCHAR(255) DEFAULT 'Mon,Tue,Wed,Thu,Fri',
     is_default BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE

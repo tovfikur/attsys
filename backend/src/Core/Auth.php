@@ -74,7 +74,7 @@ class Auth
 
         $builtin = [
             'tenant_owner' => ['*'],
-            'hr_admin' => ['employees.read', 'employees.write', 'attendance.read', 'attendance.write', 'attendance.clock'],
+            'hr_admin' => ['employees.read', 'employees.write', 'attendance.read', 'attendance.write', 'attendance.clock', 'devices.manage', 'sites.manage'],
             'manager' => ['employees.read', 'attendance.read'],
             'employee' => ['attendance.clock', 'attendance.read'],
         ];

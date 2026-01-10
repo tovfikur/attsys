@@ -1,0 +1,13 @@
+<odoo>
+    <record id="ir_cron_hik_download" model="ir.cron">
+        <field name="name">Hik-Connect Auto Download</field>
+        <field name="model_id" ref="model_hik_device"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_download_all_devices()</field>
+        <field name="interval_type">hours</field>
+        <field name="interval_number">1</field>
+        <field name="active">True</field>
+    </record>
+
+
+</odoo>

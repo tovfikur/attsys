@@ -73,9 +73,14 @@ $router->postAuth('/api/tenant_users/reset_password', ['App\Controller\TenantUse
 $router->getAuth('/api/audit', ['App\Controller\AuditController', 'list'], 'superadmin');
 $router->getAuth('/api/devices', ['App\Controller\DeviceController', 'list'], 'perm:devices.manage');
 $router->postAuth('/api/devices/register', ['App\Controller\DeviceController', 'register'], 'perm:devices.manage');
+$router->postAuth('/api/devices/update', ['App\Controller\DeviceController', 'update'], 'perm:devices.manage');
 $router->post('/api/devices/ingest', ['App\Controller\DeviceController', 'ingest']);
 $router->postAuth('/api/devices/status', ['App\Controller\DeviceController', 'setStatus'], 'perm:devices.manage');
 $router->getAuth('/api/devices/events', ['App\Controller\DeviceController', 'events'], 'perm:devices.manage');
+$router->getAuth('/api/devices/hik/config', ['App\Controller\DeviceController', 'getHikConfig'], 'perm:devices.manage');
+$router->postAuth('/api/devices/hik/config', ['App\Controller\DeviceController', 'setHikConfig'], 'perm:devices.manage');
+$router->postAuth('/api/devices/hik/test', ['App\Controller\DeviceController', 'testHikConnection'], 'perm:devices.manage');
+$router->postAuth('/api/devices/hik/sync', ['App\Controller\DeviceController', 'syncHikLogs'], 'perm:devices.manage');
 $router->getAuth('/api/sites', ['App\Controller\SiteController', 'list'], 'perm:sites.manage');
 $router->postAuth('/api/sites', ['App\Controller\SiteController', 'create'], 'perm:sites.manage');
 
@@ -85,12 +90,15 @@ $router->postAuth('/api/tenants', ['App\Controller\TenantController', 'create'],
 
 // Employees
 $router->getAuth('/api/employees', ['App\Controller\EmployeeController', 'list'], 'perm:employees.read');
+$router->getAuth('/api/employees/device_sync_ids', ['App\Controller\EmployeeController', 'deviceSyncIds'], 'perm:employees.read');
 $router->postAuth('/api/employees', ['App\Controller\EmployeeController', 'create'], 'perm:employees.write');
 $router->postAuth('/api/employees/update', ['App\Controller\EmployeeController', 'update'], 'perm:employees.write');
 $router->postAuth('/api/employees/delete', ['App\Controller\EmployeeController', 'delete'], 'perm:employees.write');
 
 // Attendance
 $router->getAuth('/api/attendance', ['App\Controller\AttendanceController', 'list'], 'perm:attendance.read');
+$router->getAuth('/api/attendance/dashboard', ['App\Controller\AttendanceController', 'dashboard'], 'perm:attendance.read');
+$router->getAuth('/api/attendance/days', ['App\Controller\AttendanceController', 'days'], 'perm:attendance.read');
 $router->getAuth('/api/attendance/employee', ['App\Controller\AttendanceController', 'employeeStats'], 'perm:attendance.read');
 $router->getAuth('/api/attendance/open', ['App\Controller\AttendanceController', 'openShift'], 'perm:attendance.clock');
 $router->postAuth('/api/attendance/clockin', ['App\Controller\AttendanceController', 'clockIn'], 'perm:attendance.clock');

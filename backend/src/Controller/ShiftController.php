@@ -256,6 +256,15 @@ class ShiftController
                 return;
             }
 
+            $inUseStmt = $pdo->prepare("SELECT COUNT(*) FROM employees WHERE tenant_id = ? AND shift_id = ?");
+            $inUseStmt->execute([$tenantId, $id]);
+            $inUse = (int)$inUseStmt->fetchColumn();
+            if ($inUse > 0) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Shift is assigned to employees']);
+                return;
+            }
+
             $pdo->prepare("DELETE FROM shifts WHERE id = ?")->execute([$id]);
             echo json_encode(['message' => 'Shift deleted']);
             return;

@@ -100,6 +100,38 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+INSERT INTO shifts (tenant_id, name, start_time, end_time, late_tolerance_minutes, early_exit_tolerance_minutes, break_duration_minutes, working_days, is_default)
+SELECT t.id, 'Standard Shift', '09:00:00', '17:00:00', 15, 15, 0, 'Mon,Tue,Wed,Thu,Fri', 1
+FROM tenants t
+WHERE NOT EXISTS (
+  SELECT 1 FROM shifts s WHERE s.tenant_id = t.id AND s.is_default = 1
+);
+
+UPDATE employees e
+JOIN shifts s ON s.tenant_id = e.tenant_id AND s.is_default = 1
+SET e.shift_id = s.id
+WHERE e.shift_id IS NULL;
+
+SET @null_shift := (SELECT COUNT(*) FROM employees WHERE shift_id IS NULL);
+SET @sql := IF(@null_shift = 0, 'ALTER TABLE employees MODIFY shift_id INT NOT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @fk_name := (
+  SELECT CONSTRAINT_NAME
+  FROM information_schema.key_column_usage
+  WHERE table_schema = DATABASE()
+    AND table_name = 'employees'
+    AND column_name = 'shift_id'
+    AND referenced_table_name = 'shifts'
+  LIMIT 1
+);
+SET @sql := IF(@fk_name IS NOT NULL, CONCAT('ALTER TABLE employees DROP FOREIGN KEY `', REPLACE(@fk_name, '`', ''), '`'), 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 SET @fk_employee_shift_exists := (
   SELECT COUNT(*)
   FROM information_schema.key_column_usage
@@ -108,7 +140,7 @@ SET @fk_employee_shift_exists := (
     AND column_name = 'shift_id'
     AND referenced_table_name = 'shifts'
 );
-SET @sql := IF(@fk_employee_shift_exists = 0, 'ALTER TABLE employees ADD CONSTRAINT fk_employee_shift FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE SET NULL', 'SELECT 1');
+SET @sql := IF(@fk_employee_shift_exists = 0, 'ALTER TABLE employees ADD CONSTRAINT fk_employee_shift FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE RESTRICT', 'SELECT 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;

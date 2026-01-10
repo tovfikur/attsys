@@ -13,10 +13,9 @@ INSERT INTO roles (name, permissions) VALUES
 ON DUPLICATE KEY UPDATE permissions=VALUES(permissions);
 
 INSERT INTO roles (name, permissions) VALUES
-('hr_admin', JSON_ARRAY('employees.read','employees.write','attendance.read'))
+('hr_admin', JSON_ARRAY('employees.read','employees.write','attendance.read','devices.manage','sites.manage'))
 ON DUPLICATE KEY UPDATE permissions=VALUES(permissions);
 
 INSERT INTO roles (name, permissions) VALUES
 ('manager', JSON_ARRAY('employees.read','attendance.read'))
 ON DUPLICATE KEY UPDATE permissions=VALUES(permissions);
-

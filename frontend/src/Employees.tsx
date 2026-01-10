@@ -31,6 +31,7 @@ import {
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
+  Edit as EditIcon,
   ChevronLeft,
   ChevronRight,
   Close as CloseIcon,
@@ -45,10 +46,19 @@ interface Employee {
   created_at: string;
 }
 
+interface Device {
+  device_id: string;
+  site_name: string;
+  type: string;
+  status: string;
+}
+
 interface AttendanceRecord {
+  id?: string | number;
   date: string; // YYYY-MM-DD
   clock_in: string;
   clock_out: string | null;
+  duration_minutes?: number;
 }
 
 interface LeaveRecord {
@@ -65,6 +75,7 @@ export default function Employees() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
     null
   );
+  const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
 
   const loadEmployees = async () => {
     try {
@@ -247,6 +258,22 @@ export default function Employees() {
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
+                      <Tooltip title="Edit Employee">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditEmployee(emp);
+                          }}
+                          sx={{
+                            opacity: 0.6,
+                            "&:hover": { opacity: 1, bgcolor: "action.hover" },
+                            mr: 0.5,
+                          }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="Delete Employee">
                         <IconButton
                           size="small"
@@ -284,6 +311,18 @@ export default function Employees() {
           open={!!selectedEmployee}
           employee={selectedEmployee}
           onClose={() => setSelectedEmployee(null)}
+        />
+      )}
+
+      {editEmployee && (
+        <EditEmployeeDialog
+          open={!!editEmployee}
+          employee={editEmployee}
+          onClose={() => setEditEmployee(null)}
+          onSuccess={() => {
+            setEditEmployee(null);
+            loadEmployees();
+          }}
         />
       )}
     </Container>
@@ -392,6 +431,220 @@ function CreateEmployeeDialog({
   );
 }
 
+function EditEmployeeDialog({
+  open,
+  employee,
+  onClose,
+  onSuccess,
+}: {
+  open: boolean;
+  employee: Employee;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: employee.name,
+    code: employee.code,
+    status: employee.status,
+  });
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [deviceSyncIds, setDeviceSyncIds] = useState<Record<string, string>>(
+    {}
+  );
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+
+    setForm({
+      name: employee.name,
+      code: employee.code,
+      status: employee.status,
+    });
+    setError("");
+    setOk("");
+
+    const run = async () => {
+      setLoading(true);
+      try {
+        const [dRes, sRes] = await Promise.all([
+          api.get("/api/devices"),
+          api.get(
+            `/api/employees/device_sync_ids?employee_id=${encodeURIComponent(
+              employee.id
+            )}`
+          ),
+        ]);
+
+        const list = (dRes.data?.devices || []) as Device[];
+        setDevices(list);
+
+        const next: Record<string, string> = {};
+        const existing = (sRes.data?.device_sync_ids || []) as {
+          device_id: string;
+          device_employee_id: string;
+        }[];
+        for (const row of existing) {
+          if (row?.device_id)
+            next[row.device_id] = row.device_employee_id || "";
+        }
+        setDeviceSyncIds(next);
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, "Failed to load sync IDs"));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void run();
+  }, [employee.code, employee.id, employee.name, employee.status, open]);
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    setOk("");
+    try {
+      const device_sync_ids = Object.entries(deviceSyncIds)
+        .map(([device_id, device_employee_id]) => ({
+          device_id,
+          device_employee_id: device_employee_id.trim(),
+        }))
+        .filter((x) => x.device_id && x.device_employee_id);
+
+      await api.post("/api/employees/update", {
+        id: employee.id,
+        name: form.name,
+        code: form.code,
+        status: form.status,
+        device_sync_ids,
+      });
+
+      setOk("Saved");
+      onSuccess();
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to save employee"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const devicesSorted = [...devices].sort((a, b) =>
+    String(a.device_id || "").localeCompare(String(b.device_id || ""))
+  );
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: 3 } }}
+    >
+      <DialogTitle
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          pb: 1,
+        }}
+      >
+        <Typography variant="h6" fontWeight={700}>
+          Edit Employee
+        </Typography>
+        <IconButton onClick={onClose} size="small">
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+      <DialogContent dividers>
+        <Box display="flex" flexDirection="column" gap={2} pt={1}>
+          {error && <Alert severity="error">{error}</Alert>}
+          {ok && <Alert severity="success">{ok}</Alert>}
+          <TextField
+            label="Full Name"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            required
+            fullWidth
+          />
+          <TextField
+            label="Employee Code"
+            value={form.code}
+            onChange={(e) => setForm({ ...form, code: e.target.value })}
+            required
+            fullWidth
+          />
+          <TextField
+            label="Status"
+            value={form.status}
+            onChange={(e) => setForm({ ...form, status: e.target.value })}
+            fullWidth
+          />
+
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+              Per-device Sync IDs
+            </Typography>
+            {loading ? (
+              <Stack direction="row" spacing={1} alignItems="center">
+                <CircularProgress size={18} />
+                <Typography variant="body2" color="text.secondary">
+                  Loading
+                </Typography>
+              </Stack>
+            ) : devicesSorted.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No devices found.
+              </Typography>
+            ) : (
+              <Stack spacing={1.25}>
+                {devicesSorted.map((d) => (
+                  <Stack
+                    key={d.device_id}
+                    direction={{ xs: "column", sm: "row" }}
+                    spacing={1.5}
+                    alignItems={{ xs: "stretch", sm: "center" }}
+                  >
+                    <Box sx={{ minWidth: { sm: 260 } }}>
+                      <Typography variant="body2" fontWeight={700}>
+                        {d.site_name || d.device_id}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {d.device_id}
+                      </Typography>
+                    </Box>
+                    <TextField
+                      label="Device Employee ID"
+                      value={deviceSyncIds[d.device_id] ?? ""}
+                      onChange={(e) =>
+                        setDeviceSyncIds((prev) => ({
+                          ...prev,
+                          [d.device_id]: e.target.value,
+                        }))
+                      }
+                      fullWidth
+                    />
+                  </Stack>
+                ))}
+              </Stack>
+            )}
+          </Box>
+        </Box>
+      </DialogContent>
+      <DialogActions sx={{ p: 3 }}>
+        <Button onClick={onClose} color="inherit" sx={{ mr: 1 }}>
+          Cancel
+        </Button>
+        <Button variant="contained" onClick={submit} disabled={busy || loading}>
+          {busy ? "Saving..." : "Save"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 // --- Attendance Calendar Dialog ---
 function AttendanceDialog({
   open,
@@ -409,6 +662,7 @@ function AttendanceDialog({
   }>({ attendance: [], leaves: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const theme = useTheme();
   const lastRefreshAtRef = useRef(0);
 
@@ -495,19 +749,91 @@ function AttendanceDialog({
     return value;
   };
 
+  const toMs = (value: string | null | undefined): number | null => {
+    if (!value) return null;
+    const normalized = value.includes(" ") ? value.replace(" ", "T") : value;
+    const ms = Date.parse(normalized);
+    return Number.isFinite(ms) ? ms : null;
+  };
+
+  const formatMinutes = (minutes: number): string => {
+    const safe = Math.max(0, Math.floor(minutes));
+    const h = Math.floor(safe / 60);
+    const m = safe % 60;
+    return `${h}h ${String(m).padStart(2, "0")}m`;
+  };
+
+  const formatDateLabel = (dateStr: string) => {
+    const [y, m, d] = dateStr.split("-").map((v) => Number(v));
+    if (!y || !m || !d) return dateStr;
+    return new Date(y, m - 1, d).toLocaleDateString("default", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  const getAttendanceForDate = (dateStr: string) =>
+    records.attendance
+      .filter((r) => r.date === dateStr)
+      .slice()
+      .sort((a, b) => String(a.clock_in).localeCompare(String(b.clock_in)));
+
+  const getDaySummary = (dayAttendance: AttendanceRecord[]) => {
+    if (dayAttendance.length === 0) {
+      return {
+        firstIn: null as string | null,
+        lastOut: null as string | null,
+        totalMinutes: 0,
+        spanMinutes: 0,
+      };
+    }
+
+    const firstIn = dayAttendance[0]?.clock_in ?? null;
+
+    let lastOut: string | null = null;
+    for (const r of dayAttendance) {
+      if (!r.clock_out) continue;
+      if (!lastOut || String(r.clock_out) > String(lastOut))
+        lastOut = r.clock_out;
+    }
+
+    const totalMinutes = dayAttendance.reduce((sum, r) => {
+      if (typeof r.duration_minutes === "number")
+        return sum + Math.max(0, r.duration_minutes);
+      const inMs = toMs(r.clock_in);
+      const outMs = toMs(r.clock_out);
+      if (inMs == null || outMs == null) return sum;
+      return sum + Math.max(0, Math.floor((outMs - inMs) / 60_000));
+    }, 0);
+
+    const firstMs = toMs(firstIn);
+    const lastMs = toMs(lastOut);
+    const spanMinutes =
+      firstMs != null && lastMs != null
+        ? Math.max(0, Math.floor((lastMs - firstMs) / 60_000))
+        : 0;
+
+    return { firstIn, lastOut, totalMinutes, spanMinutes };
+  };
+
   const getDayStatus = (day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(
       day
     ).padStart(2, "0")}`;
-    const attendance = records.attendance.find((r) => r.date === dateStr);
-    if (attendance)
+    const dayAttendance = getAttendanceForDate(dateStr);
+    if (dayAttendance.length > 0) {
+      const summary = getDaySummary(dayAttendance);
       return {
         type: "present",
         label: "Present",
-        attendance,
+        attendance: dayAttendance[0],
+        firstIn: summary.firstIn,
+        lastOut: summary.lastOut,
         color: theme.palette.success.main,
         bg: alpha(theme.palette.success.main, 0.1),
       };
+    }
 
     const leave = records.leaves.find((r) => r.date === dateStr);
     if (leave)
@@ -534,6 +860,26 @@ function AttendanceDialog({
       bg: "transparent",
     };
   };
+
+  const openDayDetails = (day: number) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+      day
+    ).padStart(2, "0")}`;
+    setSelectedDate(dateStr);
+  };
+
+  const closeDayDetails = () => setSelectedDate(null);
+
+  const selectedAttendance = selectedDate
+    ? getAttendanceForDate(selectedDate)
+    : [];
+  const selectedLeave = selectedDate
+    ? records.leaves.find((r) => r.date === selectedDate) || null
+    : null;
+  const selectedCheckoutCount = selectedAttendance.filter(
+    (r) => !!r.clock_out
+  ).length;
+  const selectedSummary = getDaySummary(selectedAttendance);
 
   return (
     <Dialog
@@ -657,6 +1003,7 @@ function AttendanceDialog({
                     <Box key={day}>
                       <Paper
                         elevation={0}
+                        onClick={() => openDayDetails(day)}
                         sx={{
                           height: 96,
                           display: "flex",
@@ -671,7 +1018,7 @@ function AttendanceDialog({
                               : status.color,
                           borderRadius: 2,
                           transition: "transform 0.2s",
-                          cursor: "default",
+                          cursor: "pointer",
                           "&:hover": { transform: "scale(1.05)", boxShadow: 2 },
                         }}
                       >
@@ -701,15 +1048,18 @@ function AttendanceDialog({
                               fontWeight={700}
                               sx={{ color: theme.palette.success.main }}
                             >
-                              In {formatTime(status.attendance.clock_in)}
+                              In{" "}
+                              {formatTime(
+                                status.firstIn ?? status.attendance.clock_in
+                              )}
                             </Typography>
-                            {status.attendance.clock_out ? (
+                            {"lastOut" in status && status.lastOut ? (
                               <Typography
                                 variant="caption"
                                 fontWeight={700}
                                 sx={{ color: theme.palette.success.main }}
                               >
-                                Out {formatTime(status.attendance.clock_out)}
+                                Out {formatTime(status.lastOut)}
                               </Typography>
                             ) : (
                               <Typography
@@ -780,6 +1130,133 @@ function AttendanceDialog({
           </Stack>
         </Box>
       </DialogContent>
+      <Dialog
+        open={!!selectedDate}
+        onClose={closeDayDetails}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Box>
+            <Typography variant="h6" fontWeight={700}>
+              {selectedDate ? formatDateLabel(selectedDate) : ""}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {employee.name}
+            </Typography>
+          </Box>
+          <IconButton onClick={closeDayDetails}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+            <Chip
+              label={`Check-ins: ${selectedAttendance.length}`}
+              color="success"
+              variant="outlined"
+            />
+            <Chip
+              label={`Check-outs: ${selectedCheckoutCount}`}
+              color="warning"
+              variant="outlined"
+            />
+            <Chip
+              label={`First In: ${formatTime(selectedSummary.firstIn)}`}
+              variant="outlined"
+            />
+            <Chip
+              label={`Last Out: ${formatTime(selectedSummary.lastOut)}`}
+              variant="outlined"
+            />
+            <Chip
+              label={`Worked: ${formatMinutes(selectedSummary.totalMinutes)}`}
+              variant="outlined"
+            />
+            <Chip
+              label={`Stay: ${formatMinutes(selectedSummary.spanMinutes)}`}
+              variant="outlined"
+            />
+            {selectedLeave ? (
+              <Chip
+                label={`Leave: ${selectedLeave.reason || "—"}`}
+                color="info"
+                variant="outlined"
+              />
+            ) : null}
+          </Stack>
+
+          <Box mt={2}>
+            {selectedAttendance.length === 0 ? (
+              <Typography color="text.secondary">
+                No check-in/check-out records for this day.
+              </Typography>
+            ) : (
+              <Stack spacing={1.25}>
+                {selectedAttendance.map((r, idx) => (
+                  <Paper
+                    key={String(r.id ?? `${r.date}-${idx}`)}
+                    elevation={0}
+                    sx={{
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 2,
+                      p: 1.5,
+                    }}
+                  >
+                    <Stack
+                      direction="row"
+                      justifyContent="space-between"
+                      alignItems="center"
+                    >
+                      <Typography fontWeight={700}>
+                        Session {idx + 1}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {typeof r.duration_minutes === "number"
+                          ? formatMinutes(r.duration_minutes)
+                          : ""}
+                      </Typography>
+                    </Stack>
+                    <Stack
+                      direction="row"
+                      spacing={2}
+                      mt={0.75}
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
+                      <Chip
+                        size="small"
+                        color="success"
+                        label={`In ${formatTime(r.clock_in)}`}
+                      />
+                      <Chip
+                        size="small"
+                        color={r.clock_out ? "success" : "warning"}
+                        label={
+                          r.clock_out
+                            ? `Out ${formatTime(r.clock_out)}`
+                            : "No checkout"
+                        }
+                      />
+                    </Stack>
+                  </Paper>
+                ))}
+              </Stack>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDayDetails}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 }
