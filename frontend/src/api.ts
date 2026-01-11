@@ -20,7 +20,26 @@ function getRootDomain(): string {
 function getApiBaseUrl(): string {
   const v = (import.meta as unknown as { env?: Record<string, string> }).env
     ?.VITE_API_BASE_URL;
-  return (v || "").trim();
+  const raw = (v || "").trim();
+  if (!raw) return "";
+  if (typeof window === "undefined") return raw;
+
+  const currentHost = (window.location.hostname || "").toLowerCase();
+  const currentIsLocal =
+    currentHost === "localhost" ||
+    isIpHost(currentHost) ||
+    currentHost.endsWith(".localhost");
+
+  try {
+    const u = new URL(raw);
+    const envHost = (u.hostname || "").toLowerCase();
+    const envIsLocal =
+      envHost === "localhost" || envHost === "127.0.0.1" || envHost === "::1";
+    if (envIsLocal && !currentIsLocal) return "";
+    return raw;
+  } catch {
+    return raw;
+  }
 }
 
 const TWO_PART_PUBLIC_SUFFIXES = new Set<string>([

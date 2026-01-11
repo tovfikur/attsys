@@ -5,6 +5,10 @@ const hmrProtocol = process.env.VITE_HMR_PROTOCOL;
 const hmrClientPort = process.env.VITE_HMR_CLIENT_PORT
   ? Number(process.env.VITE_HMR_CLIENT_PORT)
   : undefined;
+const hmrHost = process.env.VITE_HMR_HOST;
+const hmrPort = process.env.VITE_HMR_PORT
+  ? Number(process.env.VITE_HMR_PORT)
+  : undefined;
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -14,11 +18,14 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     allowedHosts: true,
-    hmr: hmrProtocol
-      ? {
-          protocol: hmrProtocol as "ws" | "wss",
-          clientPort: hmrClientPort,
-        }
-      : undefined,
+    hmr:
+      hmrProtocol || hmrClientPort || hmrHost || hmrPort
+        ? {
+            protocol: (hmrProtocol as "ws" | "wss" | undefined) || undefined,
+            clientPort: hmrClientPort,
+            host: hmrHost,
+            port: hmrPort,
+          }
+        : undefined,
   },
 });
