@@ -1,6 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const hmrProtocol = process.env.VITE_HMR_PROTOCOL;
+const hmrClientPort = process.env.VITE_HMR_CLIENT_PORT
+  ? Number(process.env.VITE_HMR_CLIENT_PORT)
+  : undefined;
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -8,10 +13,12 @@ export default defineConfig({
     host: true,
     port: 5173,
     strictPort: false,
-    allowedHosts: ["khudroo.com", ".khudroo.com"],
-    hmr: {
-      clientPort: 443,
-      protocol: "wss",
-    },
+    allowedHosts: true,
+    hmr: hmrProtocol
+      ? {
+          protocol: hmrProtocol as "ws" | "wss",
+          clientPort: hmrClientPort,
+        }
+      : undefined,
   },
 });

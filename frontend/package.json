@@ -9,7 +9,8 @@
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:e2e": "(C:\\\\tools\\\\php\\\\php.exe ..\\\\backend\\\\run_migration.php || echo DB unavailable, skipping migrations) && (C:\\\\tools\\\\php\\\\php.exe ..\\\\backend\\\\update_schema_shifts.php || echo DB unavailable, skipping schema) && playwright test"
+    "test:e2e": "(C:\\\\tools\\\\php\\\\php.exe ..\\\\backend\\\\run_migration.php || echo DB unavailable, skipping migrations) && (C:\\\\tools\\\\php\\\\php.exe ..\\\\backend\\\\update_schema_shifts.php || echo DB unavailable, skipping schema) && playwright test",
+    "test:e2e:docker": "set PLAYWRIGHT_USE_DOCKER=1&& playwright test tests/e2e/docker-superadmin-tenant.spec.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
