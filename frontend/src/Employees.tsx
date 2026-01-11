@@ -34,6 +34,7 @@ import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
+  FingerprintRounded,
   VpnKeyRounded,
   ChevronLeft,
   ChevronRight,
@@ -94,11 +95,14 @@ export default function Employees() {
   );
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
   const [loginEmployee, setLoginEmployee] = useState<Employee | null>(null);
+  const [enrollEmployee, setEnrollEmployee] = useState<Employee | null>(null);
 
   const role = getUser()?.role || "";
-  const canManageEmployeeLogins = ["superadmin", "tenant_owner", "hr_admin"].includes(
-    role
-  );
+  const canManageEmployeeLogins = [
+    "superadmin",
+    "tenant_owner",
+    "hr_admin",
+  ].includes(role);
 
   const loadEmployees = async () => {
     try {
@@ -318,6 +322,22 @@ export default function Employees() {
                           <EditIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      <Tooltip title="Enroll Biometrics">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEnrollEmployee(emp);
+                          }}
+                          sx={{
+                            opacity: 0.6,
+                            "&:hover": { opacity: 1, bgcolor: "action.hover" },
+                            mr: 0.5,
+                          }}
+                        >
+                          <FingerprintRounded fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="Delete Employee">
                         <IconButton
                           size="small"
@@ -375,6 +395,14 @@ export default function Employees() {
           open={!!loginEmployee}
           employee={loginEmployee}
           onClose={() => setLoginEmployee(null)}
+        />
+      )}
+
+      {enrollEmployee && (
+        <EnrollBiometricDialog
+          open={!!enrollEmployee}
+          employee={enrollEmployee}
+          onClose={() => setEnrollEmployee(null)}
         />
       )}
     </Container>
@@ -538,15 +566,302 @@ function EmployeeLoginDialog({
           <Button onClick={onClose} color="inherit">
             Close
           </Button>
-          <Button
-            type="submit"
-            variant="contained"
-            disabled={busy || loading}
-          >
+          <Button type="submit" variant="contained" disabled={busy || loading}>
             {busy ? "Saving…" : "Save"}
           </Button>
         </DialogActions>
       </form>
+    </Dialog>
+  );
+}
+
+function EnrollBiometricDialog({
+  open,
+  employee,
+  onClose,
+}: {
+  open: boolean;
+  employee: Employee;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+  const [modality, setModality] = useState<"face" | "fingerprint">("face");
+  const [image, setImage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const stopCamera = useCallback(() => {
+    const stream = streamRef.current;
+    if (stream) {
+      for (const t of stream.getTracks()) t.stop();
+      streamRef.current = null;
+    }
+    const el = videoRef.current;
+    if (el) el.srcObject = null;
+  }, []);
+
+  const close = useCallback(() => {
+    stopCamera();
+    setBusy(false);
+    setError("");
+    setOk("");
+    setImage("");
+    setModality("face");
+    onClose();
+  }, [onClose, stopCamera]);
+
+  const startCamera = useCallback(async () => {
+    stopCamera();
+    setError("");
+    setOk("");
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setError("Camera not available");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+      });
+      streamRef.current = stream;
+      const el = videoRef.current;
+      if (el) {
+        el.srcObject = stream;
+        await el.play().catch(() => {});
+      }
+    } catch {
+      setError("Failed to start camera");
+    }
+  }, [stopCamera]);
+
+  const captureSelfie = useCallback(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const w = el.videoWidth || 0;
+    const h = el.videoHeight || 0;
+    if (!w || !h) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(el, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    setImage(dataUrl);
+    setError("");
+    setOk("");
+  }, []);
+
+  const onPickFile = useCallback((file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const v = typeof reader.result === "string" ? reader.result : "";
+      setImage(v);
+      setError("");
+      setOk("");
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const submit = useCallback(async () => {
+    if (!image) {
+      setError("Biometric image is required");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setOk("");
+    try {
+      await api.post("/api/biometrics/enroll", {
+        employee_id: employee.id,
+        biometric_modality: modality,
+        biometric_image: image,
+      });
+      setOk(
+        `Enrolled ${modality === "face" ? "face" : "fingerprint"} template`
+      );
+      setImage("");
+      stopCamera();
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to enroll biometrics"));
+    } finally {
+      setBusy(false);
+    }
+  }, [employee.id, image, modality, stopCamera]);
+
+  return (
+    <Dialog
+      open={open}
+      onClose={busy ? undefined : close}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: 3 } }}
+    >
+      <DialogTitle
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          pb: 1,
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="h6" fontWeight={800} noWrap>
+            Enroll Biometrics
+          </Typography>
+          <Typography variant="body2" color="text.secondary" noWrap>
+            {employee.name} • #{employee.id}
+          </Typography>
+        </Box>
+        <IconButton onClick={close} size="small" disabled={busy}>
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+      <DialogContent dividers>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          {error ? (
+            <Alert severity="error" sx={{ borderRadius: 2 }}>
+              {error}
+            </Alert>
+          ) : null}
+          {ok ? (
+            <Alert severity="success" sx={{ borderRadius: 2 }}>
+              {ok}
+            </Alert>
+          ) : null}
+
+          <TextField
+            select
+            label="Modality"
+            value={modality}
+            onChange={(e) => {
+              const next =
+                e.target.value === "fingerprint" ? "fingerprint" : "face";
+              setModality(next);
+              setError("");
+              setOk("");
+              setImage("");
+              stopCamera();
+            }}
+            disabled={busy}
+            fullWidth
+          >
+            <MenuItem value="face">Face</MenuItem>
+            <MenuItem value="fingerprint">Fingerprint</MenuItem>
+          </TextField>
+
+          {modality === "face" ? (
+            <Stack spacing={1.5}>
+              <Box
+                sx={{
+                  borderRadius: 2,
+                  overflow: "hidden",
+                  border: "1px solid",
+                  borderColor: alpha(theme.palette.text.primary, 0.12),
+                  bgcolor: "background.default",
+                  aspectRatio: "16 / 9",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Box
+                  component="video"
+                  ref={videoRef}
+                  muted
+                  playsInline
+                  sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant="outlined"
+                  onClick={() => void startCamera()}
+                  disabled={busy}
+                  sx={{ borderRadius: 2, fontWeight: 900 }}
+                >
+                  Start Camera
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={stopCamera}
+                  disabled={busy}
+                  sx={{ borderRadius: 2, fontWeight: 900 }}
+                >
+                  Stop Camera
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={captureSelfie}
+                  disabled={busy}
+                  sx={{ borderRadius: 2, fontWeight: 900 }}
+                >
+                  Take Selfie
+                </Button>
+                <Button
+                  component="label"
+                  variant="outlined"
+                  disabled={busy}
+                  sx={{ borderRadius: 2, fontWeight: 900 }}
+                >
+                  Upload Image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) => onPickFile(e.target.files?.[0] || null)}
+                  />
+                </Button>
+              </Stack>
+            </Stack>
+          ) : (
+            <Button
+              component="label"
+              variant="outlined"
+              disabled={busy}
+              sx={{ borderRadius: 2, fontWeight: 900 }}
+            >
+              Upload Fingerprint Image
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => onPickFile(e.target.files?.[0] || null)}
+              />
+            </Button>
+          )}
+
+          {image ? (
+            <Box
+              component="img"
+              src={image}
+              alt="Biometric"
+              sx={{
+                width: "100%",
+                borderRadius: 2,
+                border: "1px solid",
+                borderColor: alpha(theme.palette.text.primary, 0.12),
+              }}
+            />
+          ) : null}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ p: 2.5 }}>
+        <Button onClick={close} disabled={busy} color="inherit">
+          Close
+        </Button>
+        <Button
+          variant="contained"
+          onClick={() => void submit()}
+          disabled={busy || !image}
+        >
+          {busy ? "Please wait…" : "Enroll"}
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 }
