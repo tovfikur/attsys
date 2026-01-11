@@ -70,6 +70,8 @@ $router->post('/api/tenant_login', ['App\Controller\AuthController', 'tenantLogi
 $router->post('/api/forgot-password', ['App\Controller\PasswordResetController', 'requestReset']);
 $router->post('/api/reset-password', ['App\Controller\PasswordResetController', 'resetPassword']);
 $router->postAuth('/api/tenant_users/reset_password', ['App\Controller\TenantUserController', 'resetPassword'], 'superadmin');
+$router->getAuth('/api/tenant_users/employee_login', ['App\Controller\TenantUserController', 'getEmployeeLogin'], 'perm:employees.read');
+$router->postAuth('/api/tenant_users/employee_login/set_password', ['App\Controller\TenantUserController', 'setEmployeePassword'], 'perm:employees.write');
 $router->getAuth('/api/audit', ['App\Controller\AuditController', 'list'], 'superadmin');
 $router->getAuth('/api/devices', ['App\Controller\DeviceController', 'list'], 'perm:devices.manage');
 $router->postAuth('/api/devices/register', ['App\Controller\DeviceController', 'register'], 'perm:devices.manage');
@@ -125,6 +127,7 @@ $router->postAuth('/api/shifts/update', ['App\Controller\ShiftController', 'upda
 $router->postAuth('/api/shifts/delete', ['App\Controller\ShiftController', 'delete'], 'perm:attendance.write');
 $router->postAuth('/api/shifts/assign', ['App\Controller\ShiftController', 'assign'], 'perm:attendance.write');
 
+$router->getAuth('/api/me', ['App\Controller\ProfileController', 'me'], 'any');
 $router->postAuth('/api/change_password', ['App\Controller\ProfileController', 'changePassword'], 'any');
 
 // Dispatch

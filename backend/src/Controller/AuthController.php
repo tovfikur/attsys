@@ -73,6 +73,7 @@ class AuthController
         $input = json_decode(file_get_contents('php://input'), true);
         $email = $input['email'] ?? '';
         $password = $input['password'] ?? '';
+        $portalMode = $input['portal_mode'] ?? null;
         // Resolve tenant by hint header or host
         $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
         if ($hint) {
@@ -147,6 +148,25 @@ class AuthController
             }
         }
         if ($user && ($user['password_hash'] ? password_verify($password, $user['password_hash']) : $password === 'secret')) {
+            if ($portalMode !== null) {
+                $portalMode = strtolower(trim((string)$portalMode));
+                if (!in_array($portalMode, ['employee', 'admin'], true)) {
+                    http_response_code(400);
+                    echo json_encode(['error' => 'Invalid portal mode']);
+                    return;
+                }
+                $role = strtolower(trim((string)($user['role'] ?? '')));
+                if ($portalMode === 'employee' && $role !== 'employee') {
+                    http_response_code(403);
+                    echo json_encode(['error' => 'Use Admin / HR login for this account']);
+                    return;
+                }
+                if ($portalMode === 'admin' && $role === 'employee') {
+                    http_response_code(403);
+                    echo json_encode(['error' => 'Use Employee login for this account']);
+                    return;
+                }
+            }
             $token = \App\Core\Token::create([
                 'user_id' => (int)$user['id'],
                 'tenant_id' => (int)$tenant['id'],

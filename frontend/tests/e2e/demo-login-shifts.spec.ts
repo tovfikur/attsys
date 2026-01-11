@@ -15,7 +15,7 @@ test("demo tenant: login, create a shift, and clock in/out", async ({
   await page.getByRole("textbox", { name: "Password" }).fill("secret");
   await page.getByRole("button", { name: /sign in/i }).click();
 
-  await page.waitForURL("**/dashboard", { timeout: 30_000 });
+  await page.waitForURL("**/employees", { timeout: 30_000 });
 
   await page.goto("/shifts");
   await page.waitForURL("**/shifts");

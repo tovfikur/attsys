@@ -116,10 +116,25 @@ class AttendanceController
     public function list()
     {
         header('Content-Type: application/json');
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
         $start = $_GET['start'] ?? null;
         $end = $_GET['end'] ?? null;
         $employeeId = $_GET['employee_id'] ?? null;
         $limit = $_GET['limit'] ?? 5000;
+        if (($user['role'] ?? null) === 'employee') {
+            $mapped = (int)($user['employee_id'] ?? 0);
+            if ($mapped <= 0) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Employee account not linked']);
+                return;
+            }
+            $employeeId = $mapped;
+        }
         echo json_encode(['attendance' => $this->store->all($start, $end, $employeeId, $limit)]);
     }
 
@@ -131,6 +146,18 @@ class AttendanceController
         if (!$pdo) {
             echo json_encode(['employees' => [], 'attendance' => $this->store->all(), 'days' => []]);
             return;
+        }
+
+        $user = \App\Core\Auth::currentUser() ?? [];
+        $scopedEmployeeId = null;
+        if (($user['role'] ?? null) === 'employee') {
+            $mapped = (int)($user['employee_id'] ?? 0);
+            if ($mapped <= 0) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Employee account not linked']);
+                return;
+            }
+            $scopedEmployeeId = $mapped;
         }
 
         $startRaw = $_GET['start'] ?? date('Y-m-d');
@@ -145,8 +172,13 @@ class AttendanceController
             return;
         }
 
-        $eStmt = $pdo->prepare('SELECT e.id, e.tenant_id, e.shift_id, s.name AS shift_name, s.working_days, e.name, e.code, e.status, e.created_at FROM employees e JOIN shifts s ON s.id = e.shift_id WHERE e.tenant_id=? ORDER BY e.id DESC');
-        $eStmt->execute([(int)$tenantId]);
+        if ($scopedEmployeeId) {
+            $eStmt = $pdo->prepare('SELECT e.id, e.tenant_id, e.shift_id, s.name AS shift_name, s.working_days, e.name, e.code, e.status, e.created_at FROM employees e JOIN shifts s ON s.id = e.shift_id WHERE e.tenant_id=? AND e.id=? ORDER BY e.id DESC');
+            $eStmt->execute([(int)$tenantId, (int)$scopedEmployeeId]);
+        } else {
+            $eStmt = $pdo->prepare('SELECT e.id, e.tenant_id, e.shift_id, s.name AS shift_name, s.working_days, e.name, e.code, e.status, e.created_at FROM employees e JOIN shifts s ON s.id = e.shift_id WHERE e.tenant_id=? ORDER BY e.id DESC');
+            $eStmt->execute([(int)$tenantId]);
+        }
         $employees = array_map(fn($r) => [
             'id' => (string)$r['id'],
             'tenant_id' => (string)$r['tenant_id'],
@@ -159,7 +191,7 @@ class AttendanceController
             'created_at' => $r['created_at']
         ], $eStmt->fetchAll());
 
-        $attendance = $this->store->all($start, $end, null, $limit);
+        $attendance = $this->store->all($start, $end, $scopedEmployeeId, $limit);
 
         $ensureDays = filter_var($_GET['ensure_days'] ?? '0', \FILTER_VALIDATE_BOOL);
         if ($ensureDays) {
@@ -181,8 +213,13 @@ class AttendanceController
             }
         }
 
-        $dStmt = $pdo->prepare('SELECT employee_id, date, in_time, out_time, worked_minutes, late_minutes, early_leave_minutes, overtime_minutes, status FROM attendance_days WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date DESC, employee_id DESC');
-        $dStmt->execute([(int)$tenantId, $start, $end]);
+        if ($scopedEmployeeId) {
+            $dStmt = $pdo->prepare('SELECT employee_id, date, in_time, out_time, worked_minutes, late_minutes, early_leave_minutes, overtime_minutes, status FROM attendance_days WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? ORDER BY date DESC, employee_id DESC');
+            $dStmt->execute([(int)$tenantId, (int)$scopedEmployeeId, $start, $end]);
+        } else {
+            $dStmt = $pdo->prepare('SELECT employee_id, date, in_time, out_time, worked_minutes, late_minutes, early_leave_minutes, overtime_minutes, status FROM attendance_days WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date DESC, employee_id DESC');
+            $dStmt->execute([(int)$tenantId, $start, $end]);
+        }
         $days = array_map(fn($r) => [
             'employee_id' => (int)$r['employee_id'],
             'date' => $r['date'],
@@ -195,8 +232,13 @@ class AttendanceController
             'status' => $r['status']
         ], $dStmt->fetchAll());
 
-        $lStmt = $pdo->prepare('SELECT id, employee_id, date, leave_type, day_part, reason, status, created_at FROM leaves WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date DESC, employee_id DESC, id DESC');
-        $lStmt->execute([(int)$tenantId, $start, $end]);
+        if ($scopedEmployeeId) {
+            $lStmt = $pdo->prepare('SELECT id, employee_id, date, leave_type, day_part, reason, status, created_at FROM leaves WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? ORDER BY date DESC, employee_id DESC, id DESC');
+            $lStmt->execute([(int)$tenantId, (int)$scopedEmployeeId, $start, $end]);
+        } else {
+            $lStmt = $pdo->prepare('SELECT id, employee_id, date, leave_type, day_part, reason, status, created_at FROM leaves WHERE tenant_id=? AND date BETWEEN ? AND ? ORDER BY date DESC, employee_id DESC, id DESC');
+            $lStmt->execute([(int)$tenantId, $start, $end]);
+        }
         $leaves = $lStmt->fetchAll(\PDO::FETCH_ASSOC);
         foreach ($leaves as &$l) {
             $l['status'] = $this->normalizeLeaveStatus($l['status'] ?? null);
@@ -327,6 +369,18 @@ class AttendanceController
             return;
         }
 
+        $user = \App\Core\Auth::currentUser() ?? [];
+        $scopedEmployeeId = null;
+        if (($user['role'] ?? null) === 'employee') {
+            $mapped = (int)($user['employee_id'] ?? 0);
+            if ($mapped <= 0) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Employee account not linked']);
+                return;
+            }
+            $scopedEmployeeId = $mapped;
+        }
+
         $tenantId = $this->resolveTenantId($pdo);
         if (!$tenantId) {
             http_response_code(400);
@@ -337,6 +391,7 @@ class AttendanceController
         $start = $_GET['start'] ?? date('Y-m-d');
         $end = $_GET['end'] ?? $start;
         $employeeId = $_GET['employee_id'] ?? null;
+        if ($scopedEmployeeId) $employeeId = $scopedEmployeeId;
         $limit = (int)($_GET['limit'] ?? 5000);
         if ($limit <= 0) $limit = 5000;
         if ($limit > 10000) $limit = 10000;
@@ -372,6 +427,16 @@ class AttendanceController
         $in = json_decode(file_get_contents('php://input'), true);
         try {
             $user = \App\Core\Auth::currentUser();
+            if (!$user) {
+                http_response_code(401);
+                echo json_encode(['error' => 'Unauthorized']);
+                return;
+            }
+            if (($user['role'] ?? null) === 'employee') {
+                $mapped = (int)($user['employee_id'] ?? 0);
+                if ($mapped <= 0) throw new \Exception('Employee account not linked');
+                $in['employee_id'] = $mapped;
+            }
             $tenantId = $user['tenant_id'] ?? null;
             $r = $this->store->clockIn($in['employee_id'] ?? '', $tenantId);
             echo json_encode(['record' => $r]);
@@ -387,6 +452,16 @@ class AttendanceController
         $in = json_decode(file_get_contents('php://input'), true);
         try {
             $user = \App\Core\Auth::currentUser();
+            if (!$user) {
+                http_response_code(401);
+                echo json_encode(['error' => 'Unauthorized']);
+                return;
+            }
+            if (($user['role'] ?? null) === 'employee') {
+                $mapped = (int)($user['employee_id'] ?? 0);
+                if ($mapped <= 0) throw new \Exception('Employee account not linked');
+                $in['employee_id'] = $mapped;
+            }
             $tenantId = $user['tenant_id'] ?? null;
             $r = $this->store->clockOut($in['employee_id'] ?? '', $tenantId);
             echo json_encode(['record' => $r]);
@@ -400,6 +475,21 @@ class AttendanceController
     {
         header('Content-Type: application/json');
         $employeeId = $_GET['employee_id'] ?? null;
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        if (($user['role'] ?? null) === 'employee') {
+            $mapped = (int)($user['employee_id'] ?? 0);
+            if ($mapped <= 0) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Employee account not linked']);
+                return;
+            }
+            $employeeId = (string)$mapped;
+        }
         if (!$employeeId) {
             http_response_code(400);
             echo json_encode(['error' => 'Missing employee id']);
@@ -419,7 +509,6 @@ class AttendanceController
             return;
         }
 
-        $user = \App\Core\Auth::currentUser();
         $tenantId = $user['tenant_id'] ?? null;
         if (!$tenantId) {
             $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
@@ -478,6 +567,22 @@ class AttendanceController
         $employeeId = $_GET['id'] ?? null;
         $month = $_GET['month'] ?? date('Y-m'); // Format YYYY-MM
         
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        if (($user['role'] ?? null) === 'employee') {
+            $mapped = (int)($user['employee_id'] ?? 0);
+            if ($mapped <= 0) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Employee account not linked']);
+                return;
+            }
+            $employeeId = (string)$mapped;
+        }
+
         if (!$employeeId) {
             http_response_code(400);
             echo json_encode(['error' => 'Missing employee id']);
@@ -492,7 +597,6 @@ class AttendanceController
         }
 
         // Get tenant from user context
-        $user = \App\Core\Auth::currentUser();
         $tenantId = $user['tenant_id'] ?? null;
         if (!$tenantId) {
              // Try to resolve from hint if not in user context (unlikely for this endpoint but safe)

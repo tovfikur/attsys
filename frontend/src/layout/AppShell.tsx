@@ -55,15 +55,41 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   {
+    label: "My Portal",
+    to: "/employee-portal",
+    icon: <PeopleAltRounded />,
+    roles: ["employee"],
+  },
+  {
     label: "Dashboard",
     to: "/dashboard",
     icon: <DashboardRounded />,
     roles: ["superadmin"],
   },
-  { label: "Employees", to: "/employees", icon: <PeopleAltRounded /> },
-  { label: "Clock", to: "/clock", icon: <AccessTimeRounded /> },
-  { label: "Attendance", to: "/attendance", icon: <QueryStatsRounded /> },
-  { label: "Leaves", to: "/leaves", icon: <EventNoteRounded /> },
+  {
+    label: "Employees",
+    to: "/employees",
+    icon: <PeopleAltRounded />,
+    roles: ["superadmin", "tenant_owner", "hr_admin", "manager"],
+  },
+  {
+    label: "Clock",
+    to: "/clock",
+    icon: <AccessTimeRounded />,
+    roles: ["superadmin", "tenant_owner", "hr_admin", "manager"],
+  },
+  {
+    label: "Attendance",
+    to: "/attendance",
+    icon: <QueryStatsRounded />,
+    roles: ["superadmin", "tenant_owner", "hr_admin", "manager"],
+  },
+  {
+    label: "Leaves",
+    to: "/leaves",
+    icon: <EventNoteRounded />,
+    roles: ["superadmin", "tenant_owner", "hr_admin", "manager"],
+  },
   {
     label: "Shifts",
     to: "/shifts",
@@ -140,6 +166,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (location.pathname.startsWith("/clock")) return "Clock";
     if (location.pathname.startsWith("/attendance")) return "Attendance";
     if (location.pathname.startsWith("/leaves")) return "Leaves";
+    if (location.pathname.startsWith("/employee-portal"))
+      return "Employee Portal";
     if (location.pathname.startsWith("/devices")) return "Devices";
     if (location.pathname.startsWith("/sites")) return "Sites";
     return role === "superadmin" ? "Super Admin" : "Workspace";

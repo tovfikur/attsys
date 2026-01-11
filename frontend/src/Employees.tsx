@@ -34,6 +34,7 @@ import {
   Add as AddIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
+  VpnKeyRounded,
   ChevronLeft,
   ChevronRight,
   Close as CloseIcon,
@@ -92,6 +93,12 @@ export default function Employees() {
     null
   );
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
+  const [loginEmployee, setLoginEmployee] = useState<Employee | null>(null);
+
+  const role = getUser()?.role || "";
+  const canManageEmployeeLogins = ["superadmin", "tenant_owner", "hr_admin"].includes(
+    role
+  );
 
   const loadEmployees = async () => {
     try {
@@ -274,6 +281,27 @@ export default function Employees() {
                       </Typography>
                     </TableCell>
                     <TableCell align="right">
+                      {canManageEmployeeLogins && (
+                        <Tooltip title="Set/Reset Login Password">
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLoginEmployee(emp);
+                            }}
+                            sx={{
+                              opacity: 0.6,
+                              "&:hover": {
+                                opacity: 1,
+                                bgcolor: "action.hover",
+                              },
+                              mr: 0.5,
+                            }}
+                          >
+                            <VpnKeyRounded fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                       <Tooltip title="Edit Employee">
                         <IconButton
                           size="small"
@@ -341,7 +369,185 @@ export default function Employees() {
           }}
         />
       )}
+
+      {loginEmployee && (
+        <EmployeeLoginDialog
+          open={!!loginEmployee}
+          employee={loginEmployee}
+          onClose={() => setLoginEmployee(null)}
+        />
+      )}
     </Container>
+  );
+}
+
+function EmployeeLoginDialog({
+  open,
+  employee,
+  onClose,
+}: {
+  open: boolean;
+  employee: Employee;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    setBusy(false);
+    setError("");
+    setOk("");
+    setNewPassword("");
+    setConfirm("");
+
+    api
+      .get(
+        `/api/tenant_users/employee_login?employee_id=${encodeURIComponent(
+          employee.id
+        )}`
+      )
+      .then((res) => {
+        const existingEmail = String(res.data?.email || "");
+        setEmail(existingEmail);
+      })
+      .catch(() => {
+        setEmail("");
+      })
+      .finally(() => setLoading(false));
+  }, [employee.id, open]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setOk("");
+
+    if (newPassword.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+    if (newPassword !== confirm) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await api.post("/api/tenant_users/employee_login/set_password", {
+        employee_id: employee.id,
+        email,
+        new_password: newPassword,
+      });
+      setOk("Login password updated");
+      setNewPassword("");
+      setConfirm("");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to update login password"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="xs"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: 3 } }}
+    >
+      <form onSubmit={submit}>
+        <DialogTitle
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            pb: 1,
+          }}
+        >
+          <Typography variant="h6" fontWeight={800}>
+            Employee Login
+          </Typography>
+          <IconButton onClick={onClose} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
+                borderColor: alpha(theme.palette.primary.main, 0.24),
+                bgcolor: alpha(theme.palette.primary.main, 0.04),
+              }}
+            >
+              <Typography sx={{ fontWeight: 800 }}>{employee.name}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Code: {employee.code}
+              </Typography>
+            </Paper>
+
+            {error && <Alert severity="error">{error}</Alert>}
+            {ok && <Alert severity="success">{ok}</Alert>}
+
+            {loading ? (
+              <Stack direction="row" spacing={2} alignItems="center">
+                <CircularProgress size={18} />
+                <Typography color="text.secondary">Loading login…</Typography>
+              </Stack>
+            ) : (
+              <>
+                <TextField
+                  label="Login email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="New password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="Confirm password"
+                  type="password"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  fullWidth
+                  required
+                />
+              </>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={onClose} color="inherit">
+            Close
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={busy || loading}
+          >
+            {busy ? "Saving…" : "Save"}
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
   );
 }
 

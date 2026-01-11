@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import api from "./api";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
@@ -23,6 +23,8 @@ import {
   DialogContent,
   DialogActions,
   Link,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "@mui/material";
 import {
   VisibilityOffRounded,
@@ -30,6 +32,7 @@ import {
   ShieldRounded,
   BusinessRounded,
   ArrowForwardRounded,
+  BadgeRounded,
 } from "@mui/icons-material";
 import { getErrorMessage } from "./utils/errors";
 
@@ -61,6 +64,21 @@ export default function Login() {
   const isSuperadminPortal =
     (!host.includes(".") || sub === "superadmin") && !tenantHint;
 
+  const tenantSubdomain = useMemo(() => {
+    if (host.includes(".") && sub !== "superadmin") return sub;
+    return tenantHint || "";
+  }, [host, sub, tenantHint]);
+
+  const [tenantPortalMode, setTenantPortalMode] = useState<
+    "employee" | "admin"
+  >(() => {
+    if (typeof window !== "undefined") {
+      const p = window.location.pathname;
+      if (p.includes("/employee-login")) return "employee";
+    }
+    return "admin";
+  });
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -84,7 +102,9 @@ export default function Login() {
 
       const response = await api.post(
         isSuperadminPortal ? "/api/login" : "/api/tenant_login",
-        { email, password, twofa }
+        isSuperadminPortal
+          ? { email, password, twofa }
+          : { email, password, twofa, portal_mode: tenantPortalMode }
       );
 
       if (response.data.token) {
@@ -95,14 +115,19 @@ export default function Login() {
           sessionStorage.setItem("token", response.data.token);
           sessionStorage.setItem("user", JSON.stringify(response.data.user));
         }
-        navigate("/dashboard");
+        const role = String(response.data?.user?.role || "");
+        if (role === "employee") navigate("/employee-portal");
+        else if (role === "superadmin") navigate("/dashboard");
+        else navigate("/employees");
       }
     } catch (err: unknown) {
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
       if (status === 429)
         setError("Too many attempts. Please try again later.");
       else
-        setError(getErrorMessage(err, "Invalid credentials. Please try again."));
+        setError(
+          getErrorMessage(err, "Invalid credentials. Please try again.")
+        );
     } finally {
       setLoading(false);
     }
@@ -182,6 +207,8 @@ export default function Login() {
             >
               {isSuperadminPortal ? (
                 <ShieldRounded fontSize="large" />
+              ) : tenantPortalMode === "employee" ? (
+                <BadgeRounded fontSize="large" />
               ) : (
                 <BusinessRounded fontSize="large" />
               )}
@@ -202,9 +229,43 @@ export default function Login() {
               >
                 {isSuperadminPortal
                   ? "Sign in to the Super Admin Portal"
+                  : tenantPortalMode === "employee"
+                  ? "Sign in to the Employee Portal"
                   : "Sign in to your Tenant Workspace"}
               </Typography>
             </Box>
+
+            {!isSuperadminPortal && (
+              <Stack spacing={1.25}>
+                <ToggleButtonGroup
+                  value={tenantPortalMode}
+                  exclusive
+                  onChange={(_, next) => {
+                    if (!next) return;
+                    setTenantPortalMode(next);
+                  }}
+                  fullWidth
+                  size="small"
+                  sx={{
+                    "& .MuiToggleButton-root": {
+                      textTransform: "none",
+                      fontWeight: 800,
+                      borderRadius: 2,
+                      px: 2,
+                      py: 1,
+                    },
+                  }}
+                >
+                  <ToggleButton value="employee">Employee</ToggleButton>
+                  <ToggleButton value="admin">Admin / HR</ToggleButton>
+                </ToggleButtonGroup>
+                {tenantSubdomain && (
+                  <Typography variant="caption" color="text.secondary">
+                    Tenant: {tenantSubdomain}
+                  </Typography>
+                )}
+              </Stack>
+            )}
           </Stack>
 
           {/* Form */}

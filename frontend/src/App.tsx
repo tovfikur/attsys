@@ -12,13 +12,29 @@ import DeviceIngestTest from "./DeviceIngestTest";
 import Sites from "./Sites";
 import Shifts from "./Shifts";
 import Leaves from "./Leaves";
+import EmployeePortal from "./EmployeePortal";
 import AppShell from "./layout/AppShell";
 import "./App.css";
-import { getToken } from "./utils/session";
+import { getToken, getUser } from "./utils/session";
 
 function PrivateRoute({ children }: { children: ReactElement }) {
   const token = getToken();
   return token ? <AppShell>{children}</AppShell> : <Navigate to="/login" />;
+}
+
+function DenyRoleRoute({
+  children,
+  deny,
+}: {
+  children: ReactElement;
+  deny: string[];
+}) {
+  const token = getToken();
+  const user = getUser();
+  if (!token || !user) return <Navigate to="/login" />;
+  if (user.role && deny.includes(user.role))
+    return <Navigate to="/employee-portal" />;
+  return <AppShell>{children}</AppShell>;
 }
 
 function RoleRoute({
@@ -28,12 +44,25 @@ function RoleRoute({
   children: ReactElement;
   role: string;
 }) {
-  const raw = localStorage.getItem("user") || sessionStorage.getItem("user");
-  const user = raw ? JSON.parse(raw) : null;
+  const user = getUser();
   if (!user) return <Navigate to="/login" />;
-  if (role === "superadmin" && user.role !== "superadmin")
-    return <Navigate to="/employees" />;
+  if (role === "superadmin" && user.role !== "superadmin") {
+    return (
+      <Navigate
+        to={user.role === "employee" ? "/employee-portal" : "/employees"}
+      />
+    );
+  }
   return <AppShell>{children}</AppShell>;
+}
+
+function HomeRedirect() {
+  const token = getToken();
+  const user = getUser();
+  if (!token || !user) return <Navigate to="/login" />;
+  if (user.role === "employee") return <Navigate to="/employee-portal" />;
+  if (user.role === "superadmin") return <Navigate to="/dashboard" />;
+  return <Navigate to="/employees" />;
 }
 
 function App() {
@@ -41,6 +70,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/employee-login" element={<Login />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route
           path="/dashboard"
@@ -51,35 +81,43 @@ function App() {
           }
         />
         <Route
-          path="/employees"
+          path="/employee-portal"
           element={
             <PrivateRoute>
-              <Employees />
+              <EmployeePortal />
             </PrivateRoute>
+          }
+        />
+        <Route
+          path="/employees"
+          element={
+            <DenyRoleRoute deny={["employee"]}>
+              <Employees />
+            </DenyRoleRoute>
           }
         />
         <Route
           path="/clock"
           element={
-            <PrivateRoute>
+            <DenyRoleRoute deny={["employee"]}>
               <Clock />
-            </PrivateRoute>
+            </DenyRoleRoute>
           }
         />
         <Route
           path="/attendance"
           element={
-            <PrivateRoute>
+            <DenyRoleRoute deny={["employee"]}>
               <Attendance />
-            </PrivateRoute>
+            </DenyRoleRoute>
           }
         />
         <Route
           path="/leaves"
           element={
-            <PrivateRoute>
+            <DenyRoleRoute deny={["employee"]}>
               <Leaves />
-            </PrivateRoute>
+            </DenyRoleRoute>
           }
         />
         <Route
@@ -122,7 +160,7 @@ function App() {
             </PrivateRoute>
           }
         />
-        <Route path="/" element={<Navigate to="/dashboard" />} />
+        <Route path="/" element={<HomeRedirect />} />
       </Routes>
     </BrowserRouter>
   );

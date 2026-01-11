@@ -7,6 +7,44 @@ use App\Core\Database;
 
 class ProfileController
 {
+    public function me()
+    {
+        header('Content-Type: application/json');
+        $user = Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        $employee = null;
+        $pdo = Database::get();
+        if ($pdo) {
+            $tenantId = $user['tenant_id'] ?? null;
+            $employeeId = (int)($user['employee_id'] ?? 0);
+            if ($tenantId && $employeeId > 0) {
+                $stmt = $pdo->prepare('SELECT e.id, e.tenant_id, e.shift_id, s.name AS shift_name, s.working_days, e.name, e.code, e.status, e.created_at FROM employees e JOIN shifts s ON s.id = e.shift_id WHERE e.tenant_id=? AND e.id=? LIMIT 1');
+                $stmt->execute([(int)$tenantId, $employeeId]);
+                $row = $stmt->fetch();
+                if ($row) {
+                    $employee = [
+                        'id' => (string)$row['id'],
+                        'tenant_id' => (string)$row['tenant_id'],
+                        'shift_id' => (string)($row['shift_id'] ?? ''),
+                        'shift_name' => (string)($row['shift_name'] ?? ''),
+                        'working_days' => (string)($row['working_days'] ?? ''),
+                        'name' => $row['name'],
+                        'code' => $row['code'],
+                        'status' => $row['status'],
+                        'created_at' => $row['created_at'],
+                    ];
+                }
+            }
+        }
+
+        echo json_encode(['user' => $user, 'employee' => $employee]);
+    }
+
     public function changePassword()
     {
         header('Content-Type: application/json');
