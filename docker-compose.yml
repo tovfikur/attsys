@@ -47,7 +47,7 @@ services:
     volumes:
       - ./backend:/app
     ports:
-      - "${ATT_API_PORT:-8000}:8000"
+      - "0.0.0.0:${ATT_API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy

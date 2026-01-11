@@ -14,6 +14,11 @@ class AuthController
         $email = $input['email'] ?? '';
         $password = $input['password'] ?? '';
         $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB not available']);
+            return;
+        }
         if ($pdo && $email) {
             $ip = $_SERVER['REMOTE_ADDR'] ?? null;
             $chk = $pdo->prepare('SELECT fail_count, banned_until, first_failed_at, last_failed_at FROM login_attempts WHERE tenant_id IS NULL AND email=?');
