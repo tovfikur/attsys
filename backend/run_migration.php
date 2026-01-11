@@ -13,10 +13,20 @@ if (!$pdo) {
     exit(1);
 }
 
-$sql = file_get_contents(__DIR__ . '/migration_shifts.sql');
+$files = [
+    __DIR__ . '/migration_shifts.sql',
+    __DIR__ . '/migration_employee_profile.sql',
+];
+
 try {
-    $pdo->exec($sql);
-    echo "Migration executed successfully.\n";
+    foreach ($files as $path) {
+        if (!is_file($path)) continue;
+        $sql = (string)file_get_contents($path);
+        if ($sql === '') continue;
+        $pdo->exec($sql);
+    }
+    echo "Migrations executed successfully.\n";
 } catch (PDOException $e) {
     echo "Migration failed: " . $e->getMessage() . "\n";
+    exit(1);
 }

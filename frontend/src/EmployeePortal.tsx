@@ -51,6 +51,19 @@ type MeResponse = {
     working_days: string;
     name: string;
     code: string;
+    profile_photo_path?: string | null;
+    gender?: string | null;
+    date_of_birth?: string | null;
+    personal_phone?: string | null;
+    email?: string | null;
+    present_address?: string | null;
+    permanent_address?: string | null;
+    department?: string | null;
+    designation?: string | null;
+    employee_type?: string | null;
+    date_of_joining?: string | null;
+    supervisor_name?: string | null;
+    work_location?: string | null;
     status: string;
     created_at: string;
   } | null;
@@ -1208,6 +1221,63 @@ export default function EmployeePortal() {
                       </Typography>
                     </Stack>
                   </Paper>
+
+                  {me?.employee && (
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        border: "1px solid",
+                        borderColor: alpha(theme.palette.text.primary, 0.1),
+                        borderRadius: 4,
+                        p: 2,
+                        bgcolor: alpha(theme.palette.background.paper, 0.72),
+                        backdropFilter: "blur(10px)",
+                      }}
+                    >
+                      <Typography sx={{ fontWeight: 900, mb: 1 }}>
+                        Profile
+                      </Typography>
+                      <Stack spacing={0.75}>
+                        <Typography variant="body2" color="text.secondary">
+                          Gender: {me.employee.gender || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Date of Birth: {me.employee.date_of_birth || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Phone: {me.employee.personal_phone || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Email: {me.employee.email || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Department: {me.employee.department || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Designation: {me.employee.designation || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Employee Type: {me.employee.employee_type || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Date of Joining: {me.employee.date_of_joining || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Supervisor: {me.employee.supervisor_name || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Work Location: {me.employee.work_location || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Present Address: {me.employee.present_address || "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Permanent Address:{" "}
+                          {me.employee.permanent_address || "—"}
+                        </Typography>
+                      </Stack>
+                    </Paper>
+                  )}
                 </Stack>
               )}
 

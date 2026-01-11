@@ -119,6 +119,10 @@ $router->getAuth('/api/employees/device_sync_ids', ['App\Controller\EmployeeCont
 $router->postAuth('/api/employees', ['App\Controller\EmployeeController', 'create'], 'perm:employees.write');
 $router->postAuth('/api/employees/update', ['App\Controller\EmployeeController', 'update'], 'perm:employees.write');
 $router->postAuth('/api/employees/delete', ['App\Controller\EmployeeController', 'delete'], 'perm:employees.write');
+$router->getAuth('/api/employees/attachments', ['App\Controller\EmployeeController', 'attachments'], 'perm:employees.read');
+$router->getAuth('/api/employees/attachments/download', ['App\Controller\EmployeeController', 'downloadAttachment'], 'perm:employees.read');
+$router->postAuth('/api/employees/attachments/upload', ['App\Controller\EmployeeController', 'uploadAttachment'], 'perm:employees.write');
+$router->postAuth('/api/employees/attachments/delete', ['App\Controller\EmployeeController', 'deleteAttachment'], 'perm:employees.write');
 
 // Leaves
 $router->getAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesList'], 'perm:leaves.read');
@@ -157,6 +161,8 @@ $router->postAuth('/api/shifts/assign', ['App\Controller\ShiftController', 'assi
 
 $router->getAuth('/api/me', ['App\Controller\ProfileController', 'me'], 'any');
 $router->postAuth('/api/change_password', ['App\Controller\ProfileController', 'changePassword'], 'any');
+$router->getAuth('/api/me/profile_photo', ['App\Controller\ProfileController', 'profilePhoto'], 'any');
+$router->postAuth('/api/me/profile_photo/upload', ['App\Controller\ProfileController', 'uploadProfilePhoto'], 'any');
 
 // Dispatch
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);

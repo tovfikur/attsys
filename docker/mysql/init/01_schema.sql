@@ -28,11 +28,40 @@ CREATE TABLE IF NOT EXISTS employees (
   shift_id INT NOT NULL,
   name VARCHAR(128) NOT NULL,
   code VARCHAR(64) NOT NULL,
+  profile_photo_path VARCHAR(255) NULL,
+  gender VARCHAR(16) NULL,
+  date_of_birth DATE NULL,
+  personal_phone VARCHAR(32) NULL,
+  email VARCHAR(160) NULL,
+  present_address TEXT NULL,
+  permanent_address TEXT NULL,
+  department VARCHAR(128) NULL,
+  designation VARCHAR(128) NULL,
+  employee_type VARCHAR(32) NULL,
+  date_of_joining DATE NULL,
+  supervisor_name VARCHAR(128) NULL,
+  work_location VARCHAR(128) NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY u_employee_code_tenant (tenant_id, code),
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
   FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS employee_attachments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  employee_id INT NOT NULL,
+  category VARCHAR(32) NOT NULL,
+  title VARCHAR(128) NULL,
+  original_name VARCHAR(255) NOT NULL,
+  stored_path VARCHAR(255) NOT NULL,
+  mime VARCHAR(96) NOT NULL,
+  size_bytes INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_employee_attachments_tenant_employee (tenant_id, employee_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS attendance_records (
@@ -51,6 +80,84 @@ CREATE TABLE IF NOT EXISTS attendance_records (
 
 SET @has_shift_id := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'shift_id');
 SET @sql := IF(@has_shift_id = 0, 'ALTER TABLE employees ADD COLUMN shift_id INT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_profile_photo_path := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'profile_photo_path');
+SET @sql := IF(@has_profile_photo_path = 0, 'ALTER TABLE employees ADD COLUMN profile_photo_path VARCHAR(255) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_gender := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'gender');
+SET @sql := IF(@has_gender = 0, 'ALTER TABLE employees ADD COLUMN gender VARCHAR(16) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_dob := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'date_of_birth');
+SET @sql := IF(@has_dob = 0, 'ALTER TABLE employees ADD COLUMN date_of_birth DATE NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_personal_phone := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'personal_phone');
+SET @sql := IF(@has_personal_phone = 0, 'ALTER TABLE employees ADD COLUMN personal_phone VARCHAR(32) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_email := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'email');
+SET @sql := IF(@has_email = 0, 'ALTER TABLE employees ADD COLUMN email VARCHAR(160) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_present_address := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'present_address');
+SET @sql := IF(@has_present_address = 0, 'ALTER TABLE employees ADD COLUMN present_address TEXT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_permanent_address := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'permanent_address');
+SET @sql := IF(@has_permanent_address = 0, 'ALTER TABLE employees ADD COLUMN permanent_address TEXT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_department := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'department');
+SET @sql := IF(@has_department = 0, 'ALTER TABLE employees ADD COLUMN department VARCHAR(128) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_designation := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'designation');
+SET @sql := IF(@has_designation = 0, 'ALTER TABLE employees ADD COLUMN designation VARCHAR(128) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_employee_type := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'employee_type');
+SET @sql := IF(@has_employee_type = 0, 'ALTER TABLE employees ADD COLUMN employee_type VARCHAR(32) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_date_of_joining := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'date_of_joining');
+SET @sql := IF(@has_date_of_joining = 0, 'ALTER TABLE employees ADD COLUMN date_of_joining DATE NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_supervisor_name := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'supervisor_name');
+SET @sql := IF(@has_supervisor_name = 0, 'ALTER TABLE employees ADD COLUMN supervisor_name VARCHAR(128) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_work_location := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'work_location');
+SET @sql := IF(@has_work_location = 0, 'ALTER TABLE employees ADD COLUMN work_location VARCHAR(128) NULL', 'SELECT 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;

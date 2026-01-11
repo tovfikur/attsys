@@ -6,4 +6,4 @@ WORKDIR /app
 
 EXPOSE 8000
 
-CMD ["php", "-S", "0.0.0.0:8000", "-t", "public", "public/index.php"]
+CMD ["sh", "-lc", "php run_migration.php; php -S 0.0.0.0:8000 -t public public/index.php"]

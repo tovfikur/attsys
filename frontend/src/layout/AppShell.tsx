@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -14,6 +14,7 @@ import {
   ListItemText,
   Menu,
   MenuItem,
+  Snackbar,
   Stack,
   Toolbar,
   Typography,
@@ -39,6 +40,7 @@ import {
   MenuRounded,
   PeopleAltRounded,
   QueryStatsRounded,
+  PhotoCameraRounded,
   VpnKeyRounded,
 } from "@mui/icons-material";
 import { clearSession, getUser } from "../utils/session";
@@ -113,6 +115,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const user = getUser();
   const role = user?.role || "";
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+  const profilePhotoUrlRef = useRef<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [toast, setToast] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error";
+  }>({ open: false, message: "", severity: "success" });
 
   const handleLogout = () => {
     clearSession();
@@ -154,6 +165,96 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       setPwdError(getErrorMessage(err, "Failed to update password"));
     } finally {
       setPwdBusy(false);
+    }
+  };
+
+  const refreshProfilePhoto = async () => {
+    if (!user || role === "superadmin") {
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+        profilePhotoUrlRef.current = null;
+      }
+      setProfilePhotoUrl(null);
+      return;
+    }
+    try {
+      const res = await api.get("/api/me/profile_photo", {
+        responseType: "blob",
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+      });
+      if (res.status === 404 || !res.data) {
+        if (profilePhotoUrlRef.current) {
+          URL.revokeObjectURL(profilePhotoUrlRef.current);
+          profilePhotoUrlRef.current = null;
+        }
+        setProfilePhotoUrl(null);
+        return;
+      }
+      const blob = res.data as Blob;
+      if (!blob.size) {
+        if (profilePhotoUrlRef.current) {
+          URL.revokeObjectURL(profilePhotoUrlRef.current);
+          profilePhotoUrlRef.current = null;
+        }
+        setProfilePhotoUrl(null);
+        return;
+      }
+      const nextUrl = URL.createObjectURL(blob);
+      if (profilePhotoUrlRef.current)
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+      profilePhotoUrlRef.current = nextUrl;
+      setProfilePhotoUrl(nextUrl);
+    } catch {
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+        profilePhotoUrlRef.current = null;
+      }
+      setProfilePhotoUrl(null);
+    }
+  };
+
+  useEffect(() => {
+    refreshProfilePhoto();
+    return () => {
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+        profilePhotoUrlRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.role]);
+
+  const handleChoosePhoto = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handlePhotoSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post("/api/me/profile_photo/upload", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      await refreshProfilePhoto();
+      setToast({
+        open: true,
+        message: "Profile photo updated",
+        severity: "success",
+      });
+    } catch (err: unknown) {
+      setToast({
+        open: true,
+        message: getErrorMessage(err, "Failed to upload profile photo"),
+        severity: "error",
+      });
+    } finally {
+      setPhotoBusy(false);
     }
   };
 
@@ -236,7 +337,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           }}
         >
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Avatar sx={{ width: 36, height: 36, bgcolor: "action.hover" }}>
+            <Avatar
+              src={profilePhotoUrl || undefined}
+              sx={{ width: 36, height: 36, bgcolor: "action.hover" }}
+            >
               {(user?.name || "U").slice(0, 1).toUpperCase()}
             </Avatar>
             <Box sx={{ minWidth: 0 }}>
@@ -313,7 +417,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             aria-label="Open user menu"
           >
             <Stack direction="row" spacing={1.25} alignItems="center">
-              <Avatar sx={{ width: 32, height: 32, bgcolor: "action.hover" }}>
+              <Avatar
+                src={profilePhotoUrl || undefined}
+                sx={{ width: 32, height: 32, bgcolor: "action.hover" }}
+              >
                 {(user?.name || "U").slice(0, 1).toUpperCase()}
               </Avatar>
               {isDesktop && (
@@ -341,6 +448,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <MenuItem
               onClick={() => {
                 setUserMenuEl(null);
+                handleChoosePhoto();
+              }}
+              disabled={photoBusy || !user || role === "superadmin"}
+            >
+              <ListItemIcon>
+                <PhotoCameraRounded fontSize="small" />
+              </ListItemIcon>
+              {photoBusy ? "Uploading..." : "Change Photo"}
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                setUserMenuEl(null);
                 setShowPwdModal(true);
               }}
             >
@@ -364,6 +483,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Menu>
         </Toolbar>
       </AppBar>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handlePhotoSelected}
+        style={{ display: "none" }}
+      />
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={3500}
+        onClose={() => setToast((t) => ({ ...t, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={toast.severity}
+          variant="filled"
+          onClose={() => setToast((t) => ({ ...t, open: false }))}
+          sx={{ borderRadius: 2 }}
+        >
+          {toast.message}
+        </Alert>
+      </Snackbar>
 
       {/* Password Change Modal */}
       <Dialog

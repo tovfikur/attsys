@@ -46,6 +46,19 @@ interface Employee {
   id: string;
   name: string;
   code: string;
+  profile_photo_path?: string | null;
+  gender?: string | null;
+  date_of_birth?: string | null;
+  personal_phone?: string | null;
+  email?: string | null;
+  present_address?: string | null;
+  permanent_address?: string | null;
+  department?: string | null;
+  designation?: string | null;
+  employee_type?: string | null;
+  date_of_joining?: string | null;
+  supervisor_name?: string | null;
+  work_location?: string | null;
   status: string;
   created_at: string;
 }
@@ -876,7 +889,22 @@ function CreateEmployeeDialog({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const [form, setForm] = useState({ name: "", code: "" });
+  const [form, setForm] = useState({
+    name: "",
+    code: "",
+    gender: "",
+    date_of_birth: "",
+    personal_phone: "",
+    email: "",
+    present_address: "",
+    permanent_address: "",
+    department: "",
+    designation: "",
+    employee_type: "",
+    date_of_joining: "",
+    supervisor_name: "",
+    work_location: "",
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -886,7 +914,22 @@ function CreateEmployeeDialog({
     setError("");
     try {
       await api.post("/api/employees", form);
-      setForm({ name: "", code: "" });
+      setForm({
+        name: "",
+        code: "",
+        gender: "",
+        date_of_birth: "",
+        personal_phone: "",
+        email: "",
+        present_address: "",
+        permanent_address: "",
+        department: "",
+        designation: "",
+        employee_type: "",
+        date_of_joining: "",
+        supervisor_name: "",
+        work_location: "",
+      });
       onSuccess();
     } catch (err: unknown) {
       setError(getErrorMessage(err, "Failed to create employee"));
@@ -948,6 +991,126 @@ function CreateEmployeeDialog({
               required
               variant="outlined"
             />
+            <TextField
+              select
+              label="Gender"
+              value={form.gender}
+              onChange={(e) => setForm({ ...form, gender: e.target.value })}
+              required
+              variant="outlined"
+            >
+              <MenuItem value="male">Male</MenuItem>
+              <MenuItem value="female">Female</MenuItem>
+              <MenuItem value="other">Other</MenuItem>
+            </TextField>
+            <TextField
+              label="Date of Birth"
+              type="date"
+              value={form.date_of_birth}
+              onChange={(e) =>
+                setForm({ ...form, date_of_birth: e.target.value })
+              }
+              required
+              variant="outlined"
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label="Personal Phone Number"
+              value={form.personal_phone}
+              onChange={(e) =>
+                setForm({ ...form, personal_phone: e.target.value })
+              }
+              required
+              variant="outlined"
+            />
+            <TextField
+              label="Email Address"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              required
+              variant="outlined"
+            />
+            <TextField
+              label="Present Address"
+              value={form.present_address}
+              onChange={(e) =>
+                setForm({ ...form, present_address: e.target.value })
+              }
+              required
+              multiline
+              minRows={2}
+              variant="outlined"
+            />
+            <TextField
+              label="Permanent Address"
+              value={form.permanent_address}
+              onChange={(e) =>
+                setForm({ ...form, permanent_address: e.target.value })
+              }
+              required
+              multiline
+              minRows={2}
+              variant="outlined"
+            />
+            <TextField
+              label="Department"
+              value={form.department}
+              onChange={(e) => setForm({ ...form, department: e.target.value })}
+              required
+              variant="outlined"
+            />
+            <TextField
+              label="Designation / Role"
+              value={form.designation}
+              onChange={(e) =>
+                setForm({ ...form, designation: e.target.value })
+              }
+              required
+              variant="outlined"
+            />
+            <TextField
+              select
+              label="Employee Type"
+              value={form.employee_type}
+              onChange={(e) =>
+                setForm({ ...form, employee_type: e.target.value })
+              }
+              required
+              variant="outlined"
+            >
+              <MenuItem value="permanent">Permanent</MenuItem>
+              <MenuItem value="contract">Contract</MenuItem>
+              <MenuItem value="intern">Intern</MenuItem>
+            </TextField>
+            <TextField
+              label="Date of Joining"
+              type="date"
+              value={form.date_of_joining}
+              onChange={(e) =>
+                setForm({ ...form, date_of_joining: e.target.value })
+              }
+              required
+              variant="outlined"
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label="Supervisor / Reporting Manager"
+              value={form.supervisor_name}
+              onChange={(e) =>
+                setForm({ ...form, supervisor_name: e.target.value })
+              }
+              required
+              variant="outlined"
+            />
+            <TextField
+              label="Work Location / Branch"
+              value={form.work_location}
+              onChange={(e) =>
+                setForm({ ...form, work_location: e.target.value })
+              }
+              required
+              variant="outlined"
+            />
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
@@ -982,12 +1145,39 @@ function EditEmployeeDialog({
   const [form, setForm] = useState({
     name: employee.name,
     code: employee.code,
+    gender: employee.gender || "",
+    date_of_birth: employee.date_of_birth || "",
+    personal_phone: employee.personal_phone || "",
+    email: employee.email || "",
+    present_address: employee.present_address || "",
+    permanent_address: employee.permanent_address || "",
+    department: employee.department || "",
+    designation: employee.designation || "",
+    employee_type: employee.employee_type || "",
+    date_of_joining: employee.date_of_joining || "",
+    supervisor_name: employee.supervisor_name || "",
+    work_location: employee.work_location || "",
     status: employee.status,
   });
   const [devices, setDevices] = useState<Device[]>([]);
   const [deviceSyncIds, setDeviceSyncIds] = useState<Record<string, string>>(
     {}
   );
+  const [attachments, setAttachments] = useState<
+    {
+      id: string;
+      category: string;
+      title: string;
+      original_name: string;
+      mime: string;
+      size_bytes: number;
+      created_at: string;
+    }[]
+  >([]);
+  const [attachCategory, setAttachCategory] = useState("attachment");
+  const [attachTitle, setAttachTitle] = useState("");
+  const [attachFile, setAttachFile] = useState<File | null>(null);
+  const [attachBusy, setAttachBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -999,18 +1189,38 @@ function EditEmployeeDialog({
     setForm({
       name: employee.name,
       code: employee.code,
+      gender: employee.gender || "",
+      date_of_birth: employee.date_of_birth || "",
+      personal_phone: employee.personal_phone || "",
+      email: employee.email || "",
+      present_address: employee.present_address || "",
+      permanent_address: employee.permanent_address || "",
+      department: employee.department || "",
+      designation: employee.designation || "",
+      employee_type: employee.employee_type || "",
+      date_of_joining: employee.date_of_joining || "",
+      supervisor_name: employee.supervisor_name || "",
+      work_location: employee.work_location || "",
       status: employee.status,
     });
     setError("");
     setOk("");
+    setAttachCategory("attachment");
+    setAttachTitle("");
+    setAttachFile(null);
 
     const run = async () => {
       setLoading(true);
       try {
-        const [dRes, sRes] = await Promise.all([
+        const [dRes, sRes, aRes] = await Promise.all([
           api.get("/api/devices"),
           api.get(
             `/api/employees/device_sync_ids?employee_id=${encodeURIComponent(
+              employee.id
+            )}`
+          ),
+          api.get(
+            `/api/employees/attachments?employee_id=${encodeURIComponent(
               employee.id
             )}`
           ),
@@ -1029,6 +1239,18 @@ function EditEmployeeDialog({
             next[row.device_id] = row.device_employee_id || "";
         }
         setDeviceSyncIds(next);
+
+        setAttachments(
+          ((aRes.data?.attachments || []) as {
+            id: string;
+            category: string;
+            title: string;
+            original_name: string;
+            mime: string;
+            size_bytes: number;
+            created_at: string;
+          }[]) || []
+        );
       } catch (err: unknown) {
         setError(getErrorMessage(err, "Failed to load sync IDs"));
       } finally {
@@ -1037,7 +1259,25 @@ function EditEmployeeDialog({
     };
 
     void run();
-  }, [employee.code, employee.id, employee.name, employee.status, open]);
+  }, [
+    employee.code,
+    employee.date_of_birth,
+    employee.date_of_joining,
+    employee.department,
+    employee.designation,
+    employee.email,
+    employee.employee_type,
+    employee.gender,
+    employee.id,
+    employee.name,
+    employee.permanent_address,
+    employee.personal_phone,
+    employee.present_address,
+    employee.status,
+    employee.supervisor_name,
+    employee.work_location,
+    open,
+  ]);
 
   const submit = async () => {
     setBusy(true);
@@ -1055,6 +1295,18 @@ function EditEmployeeDialog({
         id: employee.id,
         name: form.name,
         code: form.code,
+        gender: form.gender,
+        date_of_birth: form.date_of_birth,
+        personal_phone: form.personal_phone,
+        email: form.email,
+        present_address: form.present_address,
+        permanent_address: form.permanent_address,
+        department: form.department,
+        designation: form.designation,
+        employee_type: form.employee_type,
+        date_of_joining: form.date_of_joining,
+        supervisor_name: form.supervisor_name,
+        work_location: form.work_location,
         status: form.status,
         device_sync_ids,
       });
@@ -1071,6 +1323,80 @@ function EditEmployeeDialog({
   const devicesSorted = [...devices].sort((a, b) =>
     String(a.device_id || "").localeCompare(String(b.device_id || ""))
   );
+
+  const uploadAttachment = async () => {
+    if (!attachFile) return;
+    setAttachBusy(true);
+    setError("");
+    setOk("");
+    try {
+      const fd = new FormData();
+      fd.set("employee_id", employee.id);
+      fd.set("category", attachCategory);
+      if (attachTitle.trim()) fd.set("title", attachTitle.trim());
+      fd.set("file", attachFile);
+      await api.post("/api/employees/attachments/upload", fd);
+      const aRes = await api.get(
+        `/api/employees/attachments?employee_id=${encodeURIComponent(
+          employee.id
+        )}`
+      );
+      setAttachments(
+        ((aRes.data?.attachments || []) as {
+          id: string;
+          category: string;
+          title: string;
+          original_name: string;
+          mime: string;
+          size_bytes: number;
+          created_at: string;
+        }[]) || []
+      );
+      setAttachTitle("");
+      setAttachFile(null);
+      setOk("Uploaded");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to upload attachment"));
+    } finally {
+      setAttachBusy(false);
+    }
+  };
+
+  const downloadAttachment = async (id: string, filename: string) => {
+    setError("");
+    try {
+      const res = await api.get(
+        `/api/employees/attachments/download?id=${encodeURIComponent(id)}`,
+        {
+          responseType: "blob",
+        }
+      );
+      const blob = res.data as Blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || "download";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to download attachment"));
+    }
+  };
+
+  const removeAttachment = async (id: string) => {
+    if (!window.confirm("Delete this attachment?")) return;
+    setError("");
+    setOk("");
+    try {
+      await api.post("/api/employees/attachments/delete", { id });
+      setAttachments((prev) => prev.filter((x) => x.id !== id));
+      setOk("Deleted");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to delete attachment"));
+    }
+  };
 
   return (
     <Dialog
@@ -1114,11 +1440,246 @@ function EditEmployeeDialog({
             fullWidth
           />
           <TextField
+            select
+            label="Gender"
+            value={form.gender}
+            onChange={(e) => setForm({ ...form, gender: e.target.value })}
+            required
+            fullWidth
+          >
+            <MenuItem value="male">Male</MenuItem>
+            <MenuItem value="female">Female</MenuItem>
+            <MenuItem value="other">Other</MenuItem>
+          </TextField>
+          <TextField
+            label="Date of Birth"
+            type="date"
+            value={form.date_of_birth}
+            onChange={(e) =>
+              setForm({ ...form, date_of_birth: e.target.value })
+            }
+            required
+            fullWidth
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Personal Phone Number"
+            value={form.personal_phone}
+            onChange={(e) =>
+              setForm({ ...form, personal_phone: e.target.value })
+            }
+            required
+            fullWidth
+          />
+          <TextField
+            label="Email Address"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            required
+            fullWidth
+          />
+          <TextField
+            label="Present Address"
+            value={form.present_address}
+            onChange={(e) =>
+              setForm({ ...form, present_address: e.target.value })
+            }
+            required
+            fullWidth
+            multiline
+            minRows={2}
+          />
+          <TextField
+            label="Permanent Address"
+            value={form.permanent_address}
+            onChange={(e) =>
+              setForm({ ...form, permanent_address: e.target.value })
+            }
+            required
+            fullWidth
+            multiline
+            minRows={2}
+          />
+          <TextField
+            label="Department"
+            value={form.department}
+            onChange={(e) => setForm({ ...form, department: e.target.value })}
+            required
+            fullWidth
+          />
+          <TextField
+            label="Designation / Role"
+            value={form.designation}
+            onChange={(e) => setForm({ ...form, designation: e.target.value })}
+            required
+            fullWidth
+          />
+          <TextField
+            select
+            label="Employee Type"
+            value={form.employee_type}
+            onChange={(e) =>
+              setForm({ ...form, employee_type: e.target.value })
+            }
+            required
+            fullWidth
+          >
+            <MenuItem value="permanent">Permanent</MenuItem>
+            <MenuItem value="contract">Contract</MenuItem>
+            <MenuItem value="intern">Intern</MenuItem>
+          </TextField>
+          <TextField
+            label="Date of Joining"
+            type="date"
+            value={form.date_of_joining}
+            onChange={(e) =>
+              setForm({ ...form, date_of_joining: e.target.value })
+            }
+            required
+            fullWidth
+            InputLabelProps={{ shrink: true }}
+          />
+          <TextField
+            label="Supervisor / Reporting Manager"
+            value={form.supervisor_name}
+            onChange={(e) =>
+              setForm({ ...form, supervisor_name: e.target.value })
+            }
+            required
+            fullWidth
+          />
+          <TextField
+            label="Work Location / Branch"
+            value={form.work_location}
+            onChange={(e) =>
+              setForm({ ...form, work_location: e.target.value })
+            }
+            required
+            fullWidth
+          />
+          <TextField
             label="Status"
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value })}
             fullWidth
           />
+
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
+              Attachments
+            </Typography>
+            <Stack spacing={1.25}>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1.5}
+                alignItems={{ xs: "stretch", sm: "center" }}
+              >
+                <TextField
+                  select
+                  label="Category"
+                  value={attachCategory}
+                  onChange={(e) => setAttachCategory(e.target.value)}
+                  fullWidth
+                >
+                  <MenuItem value="cv">CV</MenuItem>
+                  <MenuItem value="certificate">Certificate</MenuItem>
+                  <MenuItem value="attachment">Attachment</MenuItem>
+                </TextField>
+                <TextField
+                  label="Title (optional)"
+                  value={attachTitle}
+                  onChange={(e) => setAttachTitle(e.target.value)}
+                  fullWidth
+                />
+                <Button
+                  component="label"
+                  variant="outlined"
+                  disabled={attachBusy || loading}
+                  sx={{
+                    borderRadius: 2,
+                    fontWeight: 900,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Choose File
+                  <input
+                    type="file"
+                    hidden
+                    onChange={(e) => setAttachFile(e.target.files?.[0] || null)}
+                  />
+                </Button>
+                <Button
+                  variant="contained"
+                  disabled={!attachFile || attachBusy || loading}
+                  onClick={() => void uploadAttachment()}
+                  sx={{
+                    borderRadius: 2,
+                    fontWeight: 900,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {attachBusy ? "Uploading..." : "Upload"}
+                </Button>
+              </Stack>
+              {attachFile && (
+                <Typography variant="caption" color="text.secondary">
+                  Selected: {attachFile.name}
+                </Typography>
+              )}
+              {attachments.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No attachments uploaded.
+                </Typography>
+              ) : (
+                <Stack spacing={1}>
+                  {attachments.map((a) => (
+                    <Stack
+                      key={a.id}
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1.25}
+                      alignItems={{ xs: "stretch", sm: "center" }}
+                      sx={{
+                        p: 1,
+                        borderRadius: 2,
+                        border: "1px solid",
+                        borderColor: "divider",
+                      }}
+                    >
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="body2" fontWeight={800}>
+                          {a.original_name}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {a.category}
+                          {a.title ? ` • ${a.title}` : ""} •{" "}
+                          {new Date(a.created_at).toLocaleString()}
+                        </Typography>
+                      </Box>
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() =>
+                            void downloadAttachment(a.id, a.original_name)
+                          }
+                        >
+                          Download
+                        </Button>
+                        <Button
+                          size="small"
+                          color="error"
+                          variant="outlined"
+                          onClick={() => void removeAttachment(a.id)}
+                        >
+                          Delete
+                        </Button>
+                      </Stack>
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
+            </Stack>
+          </Box>
 
           <Box sx={{ mt: 1 }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
