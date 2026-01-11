@@ -44,7 +44,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 // 2. Error Handling (Basic)
 set_exception_handler(function ($e) {
     http_response_code(500);
+    if (!headers_sent()) {
+        header('Content-Type: application/json');
+    }
     echo json_encode(['error' => $e->getMessage(), 'code' => $e->getCode()]);
+});
+
+register_shutdown_function(function () {
+    $err = error_get_last();
+    if (!$err) return;
+    $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
+    if (!in_array($err['type'], $fatalTypes, true)) return;
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json');
+    }
+    echo json_encode([
+        'error' => 'Fatal error',
+        'message' => $err['message'] ?? 'Unknown error',
+    ]);
 });
 
 // 3. Resolve Tenant

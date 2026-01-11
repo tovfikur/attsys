@@ -45,6 +45,9 @@ class Router
 
         // 404
         http_response_code(404);
+        if (!headers_sent()) {
+            header('Content-Type: application/json');
+        }
         echo json_encode(['error' => 'Not Found']);
     }
 
