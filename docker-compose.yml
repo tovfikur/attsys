@@ -47,7 +47,7 @@ services:
     volumes:
       - ./backend:/app
     ports:
-      - "0.0.0.0:${ATT_API_PORT:-8000}:8000"
+      - "0.0.0.0:${ATT_API_PORT:-5170}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -60,7 +60,7 @@ services:
     environment:
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
-      VITE_API_BASE_URL: "http://localhost:${ATT_API_PORT:-8000}"
+      VITE_API_BASE_URL: "http://localhost:${ATT_API_PORT:-5170}"
       VITE_HMR_PROTOCOL: "${VITE_HMR_PROTOCOL:-}"
       VITE_HMR_CLIENT_PORT: "${VITE_HMR_CLIENT_PORT:-}"
       VITE_HMR_HOST: "${VITE_HMR_HOST:-}"

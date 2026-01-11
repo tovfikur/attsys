@@ -47,7 +47,7 @@ test.describe("docker e2e: superadmin + tenant isolation", () => {
   test.describe.configure({ mode: "serial" });
 
   let webPort = Number(process.env.ATT_WEB_PORT || 5173);
-  let apiPort = Number(process.env.ATT_API_PORT || 8000);
+  let apiPort = Number(process.env.ATT_API_PORT || 5170);
   let rootUrl = `http://localhost:${webPort}`;
   let apiHealthUrl = `http://localhost:${apiPort}/api/health`;
 

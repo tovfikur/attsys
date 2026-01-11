@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const webPort = Number(process.env.ATT_WEB_PORT || 5173);
+const apiPort = Number(process.env.ATT_API_PORT || 5170);
 const useDocker = String(process.env.PLAYWRIGHT_USE_DOCKER || "") === "1";
 
 export default defineConfig({
@@ -25,9 +26,8 @@ export default defineConfig({
     ? []
     : [
         {
-          command:
-            "C:\\tools\\php\\php.exe -S 0.0.0.0:8000 -t ..\\backend\\public ..\\backend\\public\\index.php",
-          url: "http://khudroo.com:8000/api/health",
+          command: `C:\\tools\\php\\php.exe -S 0.0.0.0:${apiPort} -t ..\\backend\\public ..\\backend\\public\\index.php`,
+          url: `http://khudroo.com:${apiPort}/api/health`,
           reuseExistingServer: true,
           timeout: 120_000,
         },
