@@ -40,10 +40,80 @@ interface Tenant {
   created_at: string;
 }
 
+const TWO_PART_PUBLIC_SUFFIXES = new Set<string>([
+  "ac.in",
+  "ac.jp",
+  "ac.nz",
+  "ac.uk",
+  "co.in",
+  "co.jp",
+  "co.nz",
+  "co.uk",
+  "com.ar",
+  "com.au",
+  "com.bd",
+  "com.br",
+  "com.cn",
+  "com.eg",
+  "com.hk",
+  "com.mx",
+  "com.my",
+  "com.ng",
+  "com.pk",
+  "com.sa",
+  "com.sg",
+  "com.tr",
+  "com.tw",
+  "com.ua",
+  "edu.au",
+  "gov.au",
+  "gov.in",
+  "gov.uk",
+  "govt.nz",
+  "net.au",
+  "net.in",
+  "ne.jp",
+  "or.jp",
+  "org.au",
+  "org.in",
+  "org.nz",
+  "org.uk",
+  "sch.uk",
+]);
+
+const isIpHost = (host: string): boolean => {
+  const h = (host || "").trim();
+  if (!h) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true;
+  return h.includes(":");
+};
+
+const inferRootDomainFromHost = (host: string): string => {
+  const h0 = (host || "").toLowerCase().replace(/\.$/, "");
+  if (!h0) return "";
+  if (h0 === "localhost" || isIpHost(h0)) return "";
+  if (h0.endsWith(".localhost")) return "localhost";
+
+  const h = h0.startsWith("www.") ? h0.slice(4) : h0;
+  const parts = h.split(".").filter(Boolean);
+  if (parts.length <= 2) return h;
+
+  const suffix2 = parts.slice(-2).join(".");
+  if (TWO_PART_PUBLIC_SUFFIXES.has(suffix2) && parts.length >= 3) {
+    return parts.slice(-3).join(".");
+  }
+  return suffix2;
+};
+
 const getRootDomain = (): string => {
   const v = (import.meta as unknown as { env?: Record<string, string> }).env
     ?.VITE_ROOT_DOMAIN;
-  return (v || "khudroo.com").toLowerCase();
+  const fromEnv = (v || "").toLowerCase();
+  if (fromEnv) return fromEnv;
+
+  const h0 =
+    typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
+  return inferRootDomainFromHost(h0) || h0;
 };
 
 export default function Dashboard() {

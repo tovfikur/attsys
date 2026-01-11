@@ -36,6 +36,72 @@ import {
 } from "@mui/icons-material";
 import { getErrorMessage } from "./utils/errors";
 
+const TWO_PART_PUBLIC_SUFFIXES = new Set<string>([
+  "ac.in",
+  "ac.jp",
+  "ac.nz",
+  "ac.uk",
+  "co.in",
+  "co.jp",
+  "co.nz",
+  "co.uk",
+  "com.ar",
+  "com.au",
+  "com.bd",
+  "com.br",
+  "com.cn",
+  "com.eg",
+  "com.hk",
+  "com.mx",
+  "com.my",
+  "com.ng",
+  "com.pk",
+  "com.sa",
+  "com.sg",
+  "com.tr",
+  "com.tw",
+  "com.ua",
+  "edu.au",
+  "gov.au",
+  "gov.in",
+  "gov.uk",
+  "govt.nz",
+  "net.au",
+  "net.in",
+  "ne.jp",
+  "or.jp",
+  "org.au",
+  "org.in",
+  "org.nz",
+  "org.uk",
+  "sch.uk",
+]);
+
+function isIpHost(host: string): boolean {
+  const h = (host || "").trim();
+  if (!h) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true;
+  return h.includes(":");
+}
+
+function inferRootDomainFromHost(host: string): string {
+  const h0 = (host || "").toLowerCase().replace(/\.$/, "");
+  if (!h0) return "";
+  if (h0 === "localhost" || isIpHost(h0)) return "";
+  if (h0.endsWith(".localhost")) return "localhost";
+
+  const h = h0.startsWith("www.") ? h0.slice(4) : h0;
+  const parts = h.split(".").filter(Boolean);
+  if (parts.length <= 2) return h;
+
+  const suffix2 = parts.slice(-2).join(".");
+  if (TWO_PART_PUBLIC_SUFFIXES.has(suffix2) && parts.length >= 3) {
+    return parts.slice(-3).join(".");
+  }
+
+  return suffix2;
+}
+
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -59,7 +125,7 @@ export default function Login() {
 
   const rootDomain = (
     (import.meta as unknown as { env?: Record<string, string> }).env
-      ?.VITE_ROOT_DOMAIN || "khudroo.com"
+      ?.VITE_ROOT_DOMAIN || ""
   ).toLowerCase();
 
   const host = typeof window !== "undefined" ? window.location.hostname : "";
@@ -69,22 +135,36 @@ export default function Login() {
 
   const isRootHost = useMemo(() => {
     const h = host.toLowerCase();
-    return h === rootDomain || h === `www.${rootDomain}`;
+    if (h === "localhost") return true;
+    if (isIpHost(h)) return true;
+    const root = rootDomain || inferRootDomainFromHost(h);
+    return h === root || h === `www.${root}`;
   }, [host, rootDomain]);
 
   const tenantFromHost = useMemo(() => {
     const h = host.toLowerCase();
     if (!h) return "";
-    if (h === rootDomain || h === `www.${rootDomain}`) return "";
-    const suffix = `.${rootDomain}`;
+    if (h === "localhost") return "";
+    if (isIpHost(h)) return "";
+
+    if (h.endsWith(".localhost")) {
+      const parts = h.split(".");
+      const sub = parts[0] || "";
+      if (!sub || sub === "www" || sub === "superadmin") return "";
+      return sub;
+    }
+
+    const root = rootDomain || inferRootDomainFromHost(h);
+    if (!root) return "";
+    if (h === root || h === `www.${root}`) return "";
+    const suffix = `.${root}`;
     if (h.endsWith(suffix)) {
       const prefix = h.slice(0, -suffix.length);
       if (!prefix || prefix.includes(".") || prefix === "www") return "";
       return prefix;
     }
-    if (h.includes(".") && sub !== "superadmin" && sub !== "www") return sub;
     return "";
-  }, [host, rootDomain, sub]);
+  }, [host, rootDomain]);
 
   const isSuperadminPortal =
     isRootHost ||

@@ -9,14 +9,13 @@ class TenantResolver
         $host = $_SERVER['HTTP_HOST'] ?? '';
         $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
         
-        // Remove port if present
-        $host = explode(':', $host)[0];
         $host = strtolower(trim((string)$host));
-
-        // Basic Logic:
-        // 1. ROOT_DOMAIN / www.ROOT_DOMAIN -> system/root portal
-        // 2. sub.ROOT_DOMAIN -> tenant 'sub'
-        // 3. other domains -> try first label as tenant subdomain
+        $host = preg_replace('/\.$/', '', $host);
+        if (preg_match('/^\[([0-9a-f:]+)\](?::\d+)?$/i', $host, $m)) {
+            $host = $m[1];
+        } else {
+            $host = preg_replace('/:\d+$/', '', $host);
+        }
 
         // Tenant hint header takes precedence in dev
         if ($hint) {
@@ -32,7 +31,85 @@ class TenantResolver
             }
         }
 
-        $rootDomain = strtolower((string)(getenv('ROOT_DOMAIN') ?: 'khudroo.com'));
+        $twoPartPublicSuffixes = [
+            'ac.in',
+            'ac.jp',
+            'ac.nz',
+            'ac.uk',
+            'co.in',
+            'co.jp',
+            'co.nz',
+            'co.uk',
+            'com.ar',
+            'com.au',
+            'com.bd',
+            'com.br',
+            'com.cn',
+            'com.eg',
+            'com.hk',
+            'com.mx',
+            'com.my',
+            'com.ng',
+            'com.pk',
+            'com.sa',
+            'com.sg',
+            'com.tr',
+            'com.tw',
+            'com.ua',
+            'edu.au',
+            'gov.au',
+            'gov.in',
+            'gov.uk',
+            'govt.nz',
+            'net.au',
+            'net.in',
+            'ne.jp',
+            'or.jp',
+            'org.au',
+            'org.in',
+            'org.nz',
+            'org.uk',
+            'sch.uk',
+        ];
+
+        $isIpHost = function (string $h): bool {
+            return filter_var($h, FILTER_VALIDATE_IP) !== false;
+        };
+
+        $inferRootDomainFromHost = function (string $h) use ($isIpHost, $twoPartPublicSuffixes): string {
+            $h = strtolower(trim($h));
+            $h = preg_replace('/\.$/', '', $h);
+            if ($h === '' || $h === 'localhost' || $isIpHost($h)) return '';
+            if (str_ends_with($h, '.localhost')) return 'localhost';
+
+            if (str_starts_with($h, 'www.')) $h = substr($h, 4);
+
+            $parts = array_values(array_filter(explode('.', $h), fn($p) => $p !== ''));
+            if (count($parts) <= 2) return $h;
+
+            $suffix2 = $parts[count($parts) - 2] . '.' . $parts[count($parts) - 1];
+            if (in_array($suffix2, $twoPartPublicSuffixes, true) && count($parts) >= 3) {
+                return $parts[count($parts) - 3] . '.' . $suffix2;
+            }
+
+            return $suffix2;
+        };
+
+        $rootDomain = strtolower((string)(getenv('ROOT_DOMAIN') ?: ''));
+        if ($rootDomain === '') {
+            $rootDomain = $inferRootDomainFromHost($host);
+        }
+
+        if ($rootDomain === '') {
+            if ($host === 'localhost' || $isIpHost($host)) {
+                return [
+                    'id' => 'superadmin',
+                    'name' => 'Root Portal',
+                    'type' => 'system'
+                ];
+            }
+        }
+
         if ($host === $rootDomain || $host === ('www.' . $rootDomain)) {
             return [
                 'id' => 'superadmin',
@@ -41,9 +118,8 @@ class TenantResolver
             ];
         }
 
-        $suffix = '.' . $rootDomain;
-        if ($rootDomain && str_ends_with($host, $suffix)) {
-            $prefix = substr($host, 0, -strlen($suffix));
+        if (str_ends_with($host, '.localhost')) {
+            $prefix = substr($host, 0, -strlen('.localhost'));
             if ($prefix !== '' && strpos($prefix, '.') === false && $prefix !== 'www') {
                 $subdomain = $prefix;
                 $store = new TenantStore();
@@ -59,23 +135,22 @@ class TenantResolver
             return null;
         }
 
-        $parts = explode('.', $host);
-        
-        // Check for other domains (sub.domain.tld)
-        if (count($parts) >= 2) {
-             $subdomain = $parts[0];
-
-             // Lookup tenant by subdomain (DB if available)
-             $store = new TenantStore();
-             $tenant = $store->findBySubdomain($subdomain);
-
-             if ($tenant) {
-                 return [
-                    'id' => $tenant['id'],
-                    'name' => $tenant['name'],
-                    'type' => 'tenant'
-                 ];
-             }
+        $suffix = '.' . $rootDomain;
+        if ($rootDomain !== '' && str_ends_with($host, $suffix)) {
+            $prefix = substr($host, 0, -strlen($suffix));
+            if ($prefix !== '' && strpos($prefix, '.') === false && $prefix !== 'www') {
+                $subdomain = $prefix;
+                $store = new TenantStore();
+                $tenant = $store->findBySubdomain($subdomain);
+                if ($tenant) {
+                    return [
+                        'id' => $tenant['id'],
+                        'name' => $tenant['name'],
+                        'type' => 'tenant'
+                    ];
+                }
+            }
+            return null;
         }
 
         return null;
