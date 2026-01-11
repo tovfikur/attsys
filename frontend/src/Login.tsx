@@ -57,17 +57,53 @@ export default function Login() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
+  const rootDomain = (
+    (import.meta as unknown as { env?: Record<string, string> }).env
+      ?.VITE_ROOT_DOMAIN || "khudroo.com"
+  ).toLowerCase();
+
   const host = typeof window !== "undefined" ? window.location.hostname : "";
   const sub = host.split(".")[0];
   const tenantHint =
     localStorage.getItem("tenant") || sessionStorage.getItem("tenant") || "";
+
+  const isRootHost = useMemo(() => {
+    const h = host.toLowerCase();
+    return h === rootDomain || h === `www.${rootDomain}`;
+  }, [host, rootDomain]);
+
+  const tenantFromHost = useMemo(() => {
+    const h = host.toLowerCase();
+    if (!h) return "";
+    if (h === "localhost" || h === "127.0.0.1") return "";
+    if (h.endsWith(".localhost")) {
+      const parts = h.split(".");
+      if (parts.length !== 2) return "";
+      if (parts[0] === "superadmin") return "";
+      return parts[0] || "";
+    }
+    if (h === rootDomain || h === `www.${rootDomain}`) return "";
+    const suffix = `.${rootDomain}`;
+    if (h.endsWith(suffix)) {
+      const prefix = h.slice(0, -suffix.length);
+      if (!prefix || prefix.includes(".") || prefix === "www") return "";
+      return prefix;
+    }
+    if (h.includes(".") && sub !== "superadmin" && sub !== "www") return sub;
+    return "";
+  }, [host, rootDomain, sub]);
+
   const isSuperadminPortal =
-    (!host.includes(".") || sub === "superadmin") && !tenantHint;
+    isRootHost ||
+    (!tenantFromHost &&
+      (!host.includes(".") || sub === "superadmin") &&
+      !tenantHint);
 
   const tenantSubdomain = useMemo(() => {
-    if (host.includes(".") && sub !== "superadmin") return sub;
+    if (tenantFromHost) return tenantFromHost;
+    if (isRootHost) return "";
     return tenantHint || "";
-  }, [host, sub, tenantHint]);
+  }, [isRootHost, tenantFromHost, tenantHint]);
 
   const [tenantPortalMode, setTenantPortalMode] = useState<
     "employee" | "admin"

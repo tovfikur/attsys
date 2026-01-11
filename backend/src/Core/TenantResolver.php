@@ -39,6 +39,33 @@ class TenantResolver
             ];
         }
 
+        $rootDomain = strtolower((string)(getenv('ROOT_DOMAIN') ?: 'khudroo.com'));
+        if ($host === $rootDomain || $host === ('www.' . $rootDomain)) {
+            return [
+                'id' => 'superadmin',
+                'name' => 'Root Portal',
+                'type' => 'system'
+            ];
+        }
+
+        $suffix = '.' . $rootDomain;
+        if ($rootDomain && str_ends_with($host, $suffix)) {
+            $prefix = substr($host, 0, -strlen($suffix));
+            if ($prefix !== '' && strpos($prefix, '.') === false && $prefix !== 'www') {
+                $subdomain = $prefix;
+                $store = new TenantStore();
+                $tenant = $store->findBySubdomain($subdomain);
+                if ($tenant) {
+                    return [
+                       'id' => $tenant['id'],
+                       'name' => $tenant['name'],
+                       'type' => 'tenant'
+                    ];
+                }
+            }
+            return null;
+        }
+
         $parts = explode('.', $host);
         
         // Check for real domain (sub.domain.tld) or sub.localhost

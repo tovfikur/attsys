@@ -11,6 +11,52 @@ function getTenantHint(): string | null {
   );
 }
 
+function getRootDomain(): string {
+  const v = (import.meta as unknown as { env?: Record<string, string> }).env
+    ?.VITE_ROOT_DOMAIN;
+  return (v || "khudroo.com").toLowerCase();
+}
+
+function isRootHost(host: string): boolean {
+  const h = (host || "").toLowerCase();
+  const root = getRootDomain();
+  return h === root || h === `www.${root}`;
+}
+
+function getTenantFromHost(host: string): string | null {
+  const h = (host || "").toLowerCase();
+  if (!h) return null;
+
+  if (h === "localhost" || h === "127.0.0.1") return null;
+
+  if (h.endsWith(".localhost")) {
+    const parts = h.split(".");
+    if (parts.length !== 2) return null;
+    if (parts[0] === "superadmin") return null;
+    return parts[0] || null;
+  }
+
+  const root = getRootDomain();
+  if (h === root || h === `www.${root}`) return null;
+
+  const suffix = `.${root}`;
+  if (h.endsWith(suffix)) {
+    const prefix = h.slice(0, -suffix.length);
+    if (!prefix || prefix.includes(".")) return null;
+    if (prefix === "www") return null;
+    return prefix;
+  }
+
+  const parts = h.split(".");
+  if (parts.length >= 2) {
+    const sub = parts[0];
+    if (!sub || sub === "www" || sub === "superadmin") return null;
+    return sub;
+  }
+
+  return null;
+}
+
 const api = axios.create({ baseURL: "http://localhost:8000" });
 
 api.interceptors.request.use((config) => {
@@ -20,18 +66,19 @@ api.interceptors.request.use((config) => {
     config.headers["Authorization"] = `Bearer ${token}`;
   }
   const host = typeof window !== "undefined" ? window.location.hostname : "";
-  const sub = host.split(".")[0];
-  if (host.includes(".") && sub !== "superadmin") {
-    if (
-      typeof window !== "undefined" &&
-      !localStorage.getItem("tenant") &&
-      !sessionStorage.getItem("tenant")
-    ) {
-      sessionStorage.setItem("tenant", sub);
+  const tenantFromHost = getTenantFromHost(host);
+  if (tenantFromHost) {
+    if (typeof window !== "undefined" && !getTenantHint()) {
+      sessionStorage.setItem("tenant", tenantFromHost);
     }
     config.headers = config.headers || {};
-    config.headers["X-Tenant-ID"] = sub;
+    config.headers["X-Tenant-ID"] = tenantFromHost;
   } else {
+    if (typeof window !== "undefined" && isRootHost(host)) {
+      sessionStorage.removeItem("tenant");
+      localStorage.removeItem("tenant");
+      return config;
+    }
     const tenantHint = getTenantHint();
     if (tenantHint) {
       config.headers = config.headers || {};
