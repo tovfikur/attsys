@@ -30,7 +30,7 @@ SET @ar_has_clock_in_method := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_in_method'
 );
-SET @sql := IF(@ar_has_clock_in_method = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_method VARCHAR(32) DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_in_method = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_method VARCHAR(32) DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -42,7 +42,7 @@ SET @ar_has_clock_out_method := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_out_method'
 );
-SET @sql := IF(@ar_has_clock_out_method = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_method VARCHAR(32) DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_out_method = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_method VARCHAR(32) DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -54,7 +54,7 @@ SET @ar_has_clock_in_lat := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_in_lat'
 );
-SET @sql := IF(@ar_has_clock_in_lat = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_lat DOUBLE DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_in_lat = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_lat DOUBLE DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -66,7 +66,7 @@ SET @ar_has_clock_in_lng := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_in_lng'
 );
-SET @sql := IF(@ar_has_clock_in_lng = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_lng DOUBLE DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_in_lng = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_lng DOUBLE DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -78,7 +78,7 @@ SET @ar_has_clock_in_accuracy_m := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_in_accuracy_m'
 );
-SET @sql := IF(@ar_has_clock_in_accuracy_m = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_accuracy_m INT DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_in_accuracy_m = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_accuracy_m INT DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -90,7 +90,7 @@ SET @ar_has_clock_out_lat := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_out_lat'
 );
-SET @sql := IF(@ar_has_clock_out_lat = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_lat DOUBLE DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_out_lat = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_lat DOUBLE DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -102,7 +102,7 @@ SET @ar_has_clock_out_lng := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_out_lng'
 );
-SET @sql := IF(@ar_has_clock_out_lng = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_lng DOUBLE DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_out_lng = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_lng DOUBLE DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -114,7 +114,7 @@ SET @ar_has_clock_out_accuracy_m := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_out_accuracy_m'
 );
-SET @sql := IF(@ar_has_clock_out_accuracy_m = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_accuracy_m INT DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_out_accuracy_m = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_accuracy_m INT DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -126,7 +126,7 @@ SET @ar_has_clock_in_device_id := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_in_device_id'
 );
-SET @sql := IF(@ar_has_clock_in_device_id = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_device_id VARCHAR(64) DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_in_device_id = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_device_id VARCHAR(64) DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -138,7 +138,7 @@ SET @ar_has_clock_out_device_id := (
     AND table_name = 'attendance_records'
     AND column_name = 'clock_out_device_id'
 );
-SET @sql := IF(@ar_has_clock_out_device_id = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_device_id VARCHAR(64) DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@ar_has_clock_out_device_id = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_device_id VARCHAR(64) DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -165,7 +165,7 @@ SET @leaves_has_type := (
     AND table_name = 'leaves'
     AND column_name = 'leave_type'
 );
-SET @sql := IF(@leaves_has_type = 0, 'ALTER TABLE leaves ADD COLUMN leave_type VARCHAR(16) NOT NULL DEFAULT ''casual''', 'SELECT 1');
+SET @sql := IF(@leaves_has_type = 0, 'ALTER TABLE leaves ADD COLUMN leave_type VARCHAR(16) NOT NULL DEFAULT ''casual''', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -177,7 +177,7 @@ SET @leaves_has_day_part := (
     AND table_name = 'leaves'
     AND column_name = 'day_part'
 );
-SET @sql := IF(@leaves_has_day_part = 0, 'ALTER TABLE leaves ADD COLUMN day_part VARCHAR(8) NOT NULL DEFAULT ''full''', 'SELECT 1');
+SET @sql := IF(@leaves_has_day_part = 0, 'ALTER TABLE leaves ADD COLUMN day_part VARCHAR(8) NOT NULL DEFAULT ''full''', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -189,7 +189,7 @@ SET @uniq_leaves_exists := (
     AND table_name = 'leaves'
     AND index_name = 'uniq_leaves_tenant_employee_date'
 );
-SET @sql := IF(@uniq_leaves_exists = 0, 'ALTER TABLE leaves ADD UNIQUE KEY uniq_leaves_tenant_employee_date (tenant_id, employee_id, date)', 'SELECT 1');
+SET @sql := IF(@uniq_leaves_exists = 0, 'ALTER TABLE leaves ADD UNIQUE KEY uniq_leaves_tenant_employee_date (tenant_id, employee_id, date)', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -251,7 +251,7 @@ SET @be_has_latitude := (
     AND table_name = 'biometric_evidence'
     AND column_name = 'latitude'
 );
-SET @sql := IF(@be_has_latitude = 0, 'ALTER TABLE biometric_evidence ADD COLUMN latitude DOUBLE DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@be_has_latitude = 0, 'ALTER TABLE biometric_evidence ADD COLUMN latitude DOUBLE DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -263,7 +263,7 @@ SET @be_has_longitude := (
     AND table_name = 'biometric_evidence'
     AND column_name = 'longitude'
 );
-SET @sql := IF(@be_has_longitude = 0, 'ALTER TABLE biometric_evidence ADD COLUMN longitude DOUBLE DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@be_has_longitude = 0, 'ALTER TABLE biometric_evidence ADD COLUMN longitude DOUBLE DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
@@ -275,7 +275,7 @@ SET @be_has_accuracy_m := (
     AND table_name = 'biometric_evidence'
     AND column_name = 'accuracy_m'
 );
-SET @sql := IF(@be_has_accuracy_m = 0, 'ALTER TABLE biometric_evidence ADD COLUMN accuracy_m INT DEFAULT NULL', 'SELECT 1');
+SET @sql := IF(@be_has_accuracy_m = 0, 'ALTER TABLE biometric_evidence ADD COLUMN accuracy_m INT DEFAULT NULL', 'DO 1');
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;

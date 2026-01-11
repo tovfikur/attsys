@@ -70,6 +70,126 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+SET @ar_has_clock_in_method := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_in_method'
+);
+SET @sql := IF(@ar_has_clock_in_method = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_method VARCHAR(32) DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ar_has_clock_out_method := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_out_method'
+);
+SET @sql := IF(@ar_has_clock_out_method = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_method VARCHAR(32) DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ar_has_clock_in_lat := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_in_lat'
+);
+SET @sql := IF(@ar_has_clock_in_lat = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_lat DOUBLE DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ar_has_clock_in_lng := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_in_lng'
+);
+SET @sql := IF(@ar_has_clock_in_lng = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_lng DOUBLE DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ar_has_clock_in_accuracy_m := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_in_accuracy_m'
+);
+SET @sql := IF(@ar_has_clock_in_accuracy_m = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_accuracy_m INT DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ar_has_clock_out_lat := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_out_lat'
+);
+SET @sql := IF(@ar_has_clock_out_lat = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_lat DOUBLE DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ar_has_clock_out_lng := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_out_lng'
+);
+SET @sql := IF(@ar_has_clock_out_lng = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_lng DOUBLE DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ar_has_clock_out_accuracy_m := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_out_accuracy_m'
+);
+SET @sql := IF(@ar_has_clock_out_accuracy_m = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_accuracy_m INT DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ar_has_clock_in_device_id := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_in_device_id'
+);
+SET @sql := IF(@ar_has_clock_in_device_id = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_in_device_id VARCHAR(64) DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @ar_has_clock_out_device_id := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'attendance_records'
+    AND column_name = 'clock_out_device_id'
+);
+SET @sql := IF(@ar_has_clock_out_device_id = 0, 'ALTER TABLE attendance_records ADD COLUMN clock_out_device_id VARCHAR(64) DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 CREATE TABLE IF NOT EXISTS biometric_templates (
   id INT AUTO_INCREMENT PRIMARY KEY,
   tenant_id INT NOT NULL,
@@ -105,3 +225,39 @@ CREATE TABLE IF NOT EXISTS biometric_evidence (
   FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
   FOREIGN KEY (attendance_record_id) REFERENCES attendance_records(id) ON DELETE SET NULL
 );
+
+SET @be_has_latitude := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'biometric_evidence'
+    AND column_name = 'latitude'
+);
+SET @sql := IF(@be_has_latitude = 0, 'ALTER TABLE biometric_evidence ADD COLUMN latitude DOUBLE DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @be_has_longitude := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'biometric_evidence'
+    AND column_name = 'longitude'
+);
+SET @sql := IF(@be_has_longitude = 0, 'ALTER TABLE biometric_evidence ADD COLUMN longitude DOUBLE DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @be_has_accuracy_m := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'biometric_evidence'
+    AND column_name = 'accuracy_m'
+);
+SET @sql := IF(@be_has_accuracy_m = 0, 'ALTER TABLE biometric_evidence ADD COLUMN accuracy_m INT DEFAULT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
