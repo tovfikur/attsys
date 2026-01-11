@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import api from "./api";
 import { getErrorMessage } from "./utils/errors";
 import {
@@ -8,6 +8,10 @@ import {
   FormControl,
   InputLabel,
   MenuItem,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Select,
   Typography,
   Paper,
@@ -30,6 +34,14 @@ interface ClockRecord {
   early_leave_minutes?: number;
 }
 
+type BiometricModality = "face" | "fingerprint";
+type BiometricAction = "clock_in" | "clock_out" | "enroll";
+type BiometricGeo = {
+  latitude: number;
+  longitude: number;
+  accuracy_m?: number;
+};
+
 export default function Clock() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeId, setEmployeeId] = useState("");
@@ -42,6 +54,17 @@ export default function Clock() {
     record?: ClockRecord;
   } | null>(null);
   const employeeLabelId = "employee-select-label";
+
+  const [biometricOpen, setBiometricOpen] = useState(false);
+  const [biometricAction, setBiometricAction] =
+    useState<BiometricAction>("clock_in");
+  const [biometricModality, setBiometricModality] =
+    useState<BiometricModality>("face");
+  const [biometricImage, setBiometricImage] = useState("");
+  const [biometricBusy, setBiometricBusy] = useState(false);
+  const [biometricError, setBiometricError] = useState("");
+  const biometricVideoRef = useRef<HTMLVideoElement | null>(null);
+  const biometricStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     api.get("/api/employees").then((r) => setEmployees(r.data.employees));
@@ -87,13 +110,130 @@ export default function Clock() {
     }
   };
 
-  const clock = async (type: "in" | "out") => {
+  const getBiometricGeo =
+    useCallback(async (): Promise<BiometricGeo | null> => {
+      if (!navigator?.geolocation?.getCurrentPosition) return null;
+      return await new Promise((resolve) => {
+        let done = false;
+        const t = window.setTimeout(() => {
+          if (done) return;
+          done = true;
+          resolve(null);
+        }, 6500);
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (done) return;
+            done = true;
+            window.clearTimeout(t);
+            resolve({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy_m: pos.coords.accuracy,
+            });
+          },
+          () => {
+            if (done) return;
+            done = true;
+            window.clearTimeout(t);
+            resolve(null);
+          },
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 6000 }
+        );
+      });
+    }, []);
+
+  const stopBiometricCamera = useCallback(() => {
+    const stream = biometricStreamRef.current;
+    if (stream) {
+      for (const t of stream.getTracks()) t.stop();
+      biometricStreamRef.current = null;
+    }
+    const el = biometricVideoRef.current;
+    if (el) el.srcObject = null;
+  }, []);
+
+  const closeBiometric = useCallback(() => {
+    stopBiometricCamera();
+    setBiometricOpen(false);
+    setBiometricBusy(false);
+  }, [stopBiometricCamera]);
+
+  const openBiometric = useCallback((action: BiometricAction) => {
+    setBiometricAction(action);
+    setBiometricModality("face");
+    setBiometricImage("");
+    setBiometricError("");
+    setBiometricOpen(true);
+  }, []);
+
+  const startBiometricCamera = useCallback(async () => {
+    stopBiometricCamera();
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setBiometricError("Camera not available");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false,
+      });
+      biometricStreamRef.current = stream;
+      const el = biometricVideoRef.current;
+      if (el) {
+        el.srcObject = stream;
+        await el.play();
+      }
+    } catch (err: unknown) {
+      setBiometricError(getErrorMessage(err, "Failed to start camera"));
+    }
+  }, [stopBiometricCamera]);
+
+  const captureBiometricSelfie = useCallback(() => {
+    const el = biometricVideoRef.current;
+    if (!el) return;
+    const w = el.videoWidth || 0;
+    const h = el.videoHeight || 0;
+    if (!w || !h) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(el, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    setBiometricImage(dataUrl);
+  }, []);
+
+  const onPickBiometricFile = useCallback((file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const v = typeof reader.result === "string" ? reader.result : "";
+      setBiometricImage(v);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const clock = async (
+    type: "in" | "out",
+    biometric: {
+      modality: BiometricModality;
+      image: string;
+      geo?: BiometricGeo | null;
+    }
+  ) => {
     setLoading(true);
     setResult(null);
     const url =
       type === "in" ? "/api/attendance/clockin" : "/api/attendance/clockout";
     try {
-      const res = await api.post(url, { employee_id: employeeId });
+      const res = await api.post(url, {
+        employee_id: employeeId,
+        biometric_modality: biometric.modality,
+        biometric_image: biometric.image,
+        geo: biometric.geo || null,
+      });
       const record = res.data.record;
       let msg = `${type === "in" ? "Clock In" : "Clock Out"} Successful`;
 
@@ -120,6 +260,38 @@ export default function Clock() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const submitBiometric = async () => {
+    if (!employeeId) return;
+    if (!biometricImage) {
+      setBiometricError("Biometric image is required");
+      return;
+    }
+    setBiometricBusy(true);
+    setBiometricError("");
+    try {
+      if (biometricAction === "enroll") {
+        await api.post("/api/biometrics/enroll", {
+          employee_id: employeeId,
+          biometric_modality: biometricModality,
+          biometric_image: biometricImage,
+        });
+        setResult({ type: "success", message: "Biometric enrolled" });
+        closeBiometric();
+        return;
+      }
+      await clock(biometricAction === "clock_in" ? "in" : "out", {
+        modality: biometricModality,
+        image: biometricImage,
+        geo: await getBiometricGeo(),
+      });
+      closeBiometric();
+    } catch (err: unknown) {
+      setBiometricError(getErrorMessage(err, "Failed"));
+    } finally {
+      setBiometricBusy(false);
     }
   };
 
@@ -161,7 +333,7 @@ export default function Clock() {
                 size="large"
                 fullWidth
                 startIcon={<Login />}
-                onClick={() => clock("in")}
+                onClick={() => openBiometric("clock_in")}
                 disabled={!employeeId || loading || statusLoading}
               >
                 Clock In
@@ -174,13 +346,22 @@ export default function Clock() {
                 size="large"
                 fullWidth
                 startIcon={<ExitToApp />}
-                onClick={() => clock("out")}
+                onClick={() => openBiometric("clock_out")}
                 disabled={!employeeId || loading || statusLoading}
               >
                 Clock Out
               </Button>
             )}
           </Stack>
+
+          <Button
+            variant="outlined"
+            fullWidth
+            disabled={!employeeId || loading || statusLoading}
+            onClick={() => openBiometric("enroll")}
+          >
+            Enroll Biometrics
+          </Button>
 
           {(loading || statusLoading) && <CircularProgress />}
 
@@ -207,6 +388,155 @@ export default function Clock() {
           )}
         </Stack>
       </Paper>
+      <Dialog
+        open={biometricOpen}
+        onClose={biometricBusy ? undefined : closeBiometric}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          {biometricAction === "enroll"
+            ? "Enroll Biometrics"
+            : biometricAction === "clock_in"
+            ? "Clock In (Biometric)"
+            : "Clock Out (Biometric)"}
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {biometricError ? (
+              <Alert severity="error" sx={{ borderRadius: 2 }}>
+                {biometricError}
+              </Alert>
+            ) : null}
+
+            <FormControl fullWidth>
+              <InputLabel id="biometric-modality-label">Modality</InputLabel>
+              <Select
+                labelId="biometric-modality-label"
+                value={biometricModality}
+                label="Modality"
+                onChange={(e) =>
+                  setBiometricModality(e.target.value as BiometricModality)
+                }
+              >
+                <MenuItem value="face">Face (Selfie)</MenuItem>
+                <MenuItem value="fingerprint">Fingerprint (Image)</MenuItem>
+              </Select>
+            </FormControl>
+
+            {biometricModality === "face" ? (
+              <Stack spacing={1.25}>
+                <Box
+                  sx={{
+                    width: "100%",
+                    bgcolor: "background.default",
+                    borderRadius: 2,
+                    overflow: "hidden",
+                    border: "1px solid",
+                    borderColor: "divider",
+                  }}
+                >
+                  <Box
+                    component="video"
+                    ref={biometricVideoRef}
+                    muted
+                    playsInline
+                    autoPlay
+                    sx={{ width: "100%", display: "block" }}
+                  />
+                </Box>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    variant="outlined"
+                    onClick={() => void startBiometricCamera()}
+                    disabled={biometricBusy}
+                  >
+                    Start Camera
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={stopBiometricCamera}
+                    disabled={biometricBusy}
+                  >
+                    Stop Camera
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={captureBiometricSelfie}
+                    disabled={biometricBusy}
+                  >
+                    Take Selfie
+                  </Button>
+                  <Button
+                    component="label"
+                    variant="outlined"
+                    disabled={biometricBusy}
+                  >
+                    Upload Image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={(e) =>
+                        onPickBiometricFile(e.target.files?.[0] || null)
+                      }
+                    />
+                  </Button>
+                </Stack>
+              </Stack>
+            ) : (
+              <Button
+                component="label"
+                variant="outlined"
+                disabled={biometricBusy}
+              >
+                Upload Fingerprint Image
+                <input
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(e) =>
+                    onPickBiometricFile(e.target.files?.[0] || null)
+                  }
+                />
+              </Button>
+            )}
+
+            {biometricImage ? (
+              <Box
+                component="img"
+                src={biometricImage}
+                alt="Biometric"
+                sx={{
+                  width: "100%",
+                  borderRadius: 2,
+                  border: "1px solid",
+                  borderColor: "divider",
+                }}
+              />
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeBiometric} disabled={biometricBusy}>
+            Close
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void submitBiometric()}
+            disabled={biometricBusy || !biometricImage}
+          >
+            {biometricBusy
+              ? "Please wait…"
+              : biometricAction === "enroll"
+              ? "Enroll"
+              : biometricAction === "clock_in"
+              ? "Clock In"
+              : "Clock Out"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }

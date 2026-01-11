@@ -77,6 +77,80 @@ try {
         $pdo->exec("ALTER TABLE attendance_records ADD COLUMN overtime_minutes INT NOT NULL DEFAULT 0");
         echo "Added overtime_minutes to attendance_records.\n";
     }
+    if (!in_array('clock_in_method', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_in_method VARCHAR(32) DEFAULT NULL");
+        echo "Added clock_in_method to attendance_records.\n";
+    }
+    if (!in_array('clock_out_method', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_out_method VARCHAR(32) DEFAULT NULL");
+        echo "Added clock_out_method to attendance_records.\n";
+    }
+    if (!in_array('clock_in_lat', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_in_lat DOUBLE DEFAULT NULL");
+        echo "Added clock_in_lat to attendance_records.\n";
+    }
+    if (!in_array('clock_in_lng', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_in_lng DOUBLE DEFAULT NULL");
+        echo "Added clock_in_lng to attendance_records.\n";
+    }
+    if (!in_array('clock_in_accuracy_m', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_in_accuracy_m INT DEFAULT NULL");
+        echo "Added clock_in_accuracy_m to attendance_records.\n";
+    }
+    if (!in_array('clock_out_lat', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_out_lat DOUBLE DEFAULT NULL");
+        echo "Added clock_out_lat to attendance_records.\n";
+    }
+    if (!in_array('clock_out_lng', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_out_lng DOUBLE DEFAULT NULL");
+        echo "Added clock_out_lng to attendance_records.\n";
+    }
+    if (!in_array('clock_out_accuracy_m', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_out_accuracy_m INT DEFAULT NULL");
+        echo "Added clock_out_accuracy_m to attendance_records.\n";
+    }
+    if (!in_array('clock_in_device_id', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_in_device_id VARCHAR(64) DEFAULT NULL");
+        echo "Added clock_in_device_id to attendance_records.\n";
+    }
+    if (!in_array('clock_out_device_id', $arCols)) {
+        $pdo->exec("ALTER TABLE attendance_records ADD COLUMN clock_out_device_id VARCHAR(64) DEFAULT NULL");
+        echo "Added clock_out_device_id to attendance_records.\n";
+    }
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS biometric_evidence (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        employee_id INT NOT NULL,
+        attendance_record_id INT NULL,
+        event_type VARCHAR(16) NOT NULL,
+        modality VARCHAR(24) NOT NULL,
+        sha256 CHAR(64) NOT NULL,
+        matched TINYINT(1) NOT NULL DEFAULT 0,
+        latitude DOUBLE DEFAULT NULL,
+        longitude DOUBLE DEFAULT NULL,
+        accuracy_m INT DEFAULT NULL,
+        mime VARCHAR(96) NOT NULL,
+        image LONGBLOB NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_biometric_evidence_tenant_employee (tenant_id, employee_id, created_at),
+        KEY idx_biometric_evidence_attendance_record (attendance_record_id)
+    ) ENGINE=InnoDB");
+
+    $stmt = $pdo->query("DESCRIBE biometric_evidence");
+    $beCols = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('latitude', $beCols)) {
+        $pdo->exec("ALTER TABLE biometric_evidence ADD COLUMN latitude DOUBLE DEFAULT NULL");
+        echo "Added latitude to biometric_evidence.\n";
+    }
+    if (!in_array('longitude', $beCols)) {
+        $pdo->exec("ALTER TABLE biometric_evidence ADD COLUMN longitude DOUBLE DEFAULT NULL");
+        echo "Added longitude to biometric_evidence.\n";
+    }
+    if (!in_array('accuracy_m', $beCols)) {
+        $pdo->exec("ALTER TABLE biometric_evidence ADD COLUMN accuracy_m INT DEFAULT NULL");
+        echo "Added accuracy_m to biometric_evidence.\n";
+    }
 
     $stmt = $pdo->query("DESCRIBE attendance_days");
     $ad = $stmt->fetchAll(\PDO::FETCH_ASSOC);

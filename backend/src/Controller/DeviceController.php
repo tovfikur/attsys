@@ -404,6 +404,16 @@ class DeviceController
             }
 
             $rec = $event === 'clockin' ? $store->clockIn((string)$resolvedEmployeeId, $tenantId) : $store->clockOut((string)$resolvedEmployeeId, $tenantId);
+            $rid = isset($rec['id']) && is_string($rec['id']) && ctype_digit($rec['id']) ? (int)$rec['id'] : (is_numeric($rec['id'] ?? null) ? (int)$rec['id'] : 0);
+            if ($rid > 0) {
+                if ($event === 'clockin') {
+                    $upd = $pdo->prepare('UPDATE attendance_records SET clock_in_method=?, clock_in_device_id=? WHERE id=?');
+                    $upd->execute(['machine', (string)$device_id, $rid]);
+                } else {
+                    $upd = $pdo->prepare('UPDATE attendance_records SET clock_out_method=?, clock_out_device_id=? WHERE id=?');
+                    $upd->execute(['machine', (string)$device_id, $rid]);
+                }
+            }
             $log = $pdo->prepare('INSERT INTO device_events(device_id, employee_id, event) VALUES (?, ?, ?)');
             $log->execute([$device_id, (int)$resolvedEmployeeId, $event]);
             $utc = $occurred ? gmdate('Y-m-d H:i:s', strtotime($occurred)) : gmdate('Y-m-d H:i:s');

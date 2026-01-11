@@ -113,6 +113,182 @@ class AttendanceController
         return $row ? (int)$row['id'] : null;
     }
 
+    private function normalizeAttendanceRecordRow(array $r): array
+    {
+        $asFloat = function ($v): ?float {
+            return is_numeric($v) ? (float)$v : null;
+        };
+        $asInt = function ($v): ?int {
+            return is_numeric($v) ? (int)round((float)$v) : null;
+        };
+        $asStringOrNull = function ($v): ?string {
+            if (!is_string($v)) return null;
+            $s = trim($v);
+            return $s === '' ? null : $s;
+        };
+
+        $r['clock_in_method'] = $asStringOrNull($r['clock_in_method'] ?? null);
+        $r['clock_out_method'] = $asStringOrNull($r['clock_out_method'] ?? null);
+
+        $r['clock_in_lat'] = $asFloat($r['clock_in_lat'] ?? null);
+        $r['clock_in_lng'] = $asFloat($r['clock_in_lng'] ?? null);
+        $r['clock_in_accuracy_m'] = $asInt($r['clock_in_accuracy_m'] ?? null);
+
+        $r['clock_out_lat'] = $asFloat($r['clock_out_lat'] ?? null);
+        $r['clock_out_lng'] = $asFloat($r['clock_out_lng'] ?? null);
+        $r['clock_out_accuracy_m'] = $asInt($r['clock_out_accuracy_m'] ?? null);
+
+        $r['clock_in_device_id'] = $asStringOrNull($r['clock_in_device_id'] ?? null);
+        $r['clock_out_device_id'] = $asStringOrNull($r['clock_out_device_id'] ?? null);
+
+        if (isset($r['duration_minutes']) && is_numeric($r['duration_minutes'])) $r['duration_minutes'] = (int)$r['duration_minutes'];
+        if (isset($r['late_minutes']) && is_numeric($r['late_minutes'])) $r['late_minutes'] = (int)$r['late_minutes'];
+        if (isset($r['early_leave_minutes']) && is_numeric($r['early_leave_minutes'])) $r['early_leave_minutes'] = (int)$r['early_leave_minutes'];
+        if (isset($r['overtime_minutes']) && is_numeric($r['overtime_minutes'])) $r['overtime_minutes'] = (int)$r['overtime_minutes'];
+
+        return $r;
+    }
+
+    private function normalizeAttendanceRecords($rows): array
+    {
+        if (!is_array($rows)) return [];
+        $out = [];
+        foreach ($rows as $r) {
+            if (!is_array($r)) continue;
+            $out[] = $this->normalizeAttendanceRecordRow($r);
+        }
+        return $out;
+    }
+
+    private function normalizeBiometricModality($raw): ?string
+    {
+        if (!is_string($raw)) return null;
+        $v = strtolower(trim($raw));
+        if ($v === '') return null;
+        if (in_array($v, ['face', 'selfie', 'photo', 'camera'], true)) return 'face';
+        if (in_array($v, ['fingerprint', 'finger', 'thumb', 'thumbprint'], true)) return 'fingerprint';
+        return null;
+    }
+
+    private function normalizeBiometricHash($raw): ?string
+    {
+        if (!is_string($raw)) return null;
+        $v = strtolower(trim($raw));
+        if ($v === '') return null;
+        if (!preg_match('/^[0-9a-f]{16}$/', $v)) return null;
+        return $v;
+    }
+
+    private function decodeBiometricImage($raw): array
+    {
+        if (!is_string($raw)) throw new \Exception('Biometric image is required');
+        $v = trim($raw);
+        if ($v === '') throw new \Exception('Biometric image is required');
+
+        $mime = 'image/jpeg';
+        $b64 = $v;
+        if (preg_match('/^data:([^;]+);base64,(.*)$/', $v, $m)) {
+            $mime = strtolower(trim((string)$m[1]));
+            $b64 = (string)$m[2];
+        }
+
+        $bytes = base64_decode($b64, true);
+        if ($bytes === false) throw new \Exception('Invalid biometric image encoding');
+        if (strlen($bytes) <= 0) throw new \Exception('Invalid biometric image encoding');
+        if (strlen($bytes) > 2 * 1024 * 1024) throw new \Exception('Biometric image too large');
+
+        return [$mime, $bytes];
+    }
+
+    private function extractGeo($in): array
+    {
+        $geo = null;
+        if (is_array($in) && isset($in['geo']) && is_array($in['geo'])) $geo = $in['geo'];
+
+        $latRaw = $geo['latitude'] ?? ($in['geo_latitude'] ?? ($in['latitude'] ?? null));
+        $lngRaw = $geo['longitude'] ?? ($in['geo_longitude'] ?? ($in['longitude'] ?? null));
+        $accRaw = $geo['accuracy_m'] ?? ($geo['accuracy'] ?? ($in['geo_accuracy_m'] ?? ($in['accuracy_m'] ?? null)));
+
+        $lat = is_numeric($latRaw) ? (float)$latRaw : null;
+        $lng = is_numeric($lngRaw) ? (float)$lngRaw : null;
+        $acc = is_numeric($accRaw) ? (int)round((float)$accRaw) : null;
+
+        if ($lat !== null && ($lat < -90.0 || $lat > 90.0)) $lat = null;
+        if ($lng !== null && ($lng < -180.0 || $lng > 180.0)) $lng = null;
+        if ($acc !== null && ($acc < 0 || $acc > 1000000)) $acc = null;
+
+        if ($lat === null || $lng === null) return [null, null, null];
+        return [$lat, $lng, $acc];
+    }
+
+    private function hammingDistanceHex(string $a, string $b): int
+    {
+        $a = strtolower(trim($a));
+        $b = strtolower(trim($b));
+        if (strlen($a) !== strlen($b)) return 9999;
+        $pop = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
+        $dist = 0;
+        $len = strlen($a);
+        for ($i = 0; $i < $len; $i++) {
+            $va = hexdec($a[$i]);
+            $vb = hexdec($b[$i]);
+            $dist += $pop[$va ^ $vb] ?? 0;
+        }
+        return $dist;
+    }
+
+    private function isAHashTemplateHash(string $hash): bool
+    {
+        $h = strtolower(trim($hash));
+        if (!preg_match('/^[0-9a-f]{64}$/', $h)) return false;
+        return preg_match('/^[0-9a-f]{16}0{48}$/', $h) === 1;
+    }
+
+    private function requireBiometricMatch($pdo, int $tenantId, int $employeeId, string $modality, string $imageBytes, ?string $providedHash = null): string
+    {
+        $evidenceHash = hash('sha256', $imageBytes);
+        $stmt = $pdo->prepare('SELECT sha256 FROM biometric_templates WHERE tenant_id=? AND employee_id=? AND modality=? LIMIT 1');
+        $stmt->execute([(int)$tenantId, (int)$employeeId, $modality]);
+        $expected = $stmt->fetchColumn();
+        if (!is_string($expected) || trim($expected) === '') throw new \Exception('Biometric not enrolled');
+        $expected = strtolower(trim($expected));
+
+        if ($this->isAHashTemplateHash($expected)) {
+            $expectedA = substr($expected, 0, 16);
+            $providedA = $this->normalizeBiometricHash($providedHash ?? '');
+            if (!$providedA) throw new \Exception('Biometric mismatch');
+            $dist = $this->hammingDistanceHex($expectedA, $providedA);
+            $threshold = $modality === 'face' ? 12 : 8;
+            if ($dist > $threshold) throw new \Exception('Biometric mismatch');
+            return $evidenceHash;
+        }
+
+        if (!hash_equals($expected, $evidenceHash)) throw new \Exception('Biometric mismatch');
+        return $evidenceHash;
+    }
+
+    private function insertBiometricEvidence($pdo, int $tenantId, int $employeeId, ?int $attendanceRecordId, string $eventType, string $modality, string $hash, ?float $lat, ?float $lng, ?int $accuracyM, string $mime, string $imageBytes): void
+    {
+        $stmt = $pdo->prepare('INSERT INTO biometric_evidence (tenant_id, employee_id, attendance_record_id, event_type, modality, sha256, matched, latitude, longitude, accuracy_m, mime, image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->bindValue(1, (int)$tenantId, \PDO::PARAM_INT);
+        $stmt->bindValue(2, (int)$employeeId, \PDO::PARAM_INT);
+        if ($attendanceRecordId === null) $stmt->bindValue(3, null, \PDO::PARAM_NULL);
+        else $stmt->bindValue(3, (int)$attendanceRecordId, \PDO::PARAM_INT);
+        $stmt->bindValue(4, $eventType);
+        $stmt->bindValue(5, $modality);
+        $stmt->bindValue(6, $hash);
+        $stmt->bindValue(7, 1, \PDO::PARAM_INT);
+        if ($lat === null) $stmt->bindValue(8, null, \PDO::PARAM_NULL);
+        else $stmt->bindValue(8, $lat);
+        if ($lng === null) $stmt->bindValue(9, null, \PDO::PARAM_NULL);
+        else $stmt->bindValue(9, $lng);
+        if ($accuracyM === null) $stmt->bindValue(10, null, \PDO::PARAM_NULL);
+        else $stmt->bindValue(10, (int)$accuracyM, \PDO::PARAM_INT);
+        $stmt->bindValue(11, $mime);
+        $stmt->bindValue(12, $imageBytes, \PDO::PARAM_LOB);
+        $stmt->execute();
+    }
+
     public function list()
     {
         header('Content-Type: application/json');
@@ -135,7 +311,8 @@ class AttendanceController
             }
             $employeeId = $mapped;
         }
-        echo json_encode(['attendance' => $this->store->all($start, $end, $employeeId, $limit)]);
+        $attendance = $this->store->all($start, $end, $employeeId, $limit);
+        echo json_encode(['attendance' => $this->normalizeAttendanceRecords($attendance)]);
     }
 
     public function dashboard()
@@ -191,7 +368,7 @@ class AttendanceController
             'created_at' => $r['created_at']
         ], $eStmt->fetchAll());
 
-        $attendance = $this->store->all($start, $end, $scopedEmployeeId, $limit);
+        $attendance = $this->normalizeAttendanceRecords($this->store->all($start, $end, $scopedEmployeeId, $limit));
 
         $ensureDays = filter_var($_GET['ensure_days'] ?? '0', \FILTER_VALIDATE_BOOL);
         if ($ensureDays) {
@@ -437,8 +614,34 @@ class AttendanceController
                 if ($mapped <= 0) throw new \Exception('Employee account not linked');
                 $in['employee_id'] = $mapped;
             }
+            $pdo = \App\Core\Database::get();
+            if (!$pdo) throw new \Exception('Database unavailable');
+
             $tenantId = $user['tenant_id'] ?? null;
-            $r = $this->store->clockIn($in['employee_id'] ?? '', $tenantId);
+            if (!$tenantId) $tenantId = $this->resolveTenantId($pdo);
+            if (!$tenantId) throw new \Exception('tenant not resolved');
+
+            $employeeId = (int)($in['employee_id'] ?? 0);
+            if ($employeeId <= 0) throw new \Exception('employee_id is required');
+
+            $modality = $this->normalizeBiometricModality($in['biometric_modality'] ?? ($in['modality'] ?? null));
+            if (!$modality) throw new \Exception('Biometric modality is required');
+            [$mime, $bytes] = $this->decodeBiometricImage($in['biometric_image'] ?? ($in['image'] ?? null));
+            $hash = $this->requireBiometricMatch($pdo, (int)$tenantId, (int)$employeeId, $modality, $bytes);
+            [$lat, $lng, $acc] = $this->extractGeo($in);
+
+            $r = $this->store->clockIn($employeeId, $tenantId);
+            $rid = isset($r['id']) ? (int)$r['id'] : null;
+            if ($rid) {
+                $m = $modality === 'face' ? 'face' : 'thumb';
+                $upd = $pdo->prepare('UPDATE attendance_records SET clock_in_method=?, clock_in_lat=?, clock_in_lng=?, clock_in_accuracy_m=? WHERE id=?');
+                $upd->execute([$m, $lat, $lng, $acc, $rid]);
+                $r['clock_in_method'] = $m;
+                $r['clock_in_lat'] = $lat;
+                $r['clock_in_lng'] = $lng;
+                $r['clock_in_accuracy_m'] = $acc;
+            }
+            $this->insertBiometricEvidence($pdo, (int)$tenantId, (int)$employeeId, $rid, 'clock_in', $modality, $hash, $lat, $lng, $acc, $mime, $bytes);
             echo json_encode(['record' => $r]);
         } catch (\Exception $e) {
             http_response_code(400);
@@ -462,9 +665,242 @@ class AttendanceController
                 if ($mapped <= 0) throw new \Exception('Employee account not linked');
                 $in['employee_id'] = $mapped;
             }
+            $pdo = \App\Core\Database::get();
+            if (!$pdo) throw new \Exception('Database unavailable');
+
             $tenantId = $user['tenant_id'] ?? null;
-            $r = $this->store->clockOut($in['employee_id'] ?? '', $tenantId);
+            if (!$tenantId) $tenantId = $this->resolveTenantId($pdo);
+            if (!$tenantId) throw new \Exception('tenant not resolved');
+
+            $employeeId = (int)($in['employee_id'] ?? 0);
+            if ($employeeId <= 0) throw new \Exception('employee_id is required');
+
+            $modality = $this->normalizeBiometricModality($in['biometric_modality'] ?? ($in['modality'] ?? null));
+            if (!$modality) throw new \Exception('Biometric modality is required');
+            [$mime, $bytes] = $this->decodeBiometricImage($in['biometric_image'] ?? ($in['image'] ?? null));
+            $hash = $this->requireBiometricMatch($pdo, (int)$tenantId, (int)$employeeId, $modality, $bytes);
+            [$lat, $lng, $acc] = $this->extractGeo($in);
+
+            $r = $this->store->clockOut($employeeId, $tenantId);
+            $rid = isset($r['id']) ? (int)$r['id'] : null;
+            if ($rid) {
+                $m = $modality === 'face' ? 'face' : 'thumb';
+                $upd = $pdo->prepare('UPDATE attendance_records SET clock_out_method=?, clock_out_lat=?, clock_out_lng=?, clock_out_accuracy_m=? WHERE id=?');
+                $upd->execute([$m, $lat, $lng, $acc, $rid]);
+                $r['clock_out_method'] = $m;
+                $r['clock_out_lat'] = $lat;
+                $r['clock_out_lng'] = $lng;
+                $r['clock_out_accuracy_m'] = $acc;
+            }
+            $this->insertBiometricEvidence($pdo, (int)$tenantId, (int)$employeeId, $rid, 'clock_out', $modality, $hash, $lat, $lng, $acc, $mime, $bytes);
             echo json_encode(['record' => $r]);
+        } catch (\Exception $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function enrollBiometric()
+    {
+        header('Content-Type: application/json');
+        $in = json_decode(file_get_contents('php://input'), true);
+        try {
+            $user = \App\Core\Auth::currentUser();
+            if (!$user) {
+                http_response_code(401);
+                echo json_encode(['error' => 'Unauthorized']);
+                return;
+            }
+            if (($user['role'] ?? null) === 'employee') {
+                $mapped = (int)($user['employee_id'] ?? 0);
+                if ($mapped <= 0) throw new \Exception('Employee account not linked');
+                $in['employee_id'] = $mapped;
+            } else {
+                \App\Core\Auth::requireRole('perm:employees.write');
+            }
+
+            $pdo = \App\Core\Database::get();
+            if (!$pdo) throw new \Exception('Database unavailable');
+
+            $tenantId = $user['tenant_id'] ?? null;
+            if (!$tenantId) $tenantId = $this->resolveTenantId($pdo);
+            if (!$tenantId) throw new \Exception('tenant not resolved');
+
+            $employeeId = (int)($in['employee_id'] ?? 0);
+            if ($employeeId <= 0) throw new \Exception('employee_id is required');
+
+            $modality = $this->normalizeBiometricModality($in['biometric_modality'] ?? ($in['modality'] ?? null));
+            if (!$modality) throw new \Exception('Biometric modality is required');
+
+            [$mime, $bytes] = $this->decodeBiometricImage($in['biometric_image'] ?? ($in['image'] ?? null));
+            $hash = $this->computeTemplateHash($bytes);
+
+            $chk = $pdo->prepare('SELECT id FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+            $chk->execute([(int)$tenantId, (int)$employeeId]);
+            if (!$chk->fetchColumn()) throw new \Exception('Employee not in tenant');
+
+            $stmt = $pdo->prepare('INSERT INTO biometric_templates (tenant_id, employee_id, modality, sha256, mime, image) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE sha256=VALUES(sha256), mime=VALUES(mime), image=VALUES(image), updated_at=CURRENT_TIMESTAMP');
+            $stmt->bindValue(1, (int)$tenantId, \PDO::PARAM_INT);
+            $stmt->bindValue(2, (int)$employeeId, \PDO::PARAM_INT);
+            $stmt->bindValue(3, $modality);
+            $stmt->bindValue(4, $hash);
+            $stmt->bindValue(5, $mime);
+            $stmt->bindValue(6, $bytes, \PDO::PARAM_LOB);
+            $stmt->execute();
+
+            echo json_encode(['ok' => true, 'modality' => $modality]);
+        } catch (\Exception $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function evidence()
+    {
+        header('Content-Type: application/json');
+        try {
+            $user = \App\Core\Auth::currentUser();
+            if (!$user) {
+                http_response_code(401);
+                echo json_encode(['error' => 'Unauthorized']);
+                return;
+            }
+            $pdo = \App\Core\Database::get();
+            if (!$pdo) throw new \Exception('Database unavailable');
+
+            $tenantId = $user['tenant_id'] ?? null;
+            if (!$tenantId) $tenantId = $this->resolveTenantId($pdo);
+            if (!$tenantId) throw new \Exception('tenant not resolved');
+
+            $attendanceRecordId = (int)($_GET['attendance_record_id'] ?? ($_GET['record_id'] ?? 0));
+            if ($attendanceRecordId <= 0) throw new \Exception('attendance_record_id is required');
+
+            $params = [(int)$tenantId, $attendanceRecordId];
+            $where = 'WHERE tenant_id=? AND attendance_record_id=?';
+
+            if (($user['role'] ?? null) === 'employee') {
+                $mapped = (int)($user['employee_id'] ?? 0);
+                if ($mapped <= 0) throw new \Exception('Employee account not linked');
+                $where .= ' AND employee_id=?';
+                $params[] = $mapped;
+            }
+
+            $stmt = $pdo->prepare("SELECT id, employee_id, attendance_record_id, event_type, modality, matched, sha256, latitude, longitude, accuracy_m, mime, image, created_at FROM biometric_evidence $where ORDER BY id ASC LIMIT 20");
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+            $out = [];
+            foreach ($rows as $r) {
+                $mime = (string)($r['mime'] ?? 'application/octet-stream');
+                $bytes = $r['image'] ?? '';
+                $b64 = is_string($bytes) ? base64_encode($bytes) : '';
+                $lat = isset($r['latitude']) && is_numeric($r['latitude']) ? (float)$r['latitude'] : null;
+                $lng = isset($r['longitude']) && is_numeric($r['longitude']) ? (float)$r['longitude'] : null;
+                $acc = isset($r['accuracy_m']) && is_numeric($r['accuracy_m']) ? (int)$r['accuracy_m'] : null;
+                $out[] = [
+                    'id' => (string)($r['id'] ?? ''),
+                    'employee_id' => (string)($r['employee_id'] ?? ''),
+                    'attendance_record_id' => (string)($r['attendance_record_id'] ?? ''),
+                    'event_type' => (string)($r['event_type'] ?? ''),
+                    'modality' => (string)($r['modality'] ?? ''),
+                    'matched' => (int)($r['matched'] ?? 0),
+                    'sha256' => (string)($r['sha256'] ?? ''),
+                    'created_at' => (string)($r['created_at'] ?? ''),
+                    'latitude' => $lat,
+                    'longitude' => $lng,
+                    'accuracy_m' => $acc,
+                    'image_data_url' => $b64 !== '' ? ('data:' . $mime . ';base64,' . $b64) : null,
+                ];
+            }
+
+            echo json_encode(['evidence' => $out]);
+        } catch (\Exception $e) {
+            http_response_code(400);
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function rawEvents()
+    {
+        header('Content-Type: application/json');
+        try {
+            $user = \App\Core\Auth::currentUser();
+            if (!$user) {
+                http_response_code(401);
+                echo json_encode(['error' => 'Unauthorized']);
+                return;
+            }
+
+            $pdo = \App\Core\Database::get();
+            if (!$pdo) throw new \Exception('Database unavailable');
+
+            $tenantId = $user['tenant_id'] ?? null;
+            if (!$tenantId) $tenantId = $this->resolveTenantId($pdo);
+            if (!$tenantId) throw new \Exception('tenant not resolved');
+
+            $employeeId = (int)($_GET['employee_id'] ?? 0);
+            if (($user['role'] ?? null) === 'employee') {
+                $mapped = (int)($user['employee_id'] ?? 0);
+                if ($mapped <= 0) throw new \Exception('Employee account not linked');
+                $employeeId = $mapped;
+            }
+            if ($employeeId <= 0) throw new \Exception('employee_id is required');
+
+            $date = $_GET['date'] ?? null;
+            $startDate = $_GET['start_date'] ?? (is_string($date) ? $date : date('Y-m-d'));
+            $endDate = $_GET['end_date'] ?? $startDate;
+            [$startDate, $endDate] = $this->normalizeRange((string)$startDate, (string)$endDate);
+
+            $limit = (int)($_GET['limit'] ?? 2000);
+            if ($limit <= 0) $limit = 2000;
+            if ($limit > 5000) $limit = 5000;
+
+            $includePayload = ($_GET['include_payload'] ?? '') === '1';
+
+            $empCheck = $pdo->prepare('SELECT id FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+            $empCheck->execute([(int)$tenantId, (int)$employeeId]);
+            if (!$empCheck->fetchColumn()) throw new \Exception('Employee not in tenant');
+
+            $dhakaTz = new \DateTimeZone('Asia/Dhaka');
+            $utcTz = new \DateTimeZone('UTC');
+            $localStart = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $startDate . ' 00:00:00', $dhakaTz);
+            $localEnd = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $endDate . ' 23:59:59', $dhakaTz);
+            $startUtc = $localStart ? $localStart->setTimezone($utcTz)->format('Y-m-d H:i:s') : ($startDate . ' 00:00:00');
+            $endUtc = $localEnd ? $localEnd->setTimezone($utcTz)->format('Y-m-d H:i:s') : ($endDate . ' 23:59:59');
+
+            $select = $includePayload
+                ? 'id, tenant_id, device_id, employee_id, event_type, occurred_at_utc, raw_payload, created_at'
+                : 'id, tenant_id, device_id, employee_id, event_type, occurred_at_utc, created_at';
+            $stmt = $pdo->prepare("SELECT $select FROM raw_events WHERE tenant_id=? AND employee_id=? AND occurred_at_utc BETWEEN ? AND ? ORDER BY occurred_at_utc ASC LIMIT $limit");
+            $stmt->execute([(int)$tenantId, (int)$employeeId, $startUtc, $endUtc]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+
+            $out = [];
+            foreach ($rows as $r) {
+                $payload = $includePayload ? ($r['raw_payload'] ?? null) : null;
+                if ($includePayload && is_string($payload) && $payload !== '') {
+                    $decoded = json_decode($payload, true);
+                    if (json_last_error() === \JSON_ERROR_NONE) $payload = $decoded;
+                }
+
+                $occurredUtc = is_string($r['occurred_at_utc'] ?? null) ? (string)$r['occurred_at_utc'] : '';
+                $out[] = [
+                    'id' => (string)($r['id'] ?? ''),
+                    'device_id' => (string)($r['device_id'] ?? ''),
+                    'employee_id' => (string)($r['employee_id'] ?? ''),
+                    'event_type' => (string)($r['event_type'] ?? ''),
+                    'occurred_at_utc' => $occurredUtc,
+                    'occurred_at' => $this->toTenantTime($occurredUtc),
+                    'created_at' => (string)($r['created_at'] ?? ''),
+                    'raw_payload' => $includePayload ? $payload : null,
+                ];
+            }
+
+            echo json_encode([
+                'employee_id' => (string)$employeeId,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'events' => $out,
+            ]);
         } catch (\Exception $e) {
             http_response_code(400);
             echo json_encode(['error' => $e->getMessage()]);
@@ -533,13 +969,14 @@ class AttendanceController
             return;
         }
 
-        $stmt = $pdo->prepare('SELECT id, employee_id, clock_in, clock_out, duration_minutes, date, status, late_minutes, early_leave_minutes FROM attendance_records WHERE employee_id=? AND clock_out IS NULL ORDER BY id DESC LIMIT 1');
+        $stmt = $pdo->prepare('SELECT id, employee_id, clock_in, clock_out, duration_minutes, date, status, late_minutes, early_leave_minutes, clock_in_method, clock_in_lat, clock_in_lng, clock_in_accuracy_m, clock_in_device_id, clock_out_method, clock_out_lat, clock_out_lng, clock_out_accuracy_m, clock_out_device_id FROM attendance_records WHERE employee_id=? AND clock_out IS NULL ORDER BY id DESC LIMIT 1');
         $stmt->execute([(int)$employeeId]);
         $r = $stmt->fetch(\PDO::FETCH_ASSOC);
         if (!$r) {
             echo json_encode(['open' => false]);
             return;
         }
+        $r = $this->normalizeAttendanceRecordRow($r);
         $r['id'] = (string)$r['id'];
         $r['employee_id'] = (string)$r['employee_id'];
 
@@ -624,87 +1061,140 @@ class AttendanceController
         $start = "$month-01";
         $end = date("Y-m-t", strtotime($start));
 
-        $punchStmt = $pdo->prepare("SELECT occurred_at_utc FROM raw_events WHERE tenant_id=? AND employee_id=? AND event_type='punch' AND occurred_at_utc BETWEEN ? AND ? ORDER BY occurred_at_utc ASC");
-        $punchStmt->execute([(int)$tenantId, (int)$employeeId, $start . ' 00:00:00', $end . ' 23:59:59']);
-        $punchRows = $punchStmt->fetchAll(\PDO::FETCH_ASSOC);
-
         $attendance = [];
-        if ($punchRows) {
-            $punchesByDate = [];
-            foreach ($punchRows as $pr) {
-                $ts = $pr['occurred_at_utc'] ?? null;
-                if (!is_string($ts) || $ts === '') continue;
-                $local = $this->toTenantTime($ts);
-                if (!is_string($local) || $local === '') continue;
-                $dateStr = substr($local, 0, 10);
-                if (!is_string($dateStr) || $dateStr === '') continue;
-                if (!isset($punchesByDate[$dateStr])) $punchesByDate[$dateStr] = [];
-                $punchesByDate[$dateStr][] = $local;
-            }
+        $existingDates = [];
 
-            foreach ($punchesByDate as $dateStr => $list) {
-                if (!is_array($list) || !$list) continue;
-                sort($list, \SORT_STRING);
+        $stmt = $pdo->prepare('SELECT id, employee_id, clock_in, clock_out, duration_minutes, date, status, late_minutes, early_leave_minutes, overtime_minutes, clock_in_method, clock_in_lat, clock_in_lng, clock_in_accuracy_m, clock_in_device_id, clock_out_method, clock_out_lat, clock_out_lng, clock_out_accuracy_m, clock_out_device_id FROM attendance_records WHERE employee_id=? AND date BETWEEN ? AND ? ORDER BY date ASC, clock_in ASC, id ASC');
+        $stmt->execute([(int)$employeeId, $start, $end]);
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        foreach ($rows as $r) {
+            if (!is_array($r)) continue;
+            $r = $this->normalizeAttendanceRecordRow($r);
+            $r['id'] = (string)($r['id'] ?? '');
+            $r['employee_id'] = (string)($r['employee_id'] ?? '');
+            $attendance[] = $r;
 
-                for ($i = 0; $i + 1 < count($list); $i += 2) {
-                    $in = $list[$i];
-                    $out = $list[$i + 1];
-                    $dur = 0;
-                    $inTs = strtotime((string)$in);
-                    $outTs = strtotime((string)$out);
-                    if ($inTs !== false && $outTs !== false && $outTs > $inTs) {
-                        $dur = (int)floor(($outTs - $inTs) / 60);
+            $d = $r['date'] ?? null;
+            if (is_string($d) && $d !== '') $existingDates[$d] = true;
+        }
+
+        if (!$attendance) {
+            $punchStmt = $pdo->prepare("SELECT device_id, occurred_at_utc FROM raw_events WHERE tenant_id=? AND employee_id=? AND event_type='punch' AND occurred_at_utc BETWEEN ? AND ? ORDER BY occurred_at_utc ASC");
+            $punchStmt->execute([(int)$tenantId, (int)$employeeId, $start . ' 00:00:00', $end . ' 23:59:59']);
+            $punchRows = $punchStmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+
+            if ($punchRows) {
+                $punchesByDate = [];
+                foreach ($punchRows as $pr) {
+                    $ts = $pr['occurred_at_utc'] ?? null;
+                    if (!is_string($ts) || $ts === '') continue;
+                    $local = $this->toTenantTime($ts);
+                    if (!is_string($local) || $local === '') continue;
+                    $dateStr = substr($local, 0, 10);
+                    if (!is_string($dateStr) || $dateStr === '') continue;
+                    if (!isset($punchesByDate[$dateStr])) $punchesByDate[$dateStr] = [];
+                    $punchesByDate[$dateStr][] = [
+                        'ts' => $local,
+                        'device_id' => is_string($pr['device_id'] ?? null) ? (string)$pr['device_id'] : null,
+                    ];
+                }
+
+                foreach ($punchesByDate as $dateStr => $list) {
+                    if (!is_array($list) || !$list) continue;
+                    usort($list, fn($a, $b) => strcmp((string)($a['ts'] ?? ''), (string)($b['ts'] ?? '')));
+
+                    for ($i = 0; $i + 1 < count($list); $i += 2) {
+                        $in = (string)($list[$i]['ts'] ?? '');
+                        $out = (string)($list[$i + 1]['ts'] ?? '');
+                        $dur = 0;
+                        $inTs = $in !== '' ? strtotime($in) : false;
+                        $outTs = $out !== '' ? strtotime($out) : false;
+                        if ($inTs !== false && $outTs !== false && $outTs > $inTs) {
+                            $dur = (int)floor(($outTs - $inTs) / 60);
+                        }
+                        $attendance[] = [
+                            'id' => null,
+                            'employee_id' => (string)$employeeId,
+                            'date' => $dateStr,
+                            'clock_in' => $in,
+                            'clock_out' => $out,
+                            'duration_minutes' => $dur,
+                            'clock_in_method' => 'machine',
+                            'clock_out_method' => 'machine',
+                            'clock_in_device_id' => $list[$i]['device_id'] ?? null,
+                            'clock_out_device_id' => $list[$i + 1]['device_id'] ?? null,
+                            'clock_in_lat' => null,
+                            'clock_in_lng' => null,
+                            'clock_in_accuracy_m' => null,
+                            'clock_out_lat' => null,
+                            'clock_out_lng' => null,
+                            'clock_out_accuracy_m' => null,
+                        ];
+                        $existingDates[$dateStr] = true;
                     }
-                    $attendance[] = [
-                        'date' => $dateStr,
-                        'clock_in' => $in,
-                        'clock_out' => $out,
-                        'duration_minutes' => $dur,
-                    ];
+
+                    if ((count($list) % 2) === 1) {
+                        $last = $list[count($list) - 1] ?? null;
+                        $in = is_array($last) ? (string)($last['ts'] ?? '') : '';
+                        if ($in !== '') {
+                            $attendance[] = [
+                                'id' => null,
+                                'employee_id' => (string)$employeeId,
+                                'date' => $dateStr,
+                                'clock_in' => $in,
+                                'clock_out' => null,
+                                'duration_minutes' => 0,
+                                'clock_in_method' => 'machine',
+                                'clock_out_method' => null,
+                                'clock_in_device_id' => is_array($last) ? ($last['device_id'] ?? null) : null,
+                                'clock_out_device_id' => null,
+                                'clock_in_lat' => null,
+                                'clock_in_lng' => null,
+                                'clock_in_accuracy_m' => null,
+                                'clock_out_lat' => null,
+                                'clock_out_lng' => null,
+                                'clock_out_accuracy_m' => null,
+                            ];
+                            $existingDates[$dateStr] = true;
+                        }
+                    }
                 }
 
-                if ((count($list) % 2) === 1) {
-                    $attendance[] = [
-                        'date' => $dateStr,
-                        'clock_in' => $list[count($list) - 1],
-                        'clock_out' => null,
-                        'duration_minutes' => 0,
-                    ];
-                }
+                usort($attendance, function ($a, $b) {
+                    $d = strcmp((string)($a['date'] ?? ''), (string)($b['date'] ?? ''));
+                    if ($d !== 0) return $d;
+                    return strcmp((string)($a['clock_in'] ?? ''), (string)($b['clock_in'] ?? ''));
+                });
             }
+        }
 
-            usort($attendance, function ($a, $b) {
-                $d = strcmp((string)($a['date'] ?? ''), (string)($b['date'] ?? ''));
-                if ($d !== 0) return $d;
-                return strcmp((string)($a['clock_in'] ?? ''), (string)($b['clock_in'] ?? ''));
-            });
-        } else {
-            $stmt = $pdo->prepare('SELECT * FROM attendance_records WHERE employee_id=? AND date BETWEEN ? AND ? ORDER BY date ASC');
-            $stmt->execute([(int)$employeeId, $start, $end]);
-            $attendance = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-
-            $existingDates = [];
-            foreach ($attendance as $r) {
-                $d = $r['date'] ?? null;
-                if (is_string($d) && $d !== '') $existingDates[$d] = true;
-            }
-
-            $dayStmt = $pdo->prepare('SELECT date, in_time, out_time, worked_minutes FROM attendance_days WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? ORDER BY date ASC');
-            $dayStmt->execute([(int)$tenantId, (int)$employeeId, $start, $end]);
-            $days = $dayStmt->fetchAll(\PDO::FETCH_ASSOC);
-            foreach ($days as $d) {
-                $dateStr = $d['date'] ?? null;
-                if (!is_string($dateStr) || $dateStr === '') continue;
-                if (isset($existingDates[$dateStr])) continue;
-                $in = $d['in_time'] ?? null;
-                if (!is_string($in) || $in === '') continue;
-                $attendance[] = [
-                    'date' => $dateStr,
-                    'clock_in' => $in,
-                    'clock_out' => is_string($d['out_time'] ?? null) ? $d['out_time'] : null,
-                    'duration_minutes' => (int)($d['worked_minutes'] ?? 0),
-                ];
-            }
+        $dayStmt = $pdo->prepare('SELECT date, in_time, out_time, worked_minutes FROM attendance_days WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? ORDER BY date ASC');
+        $dayStmt->execute([(int)$tenantId, (int)$employeeId, $start, $end]);
+        $days = $dayStmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        foreach ($days as $d) {
+            $dateStr = $d['date'] ?? null;
+            if (!is_string($dateStr) || $dateStr === '') continue;
+            if (isset($existingDates[$dateStr])) continue;
+            $in = $d['in_time'] ?? null;
+            if (!is_string($in) || $in === '') continue;
+            $attendance[] = [
+                'id' => null,
+                'employee_id' => (string)$employeeId,
+                'date' => $dateStr,
+                'clock_in' => $in,
+                'clock_out' => is_string($d['out_time'] ?? null) ? $d['out_time'] : null,
+                'duration_minutes' => (int)($d['worked_minutes'] ?? 0),
+                'clock_in_method' => null,
+                'clock_out_method' => null,
+                'clock_in_lat' => null,
+                'clock_in_lng' => null,
+                'clock_in_accuracy_m' => null,
+                'clock_out_lat' => null,
+                'clock_out_lng' => null,
+                'clock_out_accuracy_m' => null,
+                'clock_in_device_id' => null,
+                'clock_out_device_id' => null,
+            ];
         }
 
         // Fetch Leaves

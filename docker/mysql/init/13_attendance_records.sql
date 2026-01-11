@@ -69,3 +69,39 @@ SET @sql := IF(@idx_open = 0, 'CREATE INDEX idx_attendance_open_shift ON attenda
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS biometric_templates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  employee_id INT NOT NULL,
+  modality VARCHAR(24) NOT NULL,
+  sha256 CHAR(64) NOT NULL,
+  mime VARCHAR(96) NOT NULL,
+  image LONGBLOB NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY u_biometric_template (tenant_id, employee_id, modality),
+  KEY idx_biometric_template_employee (employee_id),
+  KEY idx_biometric_template_tenant_employee (tenant_id, employee_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS biometric_evidence (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  employee_id INT NOT NULL,
+  attendance_record_id INT NULL,
+  event_type VARCHAR(16) NOT NULL,
+  modality VARCHAR(24) NOT NULL,
+  sha256 CHAR(64) NOT NULL,
+  matched TINYINT(1) NOT NULL DEFAULT 0,
+  mime VARCHAR(96) NOT NULL,
+  image LONGBLOB NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_biometric_evidence_tenant_employee (tenant_id, employee_id, created_at),
+  KEY idx_biometric_evidence_attendance_record (attendance_record_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+  FOREIGN KEY (attendance_record_id) REFERENCES attendance_records(id) ON DELETE SET NULL
+);

@@ -17,6 +17,7 @@ import {
   Drawer,
   IconButton,
   InputAdornment,
+  MenuItem,
   Paper,
   Stack,
   Table,
@@ -59,6 +60,16 @@ interface AttendanceRow {
   status?: string;
   late_minutes?: number;
   early_leave_minutes?: number;
+  clock_in_method?: string | null;
+  clock_out_method?: string | null;
+  clock_in_lat?: number | null;
+  clock_in_lng?: number | null;
+  clock_in_accuracy_m?: number | null;
+  clock_out_lat?: number | null;
+  clock_out_lng?: number | null;
+  clock_out_accuracy_m?: number | null;
+  clock_in_device_id?: string | null;
+  clock_out_device_id?: string | null;
 }
 
 interface Day {
@@ -120,6 +131,8 @@ type EmployeeSummary = {
   lastSeen: string | null;
 };
 
+type BiometricModality = "face" | "fingerprint";
+
 const formatTime = (value: string | null | undefined): string => {
   if (!value) return "—";
   const spaceIdx = value.indexOf(" ");
@@ -131,6 +144,38 @@ const formatTime = (value: string | null | undefined): string => {
     return value.slice(tIdx + 1, tIdx + 6);
   }
   return value;
+};
+
+const normalizeMethod = (
+  raw: unknown
+): "machine" | "thumb" | "face" | "unknown" => {
+  const v = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  if (!v) return "unknown";
+  if (v === "machine" || v === "device") return "machine";
+  if (v === "thumb" || v === "fingerprint" || v === "thumbprint")
+    return "thumb";
+  if (v === "face" || v === "selfie") return "face";
+  return "unknown";
+};
+
+const methodLabel = (m: "machine" | "thumb" | "face" | "unknown"): string => {
+  if (m === "machine") return "Machine";
+  if (m === "thumb") return "Thumb";
+  if (m === "face") return "Face";
+  return "Unknown";
+};
+
+const mapsUrl = (lat: number, lng: number): string =>
+  `https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}`;
+
+const formatLatLng = (
+  lat: number | null | undefined,
+  lng: number | null | undefined
+): string => {
+  if (typeof lat !== "number" || typeof lng !== "number") return "—";
+  return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 };
 
 const normalizeDayKey = (raw: string): DayKey | "" => {
@@ -277,6 +322,54 @@ export default function Attendance() {
   const [error, setError] = useState("");
   const [leaveActionBusy, setLeaveActionBusy] = useState(false);
   const [leaveActionError, setLeaveActionError] = useState("");
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
+  const [evidenceError, setEvidenceError] = useState("");
+  const [evidenceFor, setEvidenceFor] = useState<AttendanceRow | null>(null);
+  const [evidenceItems, setEvidenceItems] = useState<
+    Array<{
+      id: string;
+      employee_id: string;
+      attendance_record_id: string;
+      event_type: string;
+      modality: string;
+      matched: number;
+      sha256: string;
+      created_at: string;
+      image_data_url: string | null;
+      latitude?: number | null;
+      longitude?: number | null;
+      accuracy_m?: number | null;
+    }>
+  >([]);
+
+  const [deviceOpen, setDeviceOpen] = useState(false);
+  const [deviceBusy, setDeviceBusy] = useState(false);
+  const [deviceError, setDeviceError] = useState("");
+  const [deviceFor, setDeviceFor] = useState<AttendanceRow | null>(null);
+  const [deviceItems, setDeviceItems] = useState<
+    Array<{
+      id: string;
+      device_id: string;
+      employee_id: string;
+      event_type: string;
+      occurred_at: string | null;
+      occurred_at_utc: string | null;
+      created_at: string | null;
+    }>
+  >([]);
+
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [enrollEmployeeId, setEnrollEmployeeId] = useState<string>("");
+  const [enrollEmployeeLabel, setEnrollEmployeeLabel] = useState<string>("");
+  const [enrollModality, setEnrollModality] =
+    useState<BiometricModality>("face");
+  const [enrollImage, setEnrollImage] = useState("");
+  const [enrollBusy, setEnrollBusy] = useState(false);
+  const [enrollError, setEnrollError] = useState("");
+  const [enrollOk, setEnrollOk] = useState("");
+  const enrollVideoRef = useRef<HTMLVideoElement | null>(null);
+  const enrollStreamRef = useRef<MediaStream | null>(null);
 
   const setRangeStart = useCallback(
     (raw: string) => {
@@ -299,6 +392,174 @@ export default function Attendance() {
     },
     [setStart, setEnd]
   );
+
+  const closeEvidence = useCallback(() => {
+    setEvidenceOpen(false);
+    setEvidenceBusy(false);
+    setEvidenceError("");
+    setEvidenceItems([]);
+    setEvidenceFor(null);
+  }, []);
+
+  const openEvidence = useCallback(async (row: AttendanceRow) => {
+    const rid = Number(row.id);
+    if (!Number.isFinite(rid) || rid <= 0) {
+      setEvidenceFor(row);
+      setEvidenceOpen(true);
+      setEvidenceBusy(false);
+      setEvidenceItems([]);
+      setEvidenceError("No attendance record evidence available.");
+      return;
+    }
+    setEvidenceFor(row);
+    setEvidenceOpen(true);
+    setEvidenceBusy(true);
+    setEvidenceError("");
+    setEvidenceItems([]);
+    try {
+      const res = await api.get(
+        `/api/attendance/evidence?attendance_record_id=${encodeURIComponent(
+          String(rid)
+        )}`
+      );
+      const list = Array.isArray(res.data?.evidence) ? res.data.evidence : [];
+      setEvidenceItems(list);
+    } catch (err: unknown) {
+      setEvidenceError(getErrorMessage(err, "Failed to load evidence"));
+    } finally {
+      setEvidenceBusy(false);
+    }
+  }, []);
+
+  const closeDevice = useCallback(() => {
+    setDeviceOpen(false);
+    setDeviceBusy(false);
+    setDeviceError("");
+    setDeviceItems([]);
+    setDeviceFor(null);
+  }, []);
+
+  const openDevice = useCallback(async (row: AttendanceRow) => {
+    setDeviceFor(row);
+    setDeviceOpen(true);
+    setDeviceBusy(true);
+    setDeviceError("");
+    setDeviceItems([]);
+    try {
+      const res = await api.get(
+        `/api/attendance/raw_events?employee_id=${encodeURIComponent(
+          String(row.employee_id)
+        )}&start_date=${encodeURIComponent(
+          String(row.date)
+        )}&end_date=${encodeURIComponent(String(row.date))}`
+      );
+      const list = Array.isArray(res.data?.events) ? res.data.events : [];
+      setDeviceItems(list);
+    } catch (err: unknown) {
+      setDeviceError(getErrorMessage(err, "Failed to load device events"));
+    } finally {
+      setDeviceBusy(false);
+    }
+  }, []);
+
+  const stopEnrollCamera = useCallback(() => {
+    const stream = enrollStreamRef.current;
+    if (stream) {
+      for (const t of stream.getTracks()) t.stop();
+      enrollStreamRef.current = null;
+    }
+    const el = enrollVideoRef.current;
+    if (el) el.srcObject = null;
+  }, []);
+
+  const closeEnroll = useCallback(() => {
+    stopEnrollCamera();
+    setEnrollOpen(false);
+    setEnrollBusy(false);
+    setEnrollError("");
+    setEnrollOk("");
+    setEnrollImage("");
+    setEnrollEmployeeId("");
+    setEnrollEmployeeLabel("");
+    setEnrollModality("face");
+  }, [stopEnrollCamera]);
+
+  const startEnrollCamera = useCallback(async () => {
+    stopEnrollCamera();
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setEnrollError("Camera not available");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false,
+      });
+      enrollStreamRef.current = stream;
+      const el = enrollVideoRef.current;
+      if (el) {
+        el.srcObject = stream;
+        await el.play();
+      }
+    } catch (err: unknown) {
+      setEnrollError(getErrorMessage(err, "Failed to start camera"));
+    }
+  }, [stopEnrollCamera]);
+
+  const captureEnrollSelfie = useCallback(() => {
+    const el = enrollVideoRef.current;
+    if (!el) return;
+    const w = el.videoWidth || 0;
+    const h = el.videoHeight || 0;
+    if (!w || !h) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(el, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    setEnrollImage(dataUrl);
+  }, []);
+
+  const onPickEnrollFile = useCallback((file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const v = typeof reader.result === "string" ? reader.result : "";
+      setEnrollImage(v);
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const submitEnroll = useCallback(async () => {
+    if (!enrollEmployeeId) return;
+    if (!enrollImage) {
+      setEnrollError("Biometric image is required");
+      return;
+    }
+    setEnrollBusy(true);
+    setEnrollError("");
+    setEnrollOk("");
+    try {
+      await api.post("/api/biometrics/enroll", {
+        employee_id: enrollEmployeeId,
+        biometric_modality: enrollModality,
+        biometric_image: enrollImage,
+      });
+      setEnrollOk(
+        `Enrolled ${
+          enrollModality === "face" ? "face" : "fingerprint"
+        } template`
+      );
+      setEnrollImage("");
+      stopEnrollCamera();
+    } catch (err: unknown) {
+      setEnrollError(getErrorMessage(err, "Failed to enroll biometrics"));
+    } finally {
+      setEnrollBusy(false);
+    }
+  }, [enrollEmployeeId, enrollImage, enrollModality, stopEnrollCamera]);
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
     null
@@ -389,6 +650,30 @@ export default function Attendance() {
     for (const e of employees) m.set(String(e.id), e);
     return m;
   }, [employees]);
+
+  const openEnrollForEmployee = useCallback(
+    (employeeId: string) => {
+      const employee =
+        employeesById.get(String(employeeId)) ||
+        (employeeId ? { name: `Employee #${employeeId}` } : null);
+      setEnrollEmployeeId(String(employeeId || ""));
+      setEnrollEmployeeLabel(
+        employee
+          ? `${String(employee.name || "Employee")}${
+              employee && "code" in employee && employee.code
+                ? ` • ${String(employee.code)}`
+                : ""
+            }`
+          : ""
+      );
+      setEnrollModality("face");
+      setEnrollImage("");
+      setEnrollError("");
+      setEnrollOk("");
+      setEnrollOpen(true);
+    },
+    [employeesById]
+  );
 
   const daysByEmployee = useMemo(() => {
     const m = new Map<string, Day[]>();
@@ -1401,6 +1686,19 @@ export default function Attendance() {
               )}
             </Stack>
           )}
+
+          {selectedEmployeeId ? (
+            <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => openEnrollForEmployee(selectedEmployeeId)}
+                sx={{ borderRadius: 2, fontWeight: 900 }}
+              >
+                Enroll Biometrics
+              </Button>
+            </Stack>
+          ) : null}
         </Box>
 
         <Divider />
@@ -1657,6 +1955,16 @@ export default function Attendance() {
                     <TableCell
                       sx={{ fontWeight: 800, color: "text.secondary" }}
                     >
+                      METHOD
+                    </TableCell>
+                    <TableCell
+                      sx={{ fontWeight: 800, color: "text.secondary" }}
+                    >
+                      LOCATION
+                    </TableCell>
+                    <TableCell
+                      sx={{ fontWeight: 800, color: "text.secondary" }}
+                    >
                       WORKED
                     </TableCell>
                     <TableCell
@@ -1664,55 +1972,487 @@ export default function Attendance() {
                     >
                       STATUS
                     </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{ fontWeight: 800, color: "text.secondary" }}
+                    >
+                      EVIDENCE
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {selectedDayRows.map((r, idx) => (
                     <TableRow key={r.id} hover>
-                      <TableCell sx={{ fontWeight: 800 }}>{idx + 1}</TableCell>
-                      <TableCell>{formatTime(r.clock_in)}</TableCell>
-                      <TableCell>
-                        {r.clock_out ? formatTime(r.clock_out) : "—"}
+                      {(() => {
+                        const inMethod = normalizeMethod(r.clock_in_method);
+                        const outMethod = normalizeMethod(r.clock_out_method);
+                        const inHasGeo =
+                          typeof r.clock_in_lat === "number" &&
+                          typeof r.clock_in_lng === "number" &&
+                          inMethod !== "machine";
+                        const outHasGeo =
+                          typeof r.clock_out_lat === "number" &&
+                          typeof r.clock_out_lng === "number" &&
+                          outMethod !== "machine";
+                        const rid = Number(r.id);
+                        const hasRecordId = Number.isFinite(rid) && rid > 0;
+                        const showEvidence =
+                          hasRecordId &&
+                          !(inMethod === "machine" && outMethod === "machine");
+
+                        return (
+                          <>
+                            <TableCell sx={{ fontWeight: 800 }}>
+                              {idx + 1}
+                            </TableCell>
+                            <TableCell>{formatTime(r.clock_in)}</TableCell>
+                            <TableCell>
+                              {r.clock_out ? formatTime(r.clock_out) : "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Stack
+                                direction="row"
+                                spacing={0.75}
+                                flexWrap="wrap"
+                              >
+                                <Chip
+                                  size="small"
+                                  label={`IN: ${methodLabel(inMethod)}`}
+                                  sx={{
+                                    fontWeight: 900,
+                                    bgcolor: "background.default",
+                                  }}
+                                />
+                                <Chip
+                                  size="small"
+                                  label={`OUT: ${
+                                    r.clock_out ? methodLabel(outMethod) : "—"
+                                  }`}
+                                  sx={{
+                                    fontWeight: 900,
+                                    bgcolor: "background.default",
+                                  }}
+                                />
+                                {inMethod === "machine" &&
+                                r.clock_in_device_id ? (
+                                  <Chip
+                                    size="small"
+                                    label={String(r.clock_in_device_id)}
+                                    sx={{
+                                      fontWeight: 900,
+                                      bgcolor: "background.default",
+                                    }}
+                                  />
+                                ) : null}
+                                {outMethod === "machine" &&
+                                r.clock_out_device_id ? (
+                                  <Chip
+                                    size="small"
+                                    label={String(r.clock_out_device_id)}
+                                    sx={{
+                                      fontWeight: 900,
+                                      bgcolor: "background.default",
+                                    }}
+                                  />
+                                ) : null}
+                              </Stack>
+                            </TableCell>
+                            <TableCell>
+                              <Stack spacing={0.25}>
+                                {inHasGeo ? (
+                                  <Typography
+                                    variant="body2"
+                                    component="a"
+                                    href={mapsUrl(
+                                      r.clock_in_lat as number,
+                                      r.clock_in_lng as number
+                                    )}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    sx={{
+                                      color: "primary.main",
+                                      textDecoration: "none",
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    IN:{" "}
+                                    {formatLatLng(
+                                      r.clock_in_lat,
+                                      r.clock_in_lng
+                                    )}
+                                  </Typography>
+                                ) : (
+                                  <Typography
+                                    variant="body2"
+                                    color="text.secondary"
+                                  >
+                                    IN: —
+                                  </Typography>
+                                )}
+                                {r.clock_out ? (
+                                  outHasGeo ? (
+                                    <Typography
+                                      variant="body2"
+                                      component="a"
+                                      href={mapsUrl(
+                                        r.clock_out_lat as number,
+                                        r.clock_out_lng as number
+                                      )}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      sx={{
+                                        color: "primary.main",
+                                        textDecoration: "none",
+                                        fontWeight: 800,
+                                      }}
+                                    >
+                                      OUT:{" "}
+                                      {formatLatLng(
+                                        r.clock_out_lat,
+                                        r.clock_out_lng
+                                      )}
+                                    </Typography>
+                                  ) : (
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                    >
+                                      OUT: —
+                                    </Typography>
+                                  )
+                                ) : (
+                                  <Typography
+                                    variant="body2"
+                                    color="text.secondary"
+                                  >
+                                    OUT: —
+                                  </Typography>
+                                )}
+                              </Stack>
+                            </TableCell>
+                            <TableCell sx={{ fontWeight: 900 }}>
+                              {formatMinutes(r.duration_minutes || 0)}
+                            </TableCell>
+                            <TableCell>
+                              <Stack
+                                direction="row"
+                                spacing={0.75}
+                                flexWrap="wrap"
+                              >
+                                {!r.clock_out && (
+                                  <Chip
+                                    size="small"
+                                    label="Open shift"
+                                    sx={chipSx.openShift}
+                                  />
+                                )}
+                                {isLate(r) && (
+                                  <Chip
+                                    size="small"
+                                    label="Late"
+                                    sx={chipSx.warning}
+                                  />
+                                )}
+                                {isEarlyLeave(r) && (
+                                  <Chip
+                                    size="small"
+                                    label="Early Leave"
+                                    sx={chipSx.warning}
+                                  />
+                                )}
+                                {!isLate(r) && !isEarlyLeave(r) && r.status && (
+                                  <Chip
+                                    size="small"
+                                    label={r.status}
+                                    sx={getDayStatusChipSx(r.status)}
+                                  />
+                                )}
+                                {!isLate(r) &&
+                                  !isEarlyLeave(r) &&
+                                  !r.status && (
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                    >
+                                      —
+                                    </Typography>
+                                  )}
+                              </Stack>
+                            </TableCell>
+                            <TableCell align="right">
+                              <Stack
+                                direction="row"
+                                spacing={1}
+                                justifyContent="flex-end"
+                                alignItems="center"
+                              >
+                                {showEvidence ? (
+                                  <Button
+                                    size="small"
+                                    variant="text"
+                                    onClick={() => void openEvidence(r)}
+                                    disabled={
+                                      evidenceBusy && evidenceFor?.id === r.id
+                                    }
+                                  >
+                                    {evidenceBusy && evidenceFor?.id === r.id
+                                      ? "Loading…"
+                                      : "Biometric"}
+                                  </Button>
+                                ) : (
+                                  <Typography
+                                    variant="body2"
+                                    color="text.secondary"
+                                  >
+                                    —
+                                  </Typography>
+                                )}
+                                <Button
+                                  size="small"
+                                  variant="text"
+                                  onClick={() => void openDevice(r)}
+                                  disabled={
+                                    deviceBusy &&
+                                    deviceFor?.employee_id === r.employee_id &&
+                                    deviceFor?.date === r.date &&
+                                    deviceFor?.clock_in === r.clock_in
+                                  }
+                                >
+                                  {deviceBusy &&
+                                  deviceFor?.employee_id === r.employee_id &&
+                                  deviceFor?.date === r.date &&
+                                  deviceFor?.clock_in === r.clock_in
+                                    ? "Loading…"
+                                    : "Device"}
+                                </Button>
+                              </Stack>
+                            </TableCell>
+                          </>
+                        );
+                      })()}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={evidenceOpen}
+        onClose={evidenceBusy ? undefined : closeEvidence}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 900 }} noWrap>
+              Biometric Evidence
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {evidenceFor
+                ? `${evidenceFor.date} • Record #${String(evidenceFor.id)}`
+                : ""}
+            </Typography>
+          </Box>
+          <IconButton onClick={closeEvidence} disabled={evidenceBusy}>
+            <CloseRounded />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 2.5 }}>
+          {evidenceError ? (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+              {evidenceError}
+            </Alert>
+          ) : null}
+          {evidenceBusy ? (
+            <Box sx={{ py: 6, display: "flex", justifyContent: "center" }}>
+              <CircularProgress />
+            </Box>
+          ) : evidenceItems.length === 0 ? (
+            <Typography color="text.secondary">No evidence stored.</Typography>
+          ) : (
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                gap: 2,
+              }}
+            >
+              {evidenceItems.map((ev) => (
+                <Paper
+                  key={ev.id}
+                  variant="outlined"
+                  sx={{ p: 1.5, borderRadius: 3 }}
+                >
+                  <Stack spacing={1}>
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      flexWrap="wrap"
+                      useFlexGap
+                    >
+                      <Chip
+                        size="small"
+                        label={String(ev.event_type || "event")}
+                        sx={{ fontWeight: 900 }}
+                      />
+                      <Chip
+                        size="small"
+                        label={String(ev.modality || "modality")}
+                        sx={{ fontWeight: 900, bgcolor: "background.default" }}
+                      />
+                      <Chip
+                        size="small"
+                        label={ev.matched ? "Matched" : "Unmatched"}
+                        sx={{
+                          fontWeight: 900,
+                          bgcolor: ev.matched
+                            ? alpha(theme.palette.success.main, 0.14)
+                            : alpha(theme.palette.error.main, 0.14),
+                        }}
+                      />
+                    </Stack>
+                    {typeof ev.latitude === "number" &&
+                    typeof ev.longitude === "number" ? (
+                      <Typography
+                        variant="body2"
+                        component="a"
+                        href={mapsUrl(ev.latitude, ev.longitude)}
+                        target="_blank"
+                        rel="noreferrer"
+                        sx={{
+                          color: "primary.main",
+                          textDecoration: "none",
+                          fontWeight: 800,
+                        }}
+                      >
+                        {formatLatLng(ev.latitude, ev.longitude)}
+                        {typeof ev.accuracy_m === "number"
+                          ? ` (±${Math.round(ev.accuracy_m)}m)`
+                          : ""}
+                      </Typography>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        Location unavailable.
+                      </Typography>
+                    )}
+                    {String(ev.modality || "").toLowerCase() === "face" ? (
+                      ev.image_data_url ? (
+                        <Box
+                          component="img"
+                          src={ev.image_data_url}
+                          alt="Evidence"
+                          sx={{
+                            width: "100%",
+                            borderRadius: 2,
+                            border: "1px solid",
+                            borderColor: alpha(
+                              theme.palette.text.primary,
+                              0.12
+                            ),
+                          }}
+                        />
+                      ) : (
+                        <Typography color="text.secondary">
+                          Image unavailable.
+                        </Typography>
+                      )
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        Thumb evidence image hidden.
+                      </Typography>
+                    )}
+                    <Typography variant="caption" color="text.secondary">
+                      {String(ev.created_at || "")}
+                    </Typography>
+                  </Stack>
+                </Paper>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deviceOpen}
+        onClose={deviceBusy ? undefined : closeDevice}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 900 }} noWrap>
+              Device Events
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {deviceFor
+                ? `${deviceFor.date} • Employee #${deviceFor.employee_id}`
+                : ""}
+            </Typography>
+          </Box>
+          <IconButton onClick={closeDevice} disabled={deviceBusy}>
+            <CloseRounded />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 2.5 }}>
+          {deviceError ? (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+              {deviceError}
+            </Alert>
+          ) : null}
+          {deviceBusy ? (
+            <Box sx={{ py: 6, display: "flex", justifyContent: "center" }}>
+              <CircularProgress />
+            </Box>
+          ) : deviceItems.length === 0 ? (
+            <Typography color="text.secondary">
+              No device events found.
+            </Typography>
+          ) : (
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell
+                      sx={{ fontWeight: 800, color: "text.secondary" }}
+                    >
+                      TIME
+                    </TableCell>
+                    <TableCell
+                      sx={{ fontWeight: 800, color: "text.secondary" }}
+                    >
+                      EVENT
+                    </TableCell>
+                    <TableCell
+                      sx={{ fontWeight: 800, color: "text.secondary" }}
+                    >
+                      DEVICE
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {deviceItems.map((ev) => (
+                    <TableRow key={ev.id} hover>
+                      <TableCell sx={{ fontWeight: 800 }}>
+                        {formatTime(ev.occurred_at || ev.occurred_at_utc || "")}
                       </TableCell>
-                      <TableCell sx={{ fontWeight: 900 }}>
-                        {formatMinutes(r.duration_minutes || 0)}
-                      </TableCell>
                       <TableCell>
-                        <Stack direction="row" spacing={0.75} flexWrap="wrap">
-                          {!r.clock_out && (
-                            <Chip
-                              size="small"
-                              label="Open shift"
-                              sx={chipSx.openShift}
-                            />
-                          )}
-                          {isLate(r) && (
-                            <Chip
-                              size="small"
-                              label="Late"
-                              sx={chipSx.warning}
-                            />
-                          )}
-                          {isEarlyLeave(r) && (
-                            <Chip
-                              size="small"
-                              label="Early Leave"
-                              sx={chipSx.warning}
-                            />
-                          )}
-                          {!isLate(r) && !isEarlyLeave(r) && r.status && (
-                            <Chip
-                              size="small"
-                              label={r.status}
-                              sx={getDayStatusChipSx(r.status)}
-                            />
-                          )}
-                          {!isLate(r) && !isEarlyLeave(r) && !r.status && (
-                            <Typography variant="body2" color="text.secondary">
-                              —
-                            </Typography>
-                          )}
-                        </Stack>
+                        <Chip
+                          size="small"
+                          label={String(ev.event_type || "event")}
+                          sx={{
+                            fontWeight: 900,
+                            bgcolor: "background.default",
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 800 }}>
+                        {ev.device_id || "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1720,6 +2460,166 @@ export default function Attendance() {
               </Table>
             </TableContainer>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={enrollOpen}
+        onClose={enrollBusy ? undefined : closeEnroll}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 900 }} noWrap>
+              Enroll Biometrics
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {enrollEmployeeLabel ||
+                (enrollEmployeeId ? `#${enrollEmployeeId}` : "")}
+            </Typography>
+          </Box>
+          <IconButton onClick={closeEnroll} disabled={enrollBusy}>
+            <CloseRounded />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 2.5 }}>
+          <Stack spacing={2}>
+            {enrollError ? (
+              <Alert severity="error" sx={{ borderRadius: 2 }}>
+                {enrollError}
+              </Alert>
+            ) : null}
+            {enrollOk ? (
+              <Alert severity="success" sx={{ borderRadius: 2 }}>
+                {enrollOk}
+              </Alert>
+            ) : null}
+
+            <TextField
+              select
+              label="Modality"
+              value={enrollModality}
+              onChange={(e) =>
+                setEnrollModality(e.target.value as BiometricModality)
+              }
+              disabled={enrollBusy}
+            >
+              <MenuItem value="face">Face (Selfie)</MenuItem>
+              <MenuItem value="fingerprint">Fingerprint (Image)</MenuItem>
+            </TextField>
+
+            {enrollModality === "face" ? (
+              <Stack spacing={1.25}>
+                <Box
+                  sx={{
+                    width: "100%",
+                    bgcolor: "background.default",
+                    borderRadius: 2,
+                    overflow: "hidden",
+                    border: "1px solid",
+                    borderColor: alpha(theme.palette.text.primary, 0.12),
+                  }}
+                >
+                  <Box
+                    component="video"
+                    ref={enrollVideoRef}
+                    muted
+                    playsInline
+                    autoPlay
+                    sx={{ width: "100%", display: "block" }}
+                  />
+                </Box>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    variant="outlined"
+                    onClick={() => void startEnrollCamera()}
+                    disabled={enrollBusy}
+                    sx={{ borderRadius: 2, fontWeight: 900 }}
+                  >
+                    Start Camera
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={stopEnrollCamera}
+                    disabled={enrollBusy}
+                    sx={{ borderRadius: 2, fontWeight: 900 }}
+                  >
+                    Stop Camera
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={captureEnrollSelfie}
+                    disabled={enrollBusy}
+                    sx={{ borderRadius: 2, fontWeight: 900 }}
+                  >
+                    Take Selfie
+                  </Button>
+                  <Button
+                    component="label"
+                    variant="outlined"
+                    disabled={enrollBusy}
+                    sx={{ borderRadius: 2, fontWeight: 900 }}
+                  >
+                    Upload Image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={(e) =>
+                        onPickEnrollFile(e.target.files?.[0] || null)
+                      }
+                    />
+                  </Button>
+                </Stack>
+              </Stack>
+            ) : (
+              <Button
+                component="label"
+                variant="outlined"
+                disabled={enrollBusy}
+                sx={{ borderRadius: 2, fontWeight: 900 }}
+              >
+                Upload Fingerprint Image
+                <input
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(e) =>
+                    onPickEnrollFile(e.target.files?.[0] || null)
+                  }
+                />
+              </Button>
+            )}
+
+            {enrollImage ? (
+              <Box
+                component="img"
+                src={enrollImage}
+                alt="Biometric"
+                sx={{
+                  width: "100%",
+                  borderRadius: 2,
+                  border: "1px solid",
+                  borderColor: alpha(theme.palette.text.primary, 0.12),
+                }}
+              />
+            ) : null}
+
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              <Button onClick={closeEnroll} disabled={enrollBusy}>
+                Close
+              </Button>
+              <Button
+                variant="contained"
+                onClick={() => void submitEnroll()}
+                disabled={enrollBusy || !enrollEmployeeId || !enrollImage}
+              >
+                {enrollBusy ? "Please wait…" : "Enroll"}
+              </Button>
+            </Stack>
+          </Stack>
         </DialogContent>
       </Dialog>
     </Container>

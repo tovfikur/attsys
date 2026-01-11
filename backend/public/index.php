@@ -118,7 +118,12 @@ $router->getAuth('/api/attendance/employee', ['App\Controller\AttendanceControll
 $router->getAuth('/api/attendance/open', ['App\Controller\AttendanceController', 'openShift'], 'perm:attendance.clock');
 $router->postAuth('/api/attendance/clockin', ['App\Controller\AttendanceController', 'clockIn'], 'perm:attendance.clock');
 $router->postAuth('/api/attendance/clockout', ['App\Controller\AttendanceController', 'clockOut'], 'perm:attendance.clock');
+$router->getAuth('/api/attendance/evidence', ['App\Controller\AttendanceController', 'evidence'], 'perm:attendance.read');
+$router->getAuth('/api/attendance/raw_events', ['App\Controller\AttendanceController', 'rawEvents'], 'perm:attendance.read');
 $router->postAuth('/api/attendance/process', ['App\Controller\AttendanceController', 'process'], 'perm:attendance.read');
+
+// Biometrics
+$router->postAuth('/api/biometrics/enroll', ['App\Controller\AttendanceController', 'enrollBiometric'], 'perm:attendance.clock');
 
 // Shifts
 $router->getAuth('/api/shifts', ['App\Controller\ShiftController', 'index'], 'perm:attendance.read');
