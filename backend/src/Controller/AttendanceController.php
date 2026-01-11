@@ -244,14 +244,180 @@ class AttendanceController
         return preg_match('/^[0-9a-f]{16}0{48}$/', $h) === 1;
     }
 
+    private function computeTemplateHash(string $imageBytes, string $modality): string
+    {
+        if ($modality === 'face') {
+            $this->assertFaceDetected($imageBytes);
+        }
+        return hash('sha256', $imageBytes);
+    }
+
+    private function assertFaceDetected(string $imageBytes): void
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'att_face_');
+        if (!$tmp) throw new \Exception('Face recognition unavailable');
+        $path = $tmp . '.jpg';
+        @rename($tmp, $path);
+        $written = @file_put_contents($path, $imageBytes);
+        if (!is_int($written) || $written <= 0) {
+            @unlink($path);
+            throw new \Exception('Face recognition unavailable');
+        }
+
+        try {
+            $res = $this->runPythonJson(
+                implode("\n", [
+                    'import sys, json',
+                    'try:',
+                    '  import face_recognition',
+                    'except Exception as e:',
+                    '  print(json.dumps({"error":"module_missing","detail":str(e)}))',
+                    '  sys.exit(2)',
+                    'p = sys.argv[1]',
+                    'try:',
+                    '  img = face_recognition.load_image_file(p)',
+                    '  loc = face_recognition.face_locations(img)',
+                    '  print(json.dumps({"faces":len(loc)}))',
+                    '  sys.exit(0)',
+                    'except Exception as e:',
+                    '  print(json.dumps({"error":"processing_failed","detail":str(e)}))',
+                    '  sys.exit(1)',
+                ]),
+                [$path]
+            );
+
+            if (($res['error'] ?? null) === 'module_missing') throw new \Exception('face_recognition module is not installed on server');
+            if (!isset($res['faces']) || !is_int($res['faces'])) throw new \Exception('Face recognition unavailable');
+            if ($res['faces'] < 1) throw new \Exception('No face detected in image');
+        } finally {
+            @unlink($path);
+        }
+    }
+
+    private function computeFaceDistance(string $enrolledImageBytes, string $probeImageBytes): float
+    {
+        $tmp1 = tempnam(sys_get_temp_dir(), 'att_face_enr_');
+        $tmp2 = tempnam(sys_get_temp_dir(), 'att_face_prb_');
+        if (!$tmp1 || !$tmp2) throw new \Exception('Face recognition unavailable');
+        $p1 = $tmp1 . '.jpg';
+        $p2 = $tmp2 . '.jpg';
+        @rename($tmp1, $p1);
+        @rename($tmp2, $p2);
+
+        $w1 = @file_put_contents($p1, $enrolledImageBytes);
+        $w2 = @file_put_contents($p2, $probeImageBytes);
+        if (!is_int($w1) || $w1 <= 0 || !is_int($w2) || $w2 <= 0) {
+            @unlink($p1);
+            @unlink($p2);
+            throw new \Exception('Face recognition unavailable');
+        }
+
+        try {
+            $res = $this->runPythonJson(
+                implode("\n", [
+                    'import sys, json',
+                    'try:',
+                    '  import face_recognition',
+                    'except Exception as e:',
+                    '  print(json.dumps({"error":"module_missing","detail":str(e)}))',
+                    '  sys.exit(2)',
+                    'p1 = sys.argv[1]',
+                    'p2 = sys.argv[2]',
+                    'try:',
+                    '  img1 = face_recognition.load_image_file(p1)',
+                    '  img2 = face_recognition.load_image_file(p2)',
+                    '  enc1 = face_recognition.face_encodings(img1)',
+                    '  enc2 = face_recognition.face_encodings(img2)',
+                    '  if not enc1:',
+                    '    print(json.dumps({"error":"no_face_enrolled"}))',
+                    '    sys.exit(3)',
+                    '  if not enc2:',
+                    '    print(json.dumps({"error":"no_face_probe"}))',
+                    '    sys.exit(4)',
+                    '  dist = float(face_recognition.face_distance([enc1[0]], enc2[0])[0])',
+                    '  print(json.dumps({"distance":dist}))',
+                    '  sys.exit(0)',
+                    'except Exception as e:',
+                    '  print(json.dumps({"error":"processing_failed","detail":str(e)}))',
+                    '  sys.exit(1)',
+                ]),
+                [$p1, $p2]
+            );
+
+            if (($res['error'] ?? null) === 'module_missing') throw new \Exception('face_recognition module is not installed on server');
+            if (isset($res['distance']) && is_float($res['distance'])) return $res['distance'];
+            if (isset($res['distance']) && is_numeric($res['distance'])) return (float)$res['distance'];
+            if (($res['error'] ?? null) === 'no_face_enrolled') throw new \Exception('No face detected in enrolled template');
+            if (($res['error'] ?? null) === 'no_face_probe') throw new \Exception('No face detected in image');
+            throw new \Exception('Face recognition unavailable');
+        } finally {
+            @unlink($p1);
+            @unlink($p2);
+        }
+    }
+
+    private function runPythonJson(string $code, array $args): array
+    {
+        $candidates = [
+            ['python'],
+            ['python3'],
+            ['py', '-3'],
+        ];
+
+        $lastStdout = '';
+        $lastStderr = '';
+        $lastExit = null;
+
+        foreach ($candidates as $base) {
+            $parts = array_merge($base, ['-c', $code], $args);
+            $cmd = implode(' ', array_map('escapeshellarg', $parts));
+
+            $spec = [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ];
+            $proc = @proc_open($cmd, $spec, $pipes);
+            if (!is_resource($proc)) continue;
+
+            fclose($pipes[0]);
+            $stdout = stream_get_contents($pipes[1]);
+            $stderr = stream_get_contents($pipes[2]);
+            fclose($pipes[1]);
+            fclose($pipes[2]);
+            $exit = proc_close($proc);
+
+            $lastStdout = is_string($stdout) ? $stdout : '';
+            $lastStderr = is_string($stderr) ? $stderr : '';
+            $lastExit = is_int($exit) ? $exit : null;
+
+            $decoded = json_decode(trim($lastStdout), true);
+            if (is_array($decoded)) return $decoded;
+
+            if ($lastExit === 0) throw new \Exception('Face recognition unavailable');
+        }
+
+        if ($lastExit !== null) throw new \Exception('Face recognition unavailable');
+        throw new \Exception('Python is not available on server');
+    }
+
     private function requireBiometricMatch($pdo, int $tenantId, int $employeeId, string $modality, string $imageBytes, ?string $providedHash = null): string
     {
         $evidenceHash = hash('sha256', $imageBytes);
-        $stmt = $pdo->prepare('SELECT sha256 FROM biometric_templates WHERE tenant_id=? AND employee_id=? AND modality=? LIMIT 1');
+        $stmt = $pdo->prepare('SELECT sha256, image FROM biometric_templates WHERE tenant_id=? AND employee_id=? AND modality=? LIMIT 1');
         $stmt->execute([(int)$tenantId, (int)$employeeId, $modality]);
-        $expected = $stmt->fetchColumn();
-        if (!is_string($expected) || trim($expected) === '') throw new \Exception('Biometric not enrolled');
-        $expected = strtolower(trim($expected));
+        $tpl = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!is_array($tpl)) throw new \Exception('Biometric not enrolled');
+        $expected = isset($tpl['sha256']) && is_string($tpl['sha256']) ? strtolower(trim($tpl['sha256'])) : '';
+        $enrolledImage = $tpl['image'] ?? null;
+
+        if ($modality === 'face' && is_string($enrolledImage) && $enrolledImage !== '') {
+            $dist = $this->computeFaceDistance($enrolledImage, $imageBytes);
+            if ($dist > 0.55) throw new \Exception('Biometric mismatch');
+            return $evidenceHash;
+        }
+
+        if ($expected === '') throw new \Exception('Biometric not enrolled');
 
         if ($this->isAHashTemplateHash($expected)) {
             $expectedA = substr($expected, 0, 16);
@@ -733,7 +899,7 @@ class AttendanceController
             if (!$modality) throw new \Exception('Biometric modality is required');
 
             [$mime, $bytes] = $this->decodeBiometricImage($in['biometric_image'] ?? ($in['image'] ?? null));
-            $hash = $this->computeTemplateHash($bytes);
+            $hash = $this->computeTemplateHash($bytes, $modality);
 
             $chk = $pdo->prepare('SELECT id FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
             $chk->execute([(int)$tenantId, (int)$employeeId]);

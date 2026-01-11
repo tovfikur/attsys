@@ -26,10 +26,15 @@ use App\Core\TenantResolver;
 // 1. CORS Headers (Allow Frontend)
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 error_log("Request Origin: $origin");
-header("Access-Control-Allow-Origin: $origin"); // Echo back origin for credentials/headers support
+if ($origin) {
+    header("Access-Control-Allow-Origin: $origin");
+    header("Access-Control-Allow-Credentials: true");
+    header("Vary: Origin");
+} else {
+    header("Access-Control-Allow-Origin: *");
+}
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Tenant-ID");
-header("Access-Control-Allow-Credentials: true");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
