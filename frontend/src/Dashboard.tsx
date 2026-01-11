@@ -40,6 +40,12 @@ interface Tenant {
   created_at: string;
 }
 
+const getRootDomain = (): string => {
+  const v = (import.meta as unknown as { env?: Record<string, string> }).env
+    ?.VITE_ROOT_DOMAIN;
+  return (v || "khudroo.com").toLowerCase();
+};
+
 export default function Dashboard() {
   const [tenantInfo, setTenantInfo] = useState<TenantData | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -58,6 +64,9 @@ export default function Dashboard() {
   const user = getUser();
   const userName = user?.name || "Admin";
   const isSuperadmin = user?.role === "superadmin";
+  const rootDomain = getRootDomain();
+  const protocol =
+    typeof window !== "undefined" ? window.location.protocol : "https:";
 
   useEffect(() => {
     fetchStatus();
@@ -368,12 +377,12 @@ export default function Dashboard() {
                     color="text.secondary"
                     sx={{ fontFamily: "monospace" }}
                   >
-                    {t.subdomain}.localhost
+                    {t.subdomain}.{rootDomain}
                   </Typography>
                   <Divider />
                   <Button
                     variant="contained"
-                    href={`http://${t.subdomain}.localhost:5173`}
+                    href={`${protocol}//${t.subdomain}.${rootDomain}`}
                     target="_blank"
                     rel="noreferrer"
                     sx={{ borderRadius: 3 }}

@@ -17,6 +17,12 @@ function getRootDomain(): string {
   return (v || "khudroo.com").toLowerCase();
 }
 
+function getApiBaseUrl(): string {
+  const v = (import.meta as unknown as { env?: Record<string, string> }).env
+    ?.VITE_API_BASE_URL;
+  return (v || "").trim();
+}
+
 function isRootHost(host: string): boolean {
   const h = (host || "").toLowerCase();
   const root = getRootDomain();
@@ -26,15 +32,6 @@ function isRootHost(host: string): boolean {
 function getTenantFromHost(host: string): string | null {
   const h = (host || "").toLowerCase();
   if (!h) return null;
-
-  if (h === "localhost" || h === "127.0.0.1") return null;
-
-  if (h.endsWith(".localhost")) {
-    const parts = h.split(".");
-    if (parts.length !== 2) return null;
-    if (parts[0] === "superadmin") return null;
-    return parts[0] || null;
-  }
 
   const root = getRootDomain();
   if (h === root || h === `www.${root}`) return null;
@@ -57,7 +54,7 @@ function getTenantFromHost(host: string): string | null {
   return null;
 }
 
-const api = axios.create({ baseURL: "http://localhost:8000" });
+const api = axios.create({ baseURL: getApiBaseUrl() || undefined });
 
 api.interceptors.request.use((config) => {
   const token = getToken();

@@ -75,13 +75,6 @@ export default function Login() {
   const tenantFromHost = useMemo(() => {
     const h = host.toLowerCase();
     if (!h) return "";
-    if (h === "localhost" || h === "127.0.0.1") return "";
-    if (h.endsWith(".localhost")) {
-      const parts = h.split(".");
-      if (parts.length !== 2) return "";
-      if (parts[0] === "superadmin") return "";
-      return parts[0] || "";
-    }
     if (h === rootDomain || h === `www.${rootDomain}`) return "";
     const suffix = `.${rootDomain}`;
     if (h.endsWith(suffix)) {

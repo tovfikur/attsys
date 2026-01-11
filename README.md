@@ -31,7 +31,7 @@ You can use the provided `start-dev.bat` script (Windows) or run manually:
 **Backend:**
 ```bash
 cd backend
-php -S localhost:8000 -t public
+php -S 0.0.0.0:8000 -t public
 ```
 
 **Frontend:**
@@ -41,9 +41,8 @@ npm run dev
 ```
 
 ## SaaS Multi-tenancy Testing
-- Access `http://localhost:5173` -> Simulates "Public/Superadmin" (Backend sees `localhost`)
-- Access `http://tenant1.localhost:5173` -> Simulates "Tenant1" (Backend sees `tenant1.localhost`)
-  *Note: You might need to add `127.0.0.1 tenant1.localhost` to your hosts file.*
+- Access `https://khudroo.com` -> Root portal
+- Access `https://tenant1.khudroo.com` -> Tenant portal (isolated)
 
 ## API Endpoints
 - `GET /api/health` -> Check service status

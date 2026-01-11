@@ -6,16 +6,17 @@ class TenantResolver
 {
     public function resolve()
     {
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $host = $_SERVER['HTTP_HOST'] ?? '';
         $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
         
         // Remove port if present
         $host = explode(':', $host)[0];
+        $host = strtolower(trim((string)$host));
 
         // Basic Logic:
-        // 1. localhost -> superadmin/dev
-        // 2. sub.localhost -> tenant 'sub' (for local testing)
-        // 3. sub.domain.com -> tenant 'sub'
+        // 1. ROOT_DOMAIN / www.ROOT_DOMAIN -> system/root portal
+        // 2. sub.ROOT_DOMAIN -> tenant 'sub'
+        // 3. other domains -> try first label as tenant subdomain
 
         // Tenant hint header takes precedence in dev
         if ($hint) {
@@ -29,14 +30,6 @@ class TenantResolver
                    'type' => 'tenant'
                 ];
             }
-        }
-
-        if ($host === 'localhost' || $host === '127.0.0.1') {
-            return [
-                'id' => 'superadmin',
-                'name' => 'Super Admin Portal',
-                'type' => 'system'
-            ];
         }
 
         $rootDomain = strtolower((string)(getenv('ROOT_DOMAIN') ?: 'khudroo.com'));
@@ -68,7 +61,7 @@ class TenantResolver
 
         $parts = explode('.', $host);
         
-        // Check for real domain (sub.domain.tld) or sub.localhost
+        // Check for other domains (sub.domain.tld)
         if (count($parts) >= 2) {
              $subdomain = $parts[0];
 

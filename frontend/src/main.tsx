@@ -15,15 +15,6 @@ function getTenantFromHost(host: string): string | null {
   const h = (host || "").toLowerCase();
   if (!h) return null;
 
-  if (h === "localhost" || h === "127.0.0.1") return null;
-
-  if (h.endsWith(".localhost")) {
-    const parts = h.split(".");
-    if (parts.length !== 2) return null;
-    if (parts[0] === "superadmin") return null;
-    return parts[0] || null;
-  }
-
   const root = getRootDomain();
   if (h === root || h === `www.${root}`) return null;
 
@@ -45,7 +36,7 @@ function getTenantFromHost(host: string): string | null {
   return null;
 }
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider
       theme={createAppTheme(
@@ -55,5 +46,5 @@ createRoot(document.getElementById('root')!).render(
       <CssBaseline />
       <App />
     </ThemeProvider>
-  </StrictMode>,
-)
+  </StrictMode>
+);

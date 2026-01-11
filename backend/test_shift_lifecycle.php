@@ -1,5 +1,5 @@
 <?php
-$baseUrl = 'http://localhost:8000/api/shifts';
+$baseUrl = 'https://khudroo.com/api/shifts';
 $headers = [
     'Content-Type: application/json',
     'Authorization: Bearer e94fb922fd02d566473d7af1ab156ac2c7123bee0aa9da59',

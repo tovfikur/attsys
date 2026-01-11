@@ -22,8 +22,8 @@ This file is a “fast refresh” overview of the repository so you don’t need
 - MySQL (Docker): `docker-compose.yml` starts a MySQL 8 container and phpMyAdmin.
   - Default DB creds (dev): `attendance/attpass`, db name `attendance_saas`.
   - Init SQL: `docker/mysql/init/*.sql` applied on fresh DB.
-- Backend API: PHP builtin server (see `start-dev.bat`) on `http://localhost:8000`.
-- Frontend: Vite dev server on `http://localhost:5173`.
+- Backend API: served under `https://khudroo.com/api` (or `https://<tenant>.khudroo.com/api`).
+- Frontend: served under `https://khudroo.com` (or `https://<tenant>.khudroo.com`).
 
 ## Tenancy Model
 
@@ -202,4 +202,3 @@ Example: `backend/src/Core/EmployeesStore.php` references `backend/data/employee
 - CORS: backend echoes `HTTP_ORIGIN` directly (`backend/public/index.php`), which is flexible for dev but should be tightened for production.
 - `AttendanceController` contains additional endpoints (example: `payslipPreview`) that are not currently wired in `backend/public/index.php`.
 - The `kio_hik_attendance/` directory is a separate Odoo addon and not used by the PHP/React runtime.
-

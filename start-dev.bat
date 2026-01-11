@@ -19,13 +19,13 @@ if exist frontend\node_modules\.vite rmdir /S /Q frontend\node_modules\.vite
 if exist frontend\dist rmdir /S /Q frontend\dist
 
 echo [Step 4] Starting Backend API...
-start "Backend API" cmd /k "cd /d %~dp0backend && C:\tools\php\php.exe -S localhost:8000 -t public"
+start "Backend API" cmd /k "cd /d %~dp0backend && C:\tools\php\php.exe -S 0.0.0.0:8000 -t public"
 
 echo [Step 5] Starting Frontend App (force fresh bundle)...
 start "Frontend App" cmd /k "cd /d %~dp0frontend && npm run dev -- --force"
 
 echo ----------------------------------------------
 echo Services started with fresh DB and UI bundles!
-echo Frontend: http://localhost:5173
-echo Backend:  http://localhost:8000
+echo Frontend: https://khudroo.com
+echo Backend:  https://khudroo.com/api
 endlocal

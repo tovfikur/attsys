@@ -9,5 +9,9 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     allowedHosts: ["khudroo.com", ".khudroo.com"],
+    hmr: {
+      clientPort: 443,
+      protocol: "wss",
+    },
   },
 });

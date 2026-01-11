@@ -44,7 +44,9 @@ class TenantController
             $tenant = $this->store->create($name, $subdomain);
             // Attempt Cloudflare provisioning (stubbed)
             $cf = new \App\Core\CloudflareClient();
-            $cfRes = $cf->createDnsCname($subdomain, 'app.attendance.local');
+            $rootDomain = strtolower((string)(getenv('ROOT_DOMAIN') ?: 'khudroo.com'));
+            $target = (string)(getenv('TENANT_CNAME_TARGET') ?: $rootDomain);
+            $cfRes = $cf->createDnsCname($subdomain, $target);
             \App\Core\Audit::log('tenant.create', ['tenant' => $tenant, 'cloudflare' => $cfRes]);
             echo json_encode(['message' => 'Tenant created successfully', 'tenant' => $tenant, 'cloudflare' => $cfRes]);
         } catch (\Exception $e) {

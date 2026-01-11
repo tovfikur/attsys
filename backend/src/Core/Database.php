@@ -23,7 +23,7 @@ class Database
             }
         }
 
-        $host = getenv('DB_HOST') ?: '127.0.0.1';
+        $host = getenv('DB_HOST') ?: 'db';
         $port = getenv('DB_PORT') ?: '3306';
         $db   = getenv('DB_NAME') ?: 'attendance_saas';
         $user = getenv('DB_USER') ?: 'attendance';
@@ -41,4 +41,3 @@ class Database
         }
     }
 }
-

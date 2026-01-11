@@ -1,5 +1,5 @@
 <?php
-$url = 'http://localhost:8000/api/shifts';
+$url = 'https://khudroo.com/api/shifts';
 $data = [
     'name' => 'Night Shift',
     'start_time' => '22:00',
