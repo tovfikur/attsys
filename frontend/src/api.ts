@@ -5,6 +5,19 @@ function getToken(): string | null {
   return localStorage.getItem("token") || sessionStorage.getItem("token");
 }
 
+function isNativeRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.location.protocol === "capacitor:" ||
+    window.location.protocol === "file:" ||
+    "Capacitor" in (window as unknown as Record<string, unknown>)
+  );
+}
+
+function getDefaultNativeRootDomain(): string {
+  return "khudroo.com";
+}
+
 function getTenantHint(): string | null {
   return (
     localStorage.getItem("tenant") || sessionStorage.getItem("tenant") || null
@@ -20,6 +33,15 @@ function getRootDomain(): string {
   const v = (import.meta as unknown as { env?: Record<string, string> }).env
     ?.VITE_ROOT_DOMAIN;
   return (v || "").toLowerCase();
+}
+
+function normalizeTenantSubdomain(raw: string | null | undefined): string {
+  const v = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (!v) return "";
+  if (!/^[a-z0-9-]+$/.test(v)) return "";
+  return v;
 }
 
 function getApiBaseUrl(): string {
@@ -45,6 +67,26 @@ function getApiBaseUrl(): string {
   } catch {
     return raw;
   }
+}
+
+function getEffectiveRootDomain(): string {
+  const d = getRootDomain();
+  if (d) return d;
+  if (isNativeRuntime()) return getDefaultNativeRootDomain();
+  return "";
+}
+
+function getRequestBaseUrl(): string | undefined {
+  if (typeof window === "undefined") return getApiBaseUrl() || undefined;
+
+  if (isNativeRuntime()) {
+    const root = getEffectiveRootDomain() || getDefaultNativeRootDomain();
+    const tenant = normalizeTenantSubdomain(getTenantHint());
+    if (tenant) return `https://${tenant}.${root}`;
+    return `https://${root}`;
+  }
+
+  return getApiBaseUrl() || undefined;
 }
 
 const TWO_PART_PUBLIC_SUFFIXES = new Set<string>([
@@ -141,9 +183,11 @@ function getTenantFromHost(host: string): string | null {
   return null;
 }
 
-const api = axios.create({ baseURL: getApiBaseUrl() || undefined });
+const api = axios.create();
 
 api.interceptors.request.use((config) => {
+  if (!config.baseURL) config.baseURL = getRequestBaseUrl();
+
   const token = getToken();
   if (token) {
     config.headers = config.headers || {};
@@ -158,7 +202,8 @@ api.interceptors.request.use((config) => {
     config.headers = config.headers || {};
     config.headers["X-Tenant-ID"] = tenantFromHost;
   } else {
-    const tenantHint = isMobileViewport() ? getTenantHint() : null;
+    const tenantHint =
+      isNativeRuntime() || isMobileViewport() ? getTenantHint() : null;
     if (tenantHint) {
       config.headers = config.headers || {};
       config.headers["X-Tenant-ID"] = tenantHint;

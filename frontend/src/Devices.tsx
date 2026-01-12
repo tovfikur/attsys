@@ -349,7 +349,7 @@ export default function Devices() {
 
   if (!allowed) return <div style={{ padding: 16 }}>Not authorized</div>;
   return (
-    <Container maxWidth="lg" sx={{ py: 3 }}>
+    <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
       <Stack spacing={2.5}>
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -365,8 +365,17 @@ export default function Devices() {
               Manage device registration, status, and Hik-Connect sync.
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1} justifyContent="flex-end">
-            <Button variant="outlined" href="/devices/ingest">
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1}
+            justifyContent="flex-end"
+            sx={{ width: { xs: "100%", sm: "auto" } }}
+          >
+            <Button
+              variant="outlined"
+              href="/devices/ingest"
+              sx={{ width: { xs: "100%", sm: "auto" } }}
+            >
               Test Ingest
             </Button>
             <Button
@@ -374,6 +383,7 @@ export default function Devices() {
               startIcon={<RefreshRounded />}
               onClick={() => void load()}
               disabled={loading}
+              sx={{ width: { xs: "100%", sm: "auto" } }}
             >
               Refresh
             </Button>
@@ -460,101 +470,240 @@ export default function Devices() {
             )}
           </Stack>
           <Divider />
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 900 }}>Site</TableCell>
-                  <TableCell sx={{ fontWeight: 900 }}>Device ID</TableCell>
-                  <TableCell sx={{ fontWeight: 900 }}>Type</TableCell>
-                  <TableCell sx={{ fontWeight: 900 }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 900 }}>Hik-Connect</TableCell>
-                  <TableCell sx={{ fontWeight: 900 }}>Token Expire</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 900 }}>
-                    Actions
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
+          <Box sx={{ display: { xs: "block", md: "none" }, p: 2 }}>
+            {devicesSorted.length === 0 && !loading ? (
+              <Box sx={{ py: 4, textAlign: "center" }}>
+                <Typography color="text.secondary" variant="body2">
+                  No devices yet.
+                </Typography>
+              </Box>
+            ) : (
+              <Stack spacing={1.25}>
                 {devicesSorted.map((d) => (
-                  <TableRow key={d.device_id} hover>
-                    <TableCell sx={{ fontWeight: 700 }}>
-                      {d.site_name}
-                    </TableCell>
-                    <TableCell sx={{ fontFamily: "monospace" }}>
-                      {d.device_id}
-                    </TableCell>
-                    <TableCell>{d.type || "-"}</TableCell>
-                    <TableCell>{statusChip(d.status)}</TableCell>
-                    <TableCell>
-                      {d.hik_configured ? (
-                        <Chip size="small" color="success" label="configured" />
-                      ) : (
-                        <Chip size="small" label="not configured" />
-                      )}
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: "nowrap" }}>
-                      {d.hik_token_expire_time || "-"}
-                    </TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
-                      <IconButton
-                        size="small"
-                        onClick={() => openEdit(d)}
-                        aria-label="Edit device"
+                  <Paper
+                    key={d.device_id}
+                    variant="outlined"
+                    sx={{ p: 1.5, borderRadius: 2.5 }}
+                  >
+                    <Stack spacing={1.25}>
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography sx={{ fontWeight: 900 }} noWrap>
+                            {d.site_name}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              fontFamily: "monospace",
+                              wordBreak: "break-all",
+                            }}
+                          >
+                            {d.device_id}
+                          </Typography>
+                        </Box>
+                        {statusChip(d.status)}
+                      </Stack>
+
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        flexWrap="wrap"
                       >
-                        <EditRounded fontSize="small" />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          setHikDeviceId(d.device_id);
-                          setHikOpen(true);
-                          void loadHikConfig(d.device_id);
-                        }}
-                        aria-label="Hik-Connect settings"
-                      >
-                        <SettingsRounded fontSize="small" />
-                      </IconButton>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        sx={{ ml: 1 }}
-                        onClick={() => void toggle(d.device_id, d.status)}
-                      >
-                        {String(d.status).toLowerCase() === "active"
-                          ? "Disable"
-                          : "Activate"}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="text"
-                        startIcon={<VisibilityRounded />}
-                        sx={{ ml: 1 }}
-                        href={`/devices/events?device_id=${encodeURIComponent(
-                          d.device_id
-                        )}`}
-                      >
-                        Events
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                        <Chip
+                          size="small"
+                          label={d.type || "—"}
+                          sx={{
+                            bgcolor: "background.default",
+                            fontWeight: 800,
+                          }}
+                        />
+                        <Chip
+                          size="small"
+                          label={
+                            d.hik_configured
+                              ? "hik: configured"
+                              : "hik: not configured"
+                          }
+                          color={d.hik_configured ? "success" : "default"}
+                          variant={d.hik_configured ? "filled" : "outlined"}
+                          sx={{ fontWeight: 800 }}
+                        />
+                        {d.hik_token_expire_time ? (
+                          <Chip
+                            size="small"
+                            label={`token: ${d.hik_token_expire_time}`}
+                            sx={{
+                              bgcolor: "background.default",
+                              fontWeight: 800,
+                            }}
+                          />
+                        ) : null}
+                      </Stack>
+
+                      <Stack spacing={1}>
+                        <Stack
+                          direction="row"
+                          spacing={0.5}
+                          justifyContent="flex-end"
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() => openEdit(d)}
+                            aria-label="Edit device"
+                          >
+                            <EditRounded fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              setHikDeviceId(d.device_id);
+                              setHikOpen(true);
+                              void loadHikConfig(d.device_id);
+                            }}
+                            aria-label="Hik-Connect settings"
+                          >
+                            <SettingsRounded fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => void toggle(d.device_id, d.status)}
+                          fullWidth
+                        >
+                          {String(d.status).toLowerCase() === "active"
+                            ? "Disable"
+                            : "Activate"}
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="text"
+                          startIcon={<VisibilityRounded />}
+                          href={`/devices/events?device_id=${encodeURIComponent(
+                            d.device_id
+                          )}`}
+                          fullWidth
+                        >
+                          Events
+                        </Button>
+                      </Stack>
+                    </Stack>
+                  </Paper>
                 ))}
-                {devicesSorted.length === 0 && !loading && (
+              </Stack>
+            )}
+          </Box>
+
+          <Box sx={{ display: { xs: "none", md: "block" } }}>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
                   <TableRow>
-                    <TableCell colSpan={7} sx={{ p: 3 }}>
-                      <Typography
-                        align="center"
-                        color="text.secondary"
-                        variant="body2"
-                      >
-                        No devices yet.
-                      </Typography>
+                    <TableCell sx={{ fontWeight: 900 }}>Site</TableCell>
+                    <TableCell sx={{ fontWeight: 900 }}>Device ID</TableCell>
+                    <TableCell sx={{ fontWeight: 900 }}>Type</TableCell>
+                    <TableCell sx={{ fontWeight: 900 }}>Status</TableCell>
+                    <TableCell sx={{ fontWeight: 900 }}>Hik-Connect</TableCell>
+                    <TableCell sx={{ fontWeight: 900 }}>Token Expire</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 900 }}>
+                      Actions
                     </TableCell>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {devicesSorted.map((d) => (
+                    <TableRow key={d.device_id} hover>
+                      <TableCell sx={{ fontWeight: 700 }}>
+                        {d.site_name}
+                      </TableCell>
+                      <TableCell
+                        sx={{ fontFamily: "monospace", wordBreak: "break-all" }}
+                      >
+                        {d.device_id}
+                      </TableCell>
+                      <TableCell>{d.type || "-"}</TableCell>
+                      <TableCell>{statusChip(d.status)}</TableCell>
+                      <TableCell>
+                        {d.hik_configured ? (
+                          <Chip
+                            size="small"
+                            color="success"
+                            label="configured"
+                          />
+                        ) : (
+                          <Chip size="small" label="not configured" />
+                        )}
+                      </TableCell>
+                      <TableCell sx={{ whiteSpace: "nowrap" }}>
+                        {d.hik_token_expire_time || "-"}
+                      </TableCell>
+                      <TableCell align="right" sx={{ whiteSpace: "normal" }}>
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          alignItems="center"
+                          justifyContent="flex-end"
+                          flexWrap="wrap"
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={() => openEdit(d)}
+                            aria-label="Edit device"
+                          >
+                            <EditRounded fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              setHikDeviceId(d.device_id);
+                              setHikOpen(true);
+                              void loadHikConfig(d.device_id);
+                            }}
+                            aria-label="Hik-Connect settings"
+                          >
+                            <SettingsRounded fontSize="small" />
+                          </IconButton>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => void toggle(d.device_id, d.status)}
+                          >
+                            {String(d.status).toLowerCase() === "active"
+                              ? "Disable"
+                              : "Activate"}
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<VisibilityRounded />}
+                            href={`/devices/events?device_id=${encodeURIComponent(
+                              d.device_id
+                            )}`}
+                          >
+                            Events
+                          </Button>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {devicesSorted.length === 0 && !loading && (
+                    <TableRow>
+                      <TableCell colSpan={7} sx={{ p: 3 }}>
+                        <Typography
+                          align="center"
+                          color="text.secondary"
+                          variant="body2"
+                        >
+                          No devices yet.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
         </Paper>
       </Stack>
 

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
   Avatar,
+  alpha,
   Box,
   Button,
   Divider,
@@ -350,6 +351,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return navItems.filter((i) => !i.roles || i.roles.includes(role));
   }, [role]);
 
+  const activeIndex = useMemo(() => {
+    const path = location.pathname || "";
+    return items.findIndex((i) => path === i.to || path.startsWith(`${i.to}/`));
+  }, [items, location.pathname]);
+
   const title = useMemo(() => {
     if (location.pathname.startsWith("/employees")) return "Employees";
     if (location.pathname.startsWith("/clock")) return "Clock";
@@ -469,7 +475,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <Box
       sx={{
-        minHeight: "100vh",
+        minHeight: "100dvh",
         bgcolor: "background.default",
         backgroundImage: contentBg,
       }}
@@ -743,7 +749,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             flex: 1,
             px: { xs: 2, sm: 3, md: 4 },
             py: { xs: 2, sm: 3 },
-            pb: { xs: 10, md: 3 },
+            pb: {
+              xs: `calc(${theme.spacing(10)} + env(safe-area-inset-bottom))`,
+              md: 3,
+            },
           }}
         >
           <Box
@@ -758,37 +767,95 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </Box>
 
       {!isDesktop && (
-        <Paper
-          elevation={0}
+        <Box
           sx={{
             position: "fixed",
             left: 0,
             right: 0,
             bottom: 0,
-            borderTop: "1px solid",
-            borderColor: "divider",
-            bgcolor: "background.default",
-            backdropFilter: "blur(10px)",
-            backgroundImage: "none",
+            zIndex: theme.zIndex.appBar,
+            px: 1.25,
+            pt: 0.75,
+            pb: `calc(${theme.spacing(1)} + env(safe-area-inset-bottom))`,
+            pointerEvents: "none",
           }}
         >
-          <BottomNavigation
-            showLabels
-            value={items.findIndex((i) => location.pathname === i.to)}
-            onChange={(_, idx) => {
-              const item = items[idx];
-              if (item) navigate(item.to);
+          <Paper
+            elevation={0}
+            sx={{
+              pointerEvents: "auto",
+              mx: "auto",
+              maxWidth: 560,
+              borderRadius: 999,
+              border: "1px solid",
+              borderColor: alpha(theme.palette.text.primary, 0.12),
+              bgcolor: alpha(theme.palette.background.paper, 0.92),
+              backdropFilter: "blur(16px)",
+              backgroundImage: "none",
+              boxShadow: "0 18px 60px rgba(0,0,0,0.14)",
+              overflow: "hidden",
             }}
           >
-            {items.slice(0, 5).map((item) => (
-              <BottomNavigationAction
-                key={item.to}
-                label={item.label}
-                icon={item.icon}
-              />
-            ))}
-          </BottomNavigation>
-        </Paper>
+            <BottomNavigation
+              showLabels={false}
+              value={activeIndex}
+              onChange={(_, idx) => {
+                const item = items[idx];
+                if (item) navigate(item.to);
+              }}
+              sx={{
+                height: 68,
+                px: 0.5,
+                bgcolor: "transparent",
+              }}
+            >
+              {items.slice(0, 5).map((item, idx) => {
+                const selected = idx === activeIndex;
+                return (
+                  <BottomNavigationAction
+                    key={item.to}
+                    label={item.label}
+                    icon={
+                      <Box
+                        sx={{
+                          width: 44,
+                          height: 36,
+                          borderRadius: 999,
+                          display: "grid",
+                          placeItems: "center",
+                          bgcolor: selected
+                            ? alpha(theme.palette.primary.main, 0.14)
+                            : "transparent",
+                          border: "1px solid",
+                          borderColor: selected
+                            ? alpha(theme.palette.primary.main, 0.2)
+                            : "transparent",
+                          transition:
+                            "background-color 140ms ease, border-color 140ms ease",
+                          "& svg": {
+                            fontSize: 22,
+                          },
+                        }}
+                      >
+                        {item.icon}
+                      </Box>
+                    }
+                    sx={{
+                      minWidth: 0,
+                      flex: 1,
+                      py: 0.75,
+                      color: selected
+                        ? theme.palette.primary.main
+                        : theme.palette.text.secondary,
+                      "& .MuiBottomNavigationAction-label": { display: "none" },
+                      "&.Mui-selected": { color: theme.palette.primary.main },
+                    }}
+                  />
+                );
+              })}
+            </BottomNavigation>
+          </Paper>
+        </Box>
       )}
     </Box>
   );

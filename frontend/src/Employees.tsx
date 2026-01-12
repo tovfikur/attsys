@@ -222,12 +222,14 @@ export default function Employees() {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 4 } }}>
       {/* Header */}
       <Box
         display="flex"
         justifyContent="space-between"
-        alignItems="center"
+        alignItems={{ xs: "stretch", sm: "center" }}
+        flexDirection={{ xs: "column", sm: "row" }}
+        gap={2}
         mb={4}
       >
         <Box>
@@ -248,7 +250,12 @@ export default function Employees() {
           size="large"
           startIcon={<AddIcon />}
           onClick={() => setCreateOpen(true)}
-          sx={{ px: 4, py: 1.5, borderRadius: 2 }}
+          sx={{
+            px: 4,
+            py: 1.5,
+            borderRadius: 2,
+            width: { xs: "100%", sm: "auto" },
+          }}
         >
           Add Employee
         </Button>
@@ -264,124 +271,292 @@ export default function Employees() {
           overflow: "hidden",
         }}
       >
-        <TableContainer>
-          <Table sx={{ minWidth: 650 }}>
-            <TableHead sx={{ bgcolor: "background.default" }}>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 600, color: "text.secondary" }}>
-                  NAME
-                </TableCell>
-                <TableCell sx={{ fontWeight: 600, color: "text.secondary" }}>
-                  CODE
-                </TableCell>
-                <TableCell sx={{ fontWeight: 600, color: "text.secondary" }}>
-                  STATUS
-                </TableCell>
-                <TableCell sx={{ fontWeight: 600, color: "text.secondary" }}>
-                  JOINED
-                </TableCell>
-                <TableCell
-                  align="right"
-                  sx={{ fontWeight: 600, color: "text.secondary" }}
+        <Box sx={{ display: { xs: "block", md: "none" }, p: 2 }}>
+          {loading ? (
+            <Box sx={{ py: 8, display: "flex", justifyContent: "center" }}>
+              <CircularProgress />
+            </Box>
+          ) : employees.length === 0 ? (
+            <Box sx={{ py: 6, textAlign: "center" }}>
+              <Typography color="text.secondary">
+                No employees found.
+              </Typography>
+              <Button
+                variant="text"
+                onClick={() => setCreateOpen(true)}
+                sx={{ mt: 1 }}
+              >
+                Create your first employee
+              </Button>
+            </Box>
+          ) : (
+            <Stack spacing={1.25}>
+              {employees.map((emp) => (
+                <Paper
+                  key={emp.id}
+                  variant="outlined"
+                  onClick={() => setSelectedEmployee(emp)}
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 2.5,
+                    cursor: "pointer",
+                    transition: "background-color 0.2s",
+                    "&:hover": { bgcolor: "action.hover" },
+                  }}
                 >
-                  ACTIONS
-                </TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
-                    <CircularProgress />
-                  </TableCell>
-                </TableRow>
-              ) : employees.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
-                    <Typography color="text.secondary">
-                      No employees found.
-                    </Typography>
-                    <Button
-                      variant="text"
-                      onClick={() => setCreateOpen(true)}
-                      sx={{ mt: 1 }}
+                  <Stack direction="row" spacing={1.5} alignItems="center">
+                    <Avatar
+                      src={employeePhotoUrls[emp.id] || undefined}
+                      sx={{
+                        bgcolor: "primary.light",
+                        color: "primary.main",
+                        fontWeight: "bold",
+                      }}
                     >
-                      Create your first employee
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                employees.map((emp) => (
-                  <TableRow
-                    key={emp.id}
-                    hover
-                    onClick={() => setSelectedEmployee(emp)}
-                    sx={{
-                      cursor: "pointer",
-                      transition: "background-color 0.2s",
-                    }}
-                  >
-                    <TableCell>
-                      <Stack direction="row" spacing={2} alignItems="center">
-                        <Avatar
-                          src={employeePhotoUrls[emp.id] || undefined}
+                      {emp.name.charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography sx={{ fontWeight: 800 }} noWrap>
+                        {emp.name}
+                      </Typography>
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        flexWrap="wrap"
+                        sx={{ mt: 0.25 }}
+                      >
+                        <Typography
+                          variant="caption"
                           sx={{
-                            bgcolor: "primary.light",
-                            color: "primary.main",
-                            fontWeight: "bold",
+                            fontFamily: "monospace",
+                            bgcolor: "action.hover",
+                            px: 0.75,
+                            py: 0.25,
+                            borderRadius: 1,
                           }}
                         >
-                          {emp.name.charAt(0).toUpperCase()}
-                        </Avatar>
-                        <Box>
-                          <Typography variant="subtitle1" fontWeight={600}>
-                            {emp.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {emp.code}
-                          </Typography>
-                        </Box>
+                          {emp.code}
+                        </Typography>
+                        <Chip
+                          label={emp.status}
+                          size="small"
+                          color={
+                            emp.status === "active" ? "success" : "default"
+                          }
+                          variant={
+                            emp.status === "active" ? "filled" : "outlined"
+                          }
+                          sx={{ textTransform: "capitalize", fontWeight: 700 }}
+                        />
                       </Stack>
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        fontFamily="monospace"
-                        sx={{
-                          bgcolor: "action.hover",
-                          px: 1,
-                          py: 0.5,
-                          borderRadius: 1,
-                          display: "inline-block",
+                    </Box>
+                    <Typography variant="caption" color="text.secondary" noWrap>
+                      {new Date(emp.created_at).toLocaleDateString()}
+                    </Typography>
+                  </Stack>
+
+                  <Stack
+                    direction="row"
+                    spacing={0.5}
+                    justifyContent="flex-end"
+                    sx={{ mt: 1 }}
+                  >
+                    {canManageEmployeeLogins && (
+                      <Tooltip title="Set/Reset Login Password">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLoginEmployee(emp);
+                          }}
+                        >
+                          <VpnKeyRounded fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                    <Tooltip title="Edit Employee">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditEmployee(emp);
                         }}
                       >
-                        {emp.code}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={emp.status}
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Enroll Biometrics">
+                      <IconButton
                         size="small"
-                        color={emp.status === "active" ? "success" : "default"}
-                        variant={
-                          emp.status === "active" ? "filled" : "outlined"
-                        }
-                        sx={{ textTransform: "capitalize", fontWeight: 600 }}
-                      />
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEnrollEmployee(emp);
+                        }}
+                      >
+                        <FingerprintRounded fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete Employee">
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={(e) => handleDelete(emp.id, e)}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          )}
+        </Box>
+
+        <Box sx={{ display: { xs: "none", md: "block" } }}>
+          <TableContainer>
+            <Table sx={{ minWidth: 650 }}>
+              <TableHead sx={{ bgcolor: "background.default" }}>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600, color: "text.secondary" }}>
+                    NAME
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "text.secondary" }}>
+                    CODE
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "text.secondary" }}>
+                    STATUS
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, color: "text.secondary" }}>
+                    JOINED
+                  </TableCell>
+                  <TableCell
+                    align="right"
+                    sx={{ fontWeight: 600, color: "text.secondary" }}
+                  >
+                    ACTIONS
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
+                      <CircularProgress />
                     </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {new Date(emp.created_at).toLocaleDateString()}
+                  </TableRow>
+                ) : employees.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
+                      <Typography color="text.secondary">
+                        No employees found.
                       </Typography>
+                      <Button
+                        variant="text"
+                        onClick={() => setCreateOpen(true)}
+                        sx={{ mt: 1 }}
+                      >
+                        Create your first employee
+                      </Button>
                     </TableCell>
-                    <TableCell align="right">
-                      {canManageEmployeeLogins && (
-                        <Tooltip title="Set/Reset Login Password">
+                  </TableRow>
+                ) : (
+                  employees.map((emp) => (
+                    <TableRow
+                      key={emp.id}
+                      hover
+                      onClick={() => setSelectedEmployee(emp)}
+                      sx={{
+                        cursor: "pointer",
+                        transition: "background-color 0.2s",
+                      }}
+                    >
+                      <TableCell>
+                        <Stack direction="row" spacing={2} alignItems="center">
+                          <Avatar
+                            src={employeePhotoUrls[emp.id] || undefined}
+                            sx={{
+                              bgcolor: "primary.light",
+                              color: "primary.main",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            {emp.name.charAt(0).toUpperCase()}
+                          </Avatar>
+                          <Box>
+                            <Typography variant="subtitle1" fontWeight={600}>
+                              {emp.name}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              {emp.code}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          fontFamily="monospace"
+                          sx={{
+                            bgcolor: "action.hover",
+                            px: 1,
+                            py: 0.5,
+                            borderRadius: 1,
+                            display: "inline-block",
+                          }}
+                        >
+                          {emp.code}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={emp.status}
+                          size="small"
+                          color={
+                            emp.status === "active" ? "success" : "default"
+                          }
+                          variant={
+                            emp.status === "active" ? "filled" : "outlined"
+                          }
+                          sx={{ textTransform: "capitalize", fontWeight: 600 }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {new Date(emp.created_at).toLocaleDateString()}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        {canManageEmployeeLogins && (
+                          <Tooltip title="Set/Reset Login Password">
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLoginEmployee(emp);
+                              }}
+                              sx={{
+                                opacity: 0.6,
+                                "&:hover": {
+                                  opacity: 1,
+                                  bgcolor: "action.hover",
+                                },
+                                mr: 0.5,
+                              }}
+                            >
+                              <VpnKeyRounded fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        <Tooltip title="Edit Employee">
                           <IconButton
                             size="small"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setLoginEmployee(emp);
+                              setEditEmployee(emp);
                             }}
                             sx={{
                               opacity: 0.6,
@@ -392,62 +567,52 @@ export default function Employees() {
                               mr: 0.5,
                             }}
                           >
-                            <VpnKeyRounded fontSize="small" />
+                            <EditIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                      )}
-                      <Tooltip title="Edit Employee">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditEmployee(emp);
-                          }}
-                          sx={{
-                            opacity: 0.6,
-                            "&:hover": { opacity: 1, bgcolor: "action.hover" },
-                            mr: 0.5,
-                          }}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Enroll Biometrics">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEnrollEmployee(emp);
-                          }}
-                          sx={{
-                            opacity: 0.6,
-                            "&:hover": { opacity: 1, bgcolor: "action.hover" },
-                            mr: 0.5,
-                          }}
-                        >
-                          <FingerprintRounded fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Delete Employee">
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={(e) => handleDelete(emp.id, e)}
-                          sx={{
-                            opacity: 0.6,
-                            "&:hover": { opacity: 1, bgcolor: "error.lighter" },
-                          }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                        <Tooltip title="Enroll Biometrics">
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEnrollEmployee(emp);
+                            }}
+                            sx={{
+                              opacity: 0.6,
+                              "&:hover": {
+                                opacity: 1,
+                                bgcolor: "action.hover",
+                              },
+                              mr: 0.5,
+                            }}
+                          >
+                            <FingerprintRounded fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete Employee">
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={(e) => handleDelete(emp.id, e)}
+                            sx={{
+                              opacity: 0.6,
+                              "&:hover": {
+                                opacity: 1,
+                                bgcolor: "error.lighter",
+                              },
+                            }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
       </Paper>
 
       {/* Modals */}
@@ -2822,8 +2987,13 @@ function AttendanceDialog({
             bgcolor="background.default"
             p={2}
             borderRadius={2}
+            flexDirection={{ xs: "column", sm: "row" }}
+            gap={{ xs: 1.25, sm: 0 }}
           >
-            <IconButton onClick={handlePrevMonth}>
+            <IconButton
+              onClick={handlePrevMonth}
+              sx={{ alignSelf: { xs: "flex-start", sm: "auto" } }}
+            >
               <ChevronLeft />
             </IconButton>
             <Typography
@@ -2836,15 +3006,24 @@ function AttendanceDialog({
                 year: "numeric",
               })}
             </Typography>
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={1}
+              alignItems={{ xs: "stretch", sm: "center" }}
+              sx={{ width: { xs: "100%", sm: "auto" } }}
+            >
               <Button
                 variant="outlined"
                 size="small"
                 onClick={() => setApplyOpen(true)}
+                fullWidth
               >
                 Apply Leave
               </Button>
-              <IconButton onClick={handleNextMonth}>
+              <IconButton
+                onClick={handleNextMonth}
+                sx={{ alignSelf: { xs: "flex-end", sm: "auto" } }}
+              >
                 <ChevronRight />
               </IconButton>
             </Stack>
@@ -2872,7 +3051,7 @@ function AttendanceDialog({
               <Box
                 display="grid"
                 gridTemplateColumns="repeat(7, 1fr)"
-                gap={1}
+                gap={{ xs: 0.5, sm: 1 }}
                 mb={1}
               >
                 {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
@@ -2881,7 +3060,10 @@ function AttendanceDialog({
                       variant="caption"
                       fontWeight={700}
                       color="text.secondary"
-                      sx={{ textTransform: "uppercase" }}
+                      sx={{
+                        textTransform: "uppercase",
+                        fontSize: { xs: 10, sm: 12 },
+                      }}
                     >
                       {d}
                     </Typography>
@@ -2890,7 +3072,11 @@ function AttendanceDialog({
               </Box>
 
               {/* Days Grid */}
-              <Box display="grid" gridTemplateColumns="repeat(7, 1fr)" gap={1}>
+              <Box
+                display="grid"
+                gridTemplateColumns="repeat(7, 1fr)"
+                gap={{ xs: 0.5, sm: 1 }}
+              >
                 {Array.from({ length: firstDay }).map((_, i) => (
                   <Box key={`empty-${i}`} />
                 ))}
@@ -2903,7 +3089,7 @@ function AttendanceDialog({
                         elevation={0}
                         onClick={() => openDayDetails(day)}
                         sx={{
-                          height: 96,
+                          height: { xs: 54, sm: 84, md: 96 },
                           display: "flex",
                           flexDirection: "column",
                           alignItems: "center",
@@ -2915,9 +3101,15 @@ function AttendanceDialog({
                               ? "divider"
                               : status.color,
                           borderRadius: 2,
-                          transition: "transform 0.2s",
+                          transition:
+                            "transform 140ms ease, box-shadow 140ms ease",
                           cursor: "pointer",
-                          "&:hover": { transform: "scale(1.05)", boxShadow: 2 },
+                          "@media (hover:hover) and (pointer:fine)": {
+                            "&:hover": {
+                              transform: "translateY(-2px)",
+                              boxShadow: 2,
+                            },
+                          },
                         }}
                       >
                         <Typography
@@ -2928,6 +3120,7 @@ function AttendanceDialog({
                               ? "text.primary"
                               : status.color
                           }
+                          sx={{ fontSize: { xs: 14, sm: 18 }, lineHeight: 1 }}
                         >
                           {day}
                         </Typography>
@@ -2935,10 +3128,10 @@ function AttendanceDialog({
                           <Box
                             sx={{
                               mt: 0.5,
-                              display: "flex",
                               flexDirection: "column",
                               alignItems: "center",
                               gap: 0.25,
+                              display: { xs: "none", sm: "flex" },
                             }}
                           >
                             <Typography
@@ -2979,6 +3172,7 @@ function AttendanceDialog({
                               bgcolor: status.color,
                               color: "#fff",
                               mt: 0.5,
+                              display: { xs: "none", sm: "inline-flex" },
                             }}
                           />
                         ) : null}
@@ -3050,7 +3244,15 @@ function AttendanceDialog({
                   No allocations found.
                 </Typography>
               ) : (
-                <TableContainer component={Paper} variant="outlined">
+                <TableContainer
+                  component={Paper}
+                  variant="outlined"
+                  sx={{
+                    width: "100%",
+                    overflowX: "auto",
+                    WebkitOverflowScrolling: "touch",
+                  }}
+                >
                   <Table size="small">
                     <TableHead>
                       <TableRow>
@@ -3107,15 +3309,17 @@ function AttendanceDialog({
                               </TableCell>
                               <TableCell align="right">
                                 <Stack
-                                  direction="row"
+                                  direction={{ xs: "column", sm: "row" }}
                                   spacing={1}
                                   justifyContent="flex-end"
+                                  alignItems={{ xs: "stretch", sm: "center" }}
                                 >
                                   <Button
                                     size="small"
                                     variant="contained"
                                     disabled={busy}
                                     onClick={() => void saveAllocation(code)}
+                                    sx={{ width: { xs: "100%", sm: "auto" } }}
                                   >
                                     {busy ? "Saving..." : "Save"}
                                   </Button>
@@ -3125,6 +3329,7 @@ function AttendanceDialog({
                                     color="inherit"
                                     disabled={busy}
                                     onClick={() => void clearAllocation(code)}
+                                    sx={{ width: { xs: "100%", sm: "auto" } }}
                                   >
                                     Clear
                                   </Button>

@@ -1184,7 +1184,7 @@ export default function Attendance() {
   } as const;
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 4 } }}>
       <Box
         display="flex"
         justifyContent="space-between"
@@ -1234,7 +1234,7 @@ export default function Attendance() {
             onChange={(e) => setRangeStart(e.target.value)}
             InputLabelProps={{ shrink: true }}
             size="small"
-            sx={{ minWidth: 170 }}
+            sx={{ minWidth: { xs: "100%", md: 170 } }}
           />
           <TextField
             label="End"
@@ -1243,7 +1243,7 @@ export default function Attendance() {
             onChange={(e) => setRangeEnd(e.target.value)}
             InputLabelProps={{ shrink: true }}
             size="small"
-            sx={{ minWidth: 170 }}
+            sx={{ minWidth: { xs: "100%", md: 170 } }}
           />
           <Box sx={{ flex: 1 }} />
           <TextField
@@ -1362,128 +1362,253 @@ export default function Attendance() {
             <CircularProgress />
           </Box>
         ) : (
-          <TableContainer>
-            <Table sx={{ minWidth: 980 }}>
-              <TableHead sx={{ bgcolor: "background.default" }}>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    EMPLOYEE
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    DAYS
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    WORKED
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    AVG/DAY
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    LATE
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    EARLY
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    SHIFT
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    LAST SEEN
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{ fontWeight: 700, color: "text.secondary" }}
-                  >
-                    ACTION
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {summaries.map((s) => (
-                  <TableRow
-                    key={s.employeeId}
-                    hover
-                    sx={{ cursor: "pointer" }}
-                    onClick={() => setSelectedEmployeeId(s.employeeId)}
-                  >
-                    <TableCell>
-                      <Stack spacing={0.2}>
-                        <Typography sx={{ fontWeight: 800 }} noWrap>
-                          {s.employeeName}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          noWrap
+          <>
+            <Box sx={{ display: { xs: "block", md: "none" }, p: 2 }}>
+              {summaries.length === 0 ? (
+                <Box sx={{ py: 4, textAlign: "center" }}>
+                  <Typography color="text.secondary">
+                    No employees match the current filters.
+                  </Typography>
+                </Box>
+              ) : (
+                <Stack spacing={1.25}>
+                  {summaries.map((s) => (
+                    <Paper
+                      key={s.employeeId}
+                      variant="outlined"
+                      onClick={() => setSelectedEmployeeId(s.employeeId)}
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2.5,
+                        cursor: "pointer",
+                        transition: "background-color 0.2s",
+                        "&:hover": { bgcolor: "action.hover" },
+                      }}
+                    >
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography sx={{ fontWeight: 900 }} noWrap>
+                            {s.employeeName}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            noWrap
+                          >
+                            {s.employeeCode} • #{s.employeeId}
+                          </Typography>
+                        </Box>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEmployeeId(s.employeeId);
+                          }}
                         >
-                          {s.employeeCode} • #{s.employeeId}
-                        </Typography>
+                          <VisibilityRounded fontSize="small" />
+                        </IconButton>
                       </Stack>
-                    </TableCell>
-                    <TableCell>{s.daysPresent}</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>
-                      {formatMinutes(s.workedMinutes)}
-                    </TableCell>
-                    <TableCell>{formatMinutes(s.avgMinutesPerDay)}</TableCell>
-                    <TableCell>
-                      {s.lateEvents > 0 ? (
-                        <Chip
-                          size="small"
-                          label={s.lateEvents}
-                          sx={chipSx.warning}
-                        />
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {s.earlyLeaveEvents > 0 ? (
-                        <Chip
-                          size="small"
-                          label={s.earlyLeaveEvents}
-                          sx={chipSx.warning}
-                        />
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {s.openShift ? (
-                        <Chip size="small" label="Open" sx={chipSx.openShift} />
-                      ) : (
-                        <Chip
-                          size="small"
-                          label="Closed"
-                          sx={chipSx.closedShift}
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell>{formatTime(s.lastSeen)}</TableCell>
-                    <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedEmployeeId(s.employeeId);
-                        }}
+
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        flexWrap="wrap"
+                        sx={{ mt: 1 }}
                       >
-                        <VisibilityRounded fontSize="small" />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {summaries.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={9} align="center" sx={{ py: 6 }}>
-                      <Typography color="text.secondary">
-                        No employees match the current filters.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                        <Chip
+                          size="small"
+                          label={`Worked: ${formatMinutes(s.workedMinutes)}`}
+                          sx={{
+                            fontWeight: 900,
+                            bgcolor: "background.default",
+                          }}
+                        />
+                        <Chip
+                          size="small"
+                          label={s.openShift ? "Open shift" : "Closed shift"}
+                          sx={
+                            s.openShift ? chipSx.openShift : chipSx.closedShift
+                          }
+                        />
+                        {s.lateEvents > 0 ? (
+                          <Chip
+                            size="small"
+                            label={`Late: ${s.lateEvents}`}
+                            sx={chipSx.warning}
+                          />
+                        ) : null}
+                        {s.earlyLeaveEvents > 0 ? (
+                          <Chip
+                            size="small"
+                            label={`Early: ${s.earlyLeaveEvents}`}
+                            sx={chipSx.warning}
+                          />
+                        ) : null}
+                        <Chip
+                          size="small"
+                          label={`Days: ${s.daysPresent}`}
+                          sx={{
+                            fontWeight: 900,
+                            bgcolor: "background.default",
+                          }}
+                        />
+                      </Stack>
+                    </Paper>
+                  ))}
+                </Stack>
+              )}
+            </Box>
+
+            <Box sx={{ display: { xs: "none", md: "block" } }}>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead sx={{ bgcolor: "background.default" }}>
+                    <TableRow>
+                      <TableCell
+                        sx={{ fontWeight: 700, color: "text.secondary" }}
+                      >
+                        EMPLOYEE
+                      </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: 700, color: "text.secondary" }}
+                      >
+                        DAYS
+                      </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: 700, color: "text.secondary" }}
+                      >
+                        WORKED
+                      </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: 700, color: "text.secondary" }}
+                      >
+                        AVG/DAY
+                      </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: 700, color: "text.secondary" }}
+                      >
+                        LATE
+                      </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: 700, color: "text.secondary" }}
+                      >
+                        EARLY
+                      </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: 700, color: "text.secondary" }}
+                      >
+                        SHIFT
+                      </TableCell>
+                      <TableCell
+                        sx={{ fontWeight: 700, color: "text.secondary" }}
+                      >
+                        LAST SEEN
+                      </TableCell>
+                      <TableCell
+                        align="right"
+                        sx={{ fontWeight: 700, color: "text.secondary" }}
+                      >
+                        ACTION
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {summaries.map((s) => (
+                      <TableRow
+                        key={s.employeeId}
+                        hover
+                        sx={{ cursor: "pointer" }}
+                        onClick={() => setSelectedEmployeeId(s.employeeId)}
+                      >
+                        <TableCell>
+                          <Stack spacing={0.2}>
+                            <Typography sx={{ fontWeight: 800 }} noWrap>
+                              {s.employeeName}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              noWrap
+                            >
+                              {s.employeeCode} • #{s.employeeId}
+                            </Typography>
+                          </Stack>
+                        </TableCell>
+                        <TableCell>{s.daysPresent}</TableCell>
+                        <TableCell sx={{ fontWeight: 800 }}>
+                          {formatMinutes(s.workedMinutes)}
+                        </TableCell>
+                        <TableCell>
+                          {formatMinutes(s.avgMinutesPerDay)}
+                        </TableCell>
+                        <TableCell>
+                          {s.lateEvents > 0 ? (
+                            <Chip
+                              size="small"
+                              label={s.lateEvents}
+                              sx={chipSx.warning}
+                            />
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {s.earlyLeaveEvents > 0 ? (
+                            <Chip
+                              size="small"
+                              label={s.earlyLeaveEvents}
+                              sx={chipSx.warning}
+                            />
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {s.openShift ? (
+                            <Chip
+                              size="small"
+                              label="Open"
+                              sx={chipSx.openShift}
+                            />
+                          ) : (
+                            <Chip
+                              size="small"
+                              label="Closed"
+                              sx={chipSx.closedShift}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ whiteSpace: "nowrap" }}>
+                          {formatTime(s.lastSeen)}
+                        </TableCell>
+                        <TableCell align="right">
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEmployeeId(s.employeeId);
+                            }}
+                          >
+                            <VisibilityRounded fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {summaries.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={9} align="center" sx={{ py: 6 }}>
+                          <Typography color="text.secondary">
+                            No employees match the current filters.
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          </>
         )}
       </Paper>
 
@@ -1505,31 +1630,24 @@ export default function Attendance() {
             </Typography>
           </Box>
           <Divider />
-          <TableContainer>
-            <Table>
-              <TableHead sx={{ bgcolor: "background.default" }}>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    EMPLOYEE
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    IN
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    OUT
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 700, color: "text.secondary" }}>
-                    WORKED
-                  </TableCell>
-                  <TableCell align="right" />
-                </TableRow>
-              </TableHead>
-              <TableBody>
+          <Box sx={{ display: { xs: "block", sm: "none" }, p: 2 }}>
+            {liveRows.length === 0 ? (
+              <Box sx={{ py: 4, textAlign: "center" }}>
+                <Typography color="text.secondary">
+                  No records today yet.
+                </Typography>
+              </Box>
+            ) : (
+              <Stack spacing={1.25}>
                 {liveRows.map((r) => (
-                  <TableRow key={r.id} hover>
-                    <TableCell>
-                      <Stack spacing={0.2}>
-                        <Typography sx={{ fontWeight: 800 }} noWrap>
+                  <Paper
+                    key={r.id}
+                    variant="outlined"
+                    sx={{ p: 1.5, borderRadius: 2.5 }}
+                  >
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography sx={{ fontWeight: 900 }} noWrap>
                           {r.employee_name ||
                             employeesById.get(String(r.employee_id))?.name ||
                             `Employee #${r.employee_id}`}
@@ -1543,47 +1661,160 @@ export default function Attendance() {
                             employeesById.get(String(r.employee_id))?.code ||
                             "—"}
                         </Typography>
-                      </Stack>
-                    </TableCell>
-                    <TableCell>{formatTime(r.clock_in)}</TableCell>
-                    <TableCell>
-                      {r.clock_out ? (
-                        formatTime(r.clock_out)
-                      ) : (
-                        <Chip size="small" label="Open" sx={chipSx.openShift} />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {formatMinutes(r.duration_minutes || 0)}
-                    </TableCell>
-                    <TableCell align="right">
-                      <Button
+                      </Box>
+                      <Chip
                         size="small"
-                        variant="text"
-                        onClick={() =>
-                          setSelectedDay({
-                            employee_id: String(r.employee_id),
-                            date: r.date as DayKey,
-                          })
+                        label={formatMinutes(r.duration_minutes || 0)}
+                        sx={{ fontWeight: 900, bgcolor: "background.default" }}
+                      />
+                    </Stack>
+
+                    <Stack
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      flexWrap="wrap"
+                      sx={{ mt: 1 }}
+                    >
+                      <Chip
+                        size="small"
+                        label={`In: ${formatTime(r.clock_in)}`}
+                        sx={{ fontWeight: 900, bgcolor: "background.default" }}
+                      />
+                      <Chip
+                        size="small"
+                        label={
+                          r.clock_out
+                            ? `Out: ${formatTime(r.clock_out)}`
+                            : "Open"
                         }
-                      >
-                        View Day
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                        sx={
+                          r.clock_out
+                            ? { fontWeight: 900, bgcolor: "background.default" }
+                            : chipSx.openShift
+                        }
+                      />
+                    </Stack>
+
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() =>
+                        setSelectedDay({
+                          employee_id: String(r.employee_id),
+                          date: r.date as DayKey,
+                        })
+                      }
+                      sx={{ mt: 1 }}
+                      fullWidth
+                    >
+                      View Day
+                    </Button>
+                  </Paper>
                 ))}
-                {liveRows.length === 0 && (
+              </Stack>
+            )}
+          </Box>
+
+          <Box sx={{ display: { xs: "none", sm: "block" } }}>
+            <TableContainer>
+              <Table size="small">
+                <TableHead sx={{ bgcolor: "background.default" }}>
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
-                      <Typography color="text.secondary">
-                        No records today yet.
-                      </Typography>
+                    <TableCell
+                      sx={{ fontWeight: 700, color: "text.secondary" }}
+                    >
+                      EMPLOYEE
                     </TableCell>
+                    <TableCell
+                      sx={{ fontWeight: 700, color: "text.secondary" }}
+                    >
+                      IN
+                    </TableCell>
+                    <TableCell
+                      sx={{
+                        fontWeight: 700,
+                        color: "text.secondary",
+                        display: { xs: "none", sm: "table-cell" },
+                      }}
+                    >
+                      OUT
+                    </TableCell>
+                    <TableCell
+                      sx={{ fontWeight: 700, color: "text.secondary" }}
+                    >
+                      WORKED
+                    </TableCell>
+                    <TableCell align="right" />
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {liveRows.map((r) => (
+                    <TableRow key={r.id} hover>
+                      <TableCell>
+                        <Stack spacing={0.2}>
+                          <Typography sx={{ fontWeight: 800 }} noWrap>
+                            {r.employee_name ||
+                              employeesById.get(String(r.employee_id))?.name ||
+                              `Employee #${r.employee_id}`}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            noWrap
+                          >
+                            {r.employee_code ||
+                              employeesById.get(String(r.employee_id))?.code ||
+                              "—"}
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>{formatTime(r.clock_in)}</TableCell>
+                      <TableCell
+                        sx={{ display: { xs: "none", sm: "table-cell" } }}
+                      >
+                        {r.clock_out ? (
+                          formatTime(r.clock_out)
+                        ) : (
+                          <Chip
+                            size="small"
+                            label="Open"
+                            sx={chipSx.openShift}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {formatMinutes(r.duration_minutes || 0)}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() =>
+                            setSelectedDay({
+                              employee_id: String(r.employee_id),
+                              date: r.date as DayKey,
+                            })
+                          }
+                        >
+                          View Day
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {liveRows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
+                        <Typography color="text.secondary">
+                          No records today yet.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
         </Paper>
 
         <Paper elevation={0} sx={{ ...cardSx }}>

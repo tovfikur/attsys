@@ -126,11 +126,24 @@ export default function Login() {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isNative =
+    typeof window !== "undefined" &&
+    (window.location.protocol === "capacitor:" ||
+      window.location.protocol === "file:" ||
+      "Capacitor" in (window as unknown as Record<string, unknown>));
 
-  const rootDomain = (
-    (import.meta as unknown as { env?: Record<string, string> }).env
-      ?.VITE_ROOT_DOMAIN || ""
-  ).toLowerCase();
+  const rootDomain = (() => {
+    const v = (
+      (import.meta as unknown as { env?: Record<string, string> }).env
+        ?.VITE_ROOT_DOMAIN || ""
+    )
+      .toString()
+      .toLowerCase()
+      .trim();
+    if (v) return v;
+    if (isNative) return "khudroo.com";
+    return "";
+  })();
 
   const host = typeof window !== "undefined" ? window.location.hostname : "";
   const sub = host.split(".")[0];
@@ -184,10 +197,19 @@ export default function Login() {
 
     const t = window.setTimeout(() => {
       void (async () => {
+        const v = tenantHint.trim().toLowerCase();
+        if (!/^[a-z0-9-]+$/.test(v)) {
+          localStorage.removeItem("tenant");
+          sessionStorage.removeItem("tenant");
+          setTenantHint("");
+          setTenantPickError("Saved subdomain is invalid. Please enter again.");
+          return;
+        }
         try {
-          const r = await api.get("/api/tenant", {
-            headers: { "X-Tenant-ID": tenantHint },
-          });
+          const tenantHost = rootDomain ? `https://${v}.${rootDomain}` : "";
+          const r = tenantHost
+            ? await api.get("/api/tenant", { baseURL: tenantHost })
+            : await api.get("/api/tenant", { headers: { "X-Tenant-ID": v } });
           const type = (r.data as { tenant?: { type?: unknown } | null } | null)
             ?.tenant?.type;
           if (type === "tenant") return;
@@ -202,7 +224,7 @@ export default function Login() {
     }, 0);
 
     return () => window.clearTimeout(t);
-  }, [isMobile, isRootHost, tenantFromHost, tenantHint]);
+  }, [isMobile, isRootHost, rootDomain, tenantFromHost, tenantHint]);
 
   const effectiveTenantHint = isMobile ? tenantHint : "";
 
@@ -243,10 +265,16 @@ export default function Login() {
     }
     setTenantPickBusy(true);
     try {
-      const r = await api.get("/api/tenant", {
-        headers: { "X-Tenant-ID": v },
-      });
-      const type = (r.data as { tenant?: { type?: unknown } | null } | null)
+      const tenantHost = rootDomain ? `https://${v}.${rootDomain}` : "";
+      const r =
+        (tenantHost
+          ? await api
+              .get("/api/tenant", { baseURL: tenantHost })
+              .catch(() => null)
+          : null) ||
+        (await api.get("/api/tenant", { headers: { "X-Tenant-ID": v } }));
+
+      const type = (r?.data as { tenant?: { type?: unknown } | null } | null)
         ?.tenant?.type;
       if (type !== "tenant") {
         setTenantPickError("Subdomain not found. Please try again.");
@@ -297,12 +325,17 @@ export default function Login() {
           : { email, password, twofa, portal_mode: tenantPortalMode }
       );
 
-      if (response.data.token) {
+      const token = (response.data as { token?: unknown } | null)?.token;
+      if (typeof token !== "string" || !token.trim()) {
+        setError("Login failed. Please try again.");
+        return;
+      }
+      if (token) {
         if (remember) {
-          localStorage.setItem("token", response.data.token);
+          localStorage.setItem("token", token);
           localStorage.setItem("user", JSON.stringify(response.data.user));
         } else {
-          sessionStorage.setItem("token", response.data.token);
+          sessionStorage.setItem("token", token);
           sessionStorage.setItem("user", JSON.stringify(response.data.user));
         }
         const role = String(response.data?.user?.role || "");

@@ -21,6 +21,7 @@ import {
   Switch,
   TextField,
   Typography,
+  useMediaQuery,
   useTheme,
 } from "@mui/material";
 import { ChevronLeft, ChevronRight, RefreshRounded } from "@mui/icons-material";
@@ -68,6 +69,7 @@ const formatDate = (y: number, m0: number, day: number) =>
 
 export default function Leaves() {
   const theme = useTheme();
+  const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
   const role = getUser()?.role || "";
   const canManage = role === "hr_admin" || role === "tenant_owner";
   const canApprove =
@@ -460,6 +462,7 @@ export default function Leaves() {
   const month0 = currentDate.getMonth();
   const daysInMonth = new Date(year, month0 + 1, 0).getDate();
   const firstDay = new Date(year, month0, 1).getDay();
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   const monthLabel = useMemo(() => {
     return new Date(year, month0, 1).toLocaleDateString("default", {
@@ -510,23 +513,29 @@ export default function Leaves() {
   const dayCellSx = {
     border: "1px solid",
     borderColor: "divider",
-    borderRadius: 2,
-    p: 1.25,
+    borderRadius: { xs: 2.5, sm: 2 },
+    p: { xs: 0.75, sm: 1.25 },
     bgcolor: "background.default",
     cursor: "pointer",
-    minHeight: 108,
+    minHeight: { xs: 0, sm: 108 },
+    aspectRatio: { xs: "1 / 1", sm: "auto" },
     display: "flex",
     flexDirection: "column",
-    gap: 0.75,
+    gap: { xs: 0.5, sm: 0.75 },
     transition: "transform 120ms ease, box-shadow 120ms ease",
-    "&:hover": {
-      transform: "translateY(-1px)",
-      boxShadow: "0 10px 24px rgba(0,0,0,0.10)",
+    "&:active": {
+      transform: { xs: "scale(0.985)", sm: "none" },
+    },
+    "@media (hover:hover) and (pointer:fine)": {
+      "&:hover": {
+        transform: "translateY(-1px)",
+        boxShadow: "0 10px 24px rgba(0,0,0,0.10)",
+      },
     },
   } as const;
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
+    <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 4 } }}>
       <Box
         display="flex"
         justifyContent="space-between"
@@ -543,13 +552,18 @@ export default function Leaves() {
             Monthly calendar view of leave requests and approvals.
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1.5} alignItems="center">
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={1.5}
+          alignItems={{ xs: "stretch", sm: "center" }}
+          sx={{ width: { xs: "100%", md: "auto" } }}
+        >
           {canManage ? (
             <Button
               variant="outlined"
               onClick={openLeaveTypes}
               disabled={leaveTypesBusy}
-              sx={{ borderRadius: 2 }}
+              sx={{ borderRadius: 2, width: { xs: "100%", sm: "auto" } }}
             >
               Leave Types
             </Button>
@@ -559,7 +573,7 @@ export default function Leaves() {
               variant="outlined"
               onClick={openLeaveSettings}
               disabled={leaveSettingsBusy}
-              sx={{ borderRadius: 2 }}
+              sx={{ borderRadius: 2, width: { xs: "100%", sm: "auto" } }}
             >
               Leave Settings
             </Button>
@@ -569,7 +583,7 @@ export default function Leaves() {
             startIcon={<RefreshRounded />}
             onClick={() => void fetchLeaves()}
             disabled={loading}
-            sx={{ borderRadius: 2 }}
+            sx={{ borderRadius: 2, width: { xs: "100%", sm: "auto" } }}
           >
             Refresh
           </Button>
@@ -586,28 +600,45 @@ export default function Leaves() {
         elevation={0}
         sx={{ borderRadius: 3, border: "1px solid", borderColor: "divider" }}
       >
-        <Box sx={{ p: 2.5 }}>
+        <Box sx={{ p: { xs: 1.75, sm: 2.5 } }}>
           <Stack
             direction={{ xs: "column", md: "row" }}
             spacing={1.5}
             alignItems={{ xs: "stretch", md: "center" }}
           >
-            <Stack direction="row" spacing={1} alignItems="center">
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ width: { xs: "100%", md: "auto" } }}
+            >
               <Button
                 variant="outlined"
                 onClick={() => setCurrentDate(new Date(year, month0 - 1, 1))}
-                sx={{ borderRadius: 2, minWidth: 42 }}
+                sx={{
+                  borderRadius: 999,
+                  minWidth: { xs: 40, sm: 42 },
+                  px: { xs: 0.5, sm: 1 },
+                }}
               >
                 <ChevronLeft />
               </Button>
+              <Box sx={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+                <Typography sx={{ fontWeight: 900 }} noWrap>
+                  {monthLabel}
+                </Typography>
+              </Box>
               <Button
                 variant="outlined"
                 onClick={() => setCurrentDate(new Date(year, month0 + 1, 1))}
-                sx={{ borderRadius: 2, minWidth: 42 }}
+                sx={{
+                  borderRadius: 999,
+                  minWidth: { xs: 40, sm: 42 },
+                  px: { xs: 0.5, sm: 1 },
+                }}
               >
                 <ChevronRight />
               </Button>
-              <Typography sx={{ fontWeight: 900 }}>{monthLabel}</Typography>
             </Stack>
 
             <Box sx={{ flex: 1 }} />
@@ -619,7 +650,7 @@ export default function Leaves() {
                   value={employeeId}
                   onChange={(e) => setEmployeeId(e.target.value)}
                   size="small"
-                  sx={{ minWidth: 220 }}
+                  sx={{ minWidth: { xs: "100%", sm: 220 } }}
                   select
                 >
                   <MenuItem value="">All employees</MenuItem>
@@ -635,7 +666,7 @@ export default function Leaves() {
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 size="small"
-                sx={{ minWidth: 200 }}
+                sx={{ minWidth: { xs: "100%", sm: 200 } }}
                 select
               >
                 {[
@@ -655,99 +686,326 @@ export default function Leaves() {
 
         <Divider />
 
-        <Box sx={{ p: 2.5 }}>
+        <Box sx={{ p: { xs: 1.75, sm: 2.5 } }}>
           {loading ? (
             <Box sx={{ py: 6, display: "flex", justifyContent: "center" }}>
               <CircularProgress />
             </Box>
           ) : (
-            <Box
-              sx={{
-                display: "grid",
-                gridTemplateColumns: "repeat(7, 1fr)",
-                gap: 1.25,
-              }}
-            >
-              {Array.from({ length: firstDay }).map((_, i) => (
-                <Box key={`pad-${i}`} />
-              ))}
-              {Array.from({ length: daysInMonth }).map((_, i) => {
-                const day = i + 1;
-                const dateStr = formatDate(year, month0, day);
-                const list = leavesByDate.get(dateStr) || [];
-                const show = list.slice(0, 3);
-                const extra = Math.max(0, list.length - show.length);
-                const hasLeaves = list.length > 0;
-
-                return (
+            <Box>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                  gap: { xs: 0.5, sm: 1.25 },
+                  mb: { xs: 0.75, sm: 1 },
+                  px: { xs: 0.25, sm: 0 },
+                }}
+              >
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                   <Box
-                    key={dateStr}
-                    component="button"
-                    type="button"
-                    onClick={() => setSelectedDate(dateStr)}
+                    key={d}
                     sx={{
-                      ...dayCellSx,
-                      textAlign: "left",
-                      outline: "none",
-                      borderColor: hasLeaves
-                        ? alpha(theme.palette.primary.main, 0.35)
-                        : "divider",
-                      bgcolor: hasLeaves
-                        ? alpha(theme.palette.primary.main, 0.04)
-                        : "background.default",
+                      textAlign: "center",
+                      color: "text.secondary",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.6,
                     }}
                   >
-                    <Stack
-                      direction="row"
-                      justifyContent="space-between"
-                      alignItems="center"
+                    <Typography
+                      variant="caption"
+                      sx={{ fontWeight: 800, fontSize: { xs: 10, sm: 12 } }}
                     >
-                      <Typography sx={{ fontWeight: 900 }}>{day}</Typography>
-                      {hasLeaves ? (
-                        <Chip
-                          size="small"
-                          label={list.length}
-                          sx={{
-                            fontWeight: 900,
-                            bgcolor: alpha(theme.palette.primary.main, 0.16),
-                            border: "1px solid",
-                            borderColor: alpha(
-                              theme.palette.primary.main,
-                              0.26
-                            ),
-                          }}
-                        />
-                      ) : null}
-                    </Stack>
-
-                    {show.map((l) => {
-                      const emp = employeesById.get(String(l.employee_id));
-                      const name = emp?.name || `#${String(l.employee_id)}`;
-                      const dayPart = String(
-                        l.day_part || "full"
-                      ).toLowerCase();
-                      const label = `${name} • ${dayPart}`;
-                      return (
-                        <Chip
-                          key={String(l.id)}
-                          size="small"
-                          label={label}
-                          sx={{
-                            width: "100%",
-                            justifyContent: "flex-start",
-                            ...getStatusChipSx(l.status),
-                          }}
-                        />
-                      );
-                    })}
-                    {extra > 0 ? (
-                      <Typography variant="caption" color="text.secondary">
-                        +{extra} more
-                      </Typography>
-                    ) : null}
+                      {d}
+                    </Typography>
                   </Box>
-                );
-              })}
+                ))}
+              </Box>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                  gap: { xs: 0.5, sm: 1.25 },
+                }}
+              >
+                {Array.from({ length: firstDay }).map((_, i) => (
+                  <Box key={`pad-${i}`} />
+                ))}
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                  const day = i + 1;
+                  const dateStr = formatDate(year, month0, day);
+                  const list = leavesByDate.get(dateStr) || [];
+                  const show = list.slice(0, 3);
+                  const extra = Math.max(0, list.length - show.length);
+                  const hasLeaves = list.length > 0;
+                  const isToday = dateStr === todayStr;
+
+                  const statusCounts = (() => {
+                    const r = {
+                      approved: 0,
+                      pending: 0,
+                      rejected: 0,
+                      other: 0,
+                    };
+                    for (const l of list) {
+                      const s = String(l.status || "")
+                        .trim()
+                        .toLowerCase();
+                      if (s === "approved") r.approved += 1;
+                      else if (s === "rejected") r.rejected += 1;
+                      else if (s === "pending") r.pending += 1;
+                      else r.other += 1;
+                    }
+                    return r;
+                  })();
+
+                  return (
+                    <Box
+                      key={dateStr}
+                      component="button"
+                      type="button"
+                      onClick={() => setSelectedDate(dateStr)}
+                      sx={{
+                        ...dayCellSx,
+                        textAlign: "left",
+                        outline: "none",
+                        borderColor: hasLeaves
+                          ? alpha(theme.palette.primary.main, 0.35)
+                          : "divider",
+                        bgcolor: hasLeaves
+                          ? alpha(theme.palette.primary.main, 0.04)
+                          : "background.default",
+                        boxShadow: isToday
+                          ? `0 0 0 2px ${alpha(
+                              theme.palette.primary.main,
+                              0.24
+                            )}`
+                          : "none",
+                      }}
+                    >
+                      {isSmDown ? (
+                        <Box
+                          sx={{
+                            height: "100%",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "space-between",
+                            gap: 0.5,
+                          }}
+                        >
+                          <Stack
+                            direction="row"
+                            alignItems="center"
+                            justifyContent="space-between"
+                            spacing={0.75}
+                          >
+                            <Box
+                              sx={{
+                                width: 28,
+                                height: 28,
+                                borderRadius: 999,
+                                display: "grid",
+                                placeItems: "center",
+                                bgcolor: isToday
+                                  ? alpha(theme.palette.primary.main, 0.14)
+                                  : "transparent",
+                                color: isToday
+                                  ? theme.palette.primary.dark
+                                  : theme.palette.text.primary,
+                              }}
+                            >
+                              <Typography
+                                sx={{ fontWeight: 900, fontSize: 13 }}
+                              >
+                                {day}
+                              </Typography>
+                            </Box>
+
+                            {hasLeaves ? (
+                              <Box
+                                sx={{
+                                  minWidth: 22,
+                                  height: 18,
+                                  px: 0.8,
+                                  borderRadius: 999,
+                                  display: "grid",
+                                  placeItems: "center",
+                                  bgcolor: alpha(
+                                    theme.palette.primary.main,
+                                    0.14
+                                  ),
+                                  border: "1px solid",
+                                  borderColor: alpha(
+                                    theme.palette.primary.main,
+                                    0.22
+                                  ),
+                                  color: theme.palette.primary.dark,
+                                }}
+                              >
+                                <Typography
+                                  sx={{
+                                    fontWeight: 900,
+                                    fontSize: 11,
+                                    lineHeight: 1,
+                                  }}
+                                >
+                                  {list.length}
+                                </Typography>
+                              </Box>
+                            ) : (
+                              <Box sx={{ width: 22, height: 18 }} />
+                            )}
+                          </Stack>
+
+                          <Stack
+                            direction="row"
+                            alignItems="center"
+                            spacing={0.6}
+                            sx={{ minHeight: 16 }}
+                          >
+                            {statusCounts.approved > 0 ? (
+                              <Box
+                                sx={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: 999,
+                                  bgcolor: theme.palette.warning.main,
+                                  boxShadow: `0 0 0 2px ${alpha(
+                                    theme.palette.warning.main,
+                                    0.16
+                                  )}`,
+                                }}
+                              />
+                            ) : null}
+                            {statusCounts.pending > 0 ? (
+                              <Box
+                                sx={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: 999,
+                                  bgcolor: theme.palette.text.secondary,
+                                  boxShadow: `0 0 0 2px ${alpha(
+                                    theme.palette.text.secondary,
+                                    0.16
+                                  )}`,
+                                }}
+                              />
+                            ) : null}
+                            {statusCounts.rejected > 0 ? (
+                              <Box
+                                sx={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: 999,
+                                  bgcolor: theme.palette.error.main,
+                                  boxShadow: `0 0 0 2px ${alpha(
+                                    theme.palette.error.main,
+                                    0.16
+                                  )}`,
+                                }}
+                              />
+                            ) : null}
+                            {hasLeaves ? (
+                              <Typography
+                                sx={{
+                                  fontWeight: 800,
+                                  fontSize: 11,
+                                  color: "text.secondary",
+                                  ml: 0.25,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                Leaves
+                              </Typography>
+                            ) : (
+                              <Typography
+                                sx={{
+                                  fontWeight: 800,
+                                  fontSize: 11,
+                                  color: "text.disabled",
+                                }}
+                              >
+                                —
+                              </Typography>
+                            )}
+                          </Stack>
+                        </Box>
+                      ) : (
+                        <>
+                          <Stack
+                            direction="row"
+                            justifyContent="space-between"
+                            alignItems="center"
+                          >
+                            <Typography sx={{ fontWeight: 900 }}>
+                              {day}
+                            </Typography>
+                            {hasLeaves ? (
+                              <Chip
+                                size="small"
+                                label={list.length}
+                                sx={{
+                                  fontWeight: 900,
+                                  bgcolor: alpha(
+                                    theme.palette.primary.main,
+                                    0.16
+                                  ),
+                                  border: "1px solid",
+                                  borderColor: alpha(
+                                    theme.palette.primary.main,
+                                    0.26
+                                  ),
+                                }}
+                              />
+                            ) : null}
+                          </Stack>
+
+                          {show.map((l) => {
+                            const emp = employeesById.get(
+                              String(l.employee_id)
+                            );
+                            const name =
+                              emp?.name || `#${String(l.employee_id)}`;
+                            const dayPart = String(
+                              l.day_part || "full"
+                            ).toLowerCase();
+                            const label = `${name} • ${dayPart}`;
+                            return (
+                              <Chip
+                                key={String(l.id)}
+                                size="small"
+                                label={label}
+                                sx={{
+                                  width: "100%",
+                                  justifyContent: "flex-start",
+                                  ...getStatusChipSx(l.status),
+                                  "& .MuiChip-label": {
+                                    display: "block",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  },
+                                }}
+                              />
+                            );
+                          })}
+                          {extra > 0 ? (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              +{extra} more
+                            </Typography>
+                          ) : null}
+                        </>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Box>
             </Box>
           )}
         </Box>

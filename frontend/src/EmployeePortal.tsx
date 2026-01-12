@@ -1991,9 +1991,9 @@ export default function EmployeePortal() {
                       sx={{
                         display: "grid",
                         gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                        gap: 1,
-                        px: 0.5,
-                        pb: 1,
+                        gap: { xs: 0.5, sm: 1 },
+                        px: { xs: 0, sm: 0.5 },
+                        pb: { xs: 0.5, sm: 1 },
                       }}
                     >
                       {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
@@ -2001,7 +2001,7 @@ export default function EmployeePortal() {
                           <Box
                             key={w}
                             sx={{
-                              py: 0.75,
+                              py: { xs: 0.5, sm: 0.75 },
                               textAlign: "center",
                               color: "text.secondary",
                               letterSpacing: 0.6,
@@ -2010,7 +2010,10 @@ export default function EmployeePortal() {
                           >
                             <Typography
                               variant="caption"
-                              sx={{ fontWeight: 700 }}
+                              sx={{
+                                fontWeight: 700,
+                                fontSize: { xs: 10, sm: 12 },
+                              }}
                             >
                               {w}
                             </Typography>
@@ -2023,8 +2026,8 @@ export default function EmployeePortal() {
                       sx={{
                         display: "grid",
                         gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                        gap: 1,
-                        p: 0.5,
+                        gap: { xs: 0.5, sm: 1 },
+                        p: { xs: 0.25, sm: 0.5 },
                       }}
                     >
                       {calendarGrid.cells.map((cell, idx) => {
@@ -2033,8 +2036,8 @@ export default function EmployeePortal() {
                             <Box
                               key={`empty-${idx}`}
                               sx={{
-                                minHeight: 98,
-                                borderRadius: 3,
+                                minHeight: { xs: 58, sm: 84, md: 98 },
+                                borderRadius: { xs: 2.5, sm: 3 },
                                 bgcolor: alpha(
                                   theme.palette.text.primary,
                                   0.02
@@ -2160,7 +2163,7 @@ export default function EmployeePortal() {
                               width: "100%",
                               display: "block",
                               textAlign: "left",
-                              borderRadius: 3,
+                              borderRadius: { xs: 2.5, sm: 3 },
                               overflow: "hidden",
                               border: "1px solid",
                               borderColor: "divider",
@@ -2179,8 +2182,8 @@ export default function EmployeePortal() {
                           >
                             <Box
                               sx={{
-                                minHeight: 98,
-                                p: 1.25,
+                                minHeight: { xs: 58, sm: 84, md: 98 },
+                                p: { xs: 0.75, sm: 1.25 },
                                 bgcolor: isToday
                                   ? alpha(theme.palette.primary.main, 0.07)
                                   : isWeekend
@@ -2192,7 +2195,7 @@ export default function EmployeePortal() {
                                 <Box
                                   sx={{
                                     height: "100%",
-                                    minHeight: 98,
+                                    minHeight: { xs: 58, sm: 84, md: 98 },
                                     display: "grid",
                                     placeItems: "center",
                                   }}
@@ -2200,7 +2203,7 @@ export default function EmployeePortal() {
                                   <Typography
                                     sx={{
                                       fontWeight: 800,
-                                      fontSize: 24,
+                                      fontSize: { xs: 18, sm: 24 },
                                       letterSpacing: -0.3,
                                       color: isToday
                                         ? theme.palette.primary.main
@@ -2215,16 +2218,16 @@ export default function EmployeePortal() {
                                   sx={{
                                     position: "relative",
                                     height: "100%",
-                                    minHeight: 98,
+                                    minHeight: { xs: 58, sm: 84, md: 98 },
                                   }}
                                 >
                                   <Box
                                     sx={{
                                       position: "absolute",
-                                      top: 10,
-                                      left: 10,
-                                      width: 26,
-                                      height: 26,
+                                      top: { xs: 6, sm: 10 },
+                                      left: { xs: 6, sm: 10 },
+                                      width: { xs: 22, sm: 26 },
+                                      height: { xs: 22, sm: 26 },
                                       borderRadius: 999,
                                       display: "grid",
                                       placeItems: "center",
@@ -2251,8 +2254,8 @@ export default function EmployeePortal() {
                                     <Box
                                       sx={{
                                         position: "absolute",
-                                        top: 10,
-                                        right: 10,
+                                        top: { xs: 6, sm: 10 },
+                                        right: { xs: 6, sm: 10 },
                                         px: 0.9,
                                         py: 0.2,
                                         borderRadius: 999,
@@ -2261,7 +2264,10 @@ export default function EmployeePortal() {
                                     >
                                       <Typography
                                         variant="caption"
-                                        sx={{ fontWeight: 700 }}
+                                        sx={{
+                                          fontWeight: 700,
+                                          fontSize: { xs: 10, sm: 12 },
+                                        }}
                                       >
                                         {badge.label}
                                       </Typography>
@@ -2281,6 +2287,7 @@ export default function EmployeePortal() {
                                         right: 10,
                                         justifyContent: "center",
                                         flexWrap: "wrap",
+                                        display: { xs: "none", sm: "flex" },
                                       }}
                                     >
                                       {methodSummary.methods
@@ -2348,7 +2355,9 @@ export default function EmployeePortal() {
                                       <Typography
                                         sx={{
                                           fontWeight: 800,
-                                          fontSize: isPresent ? 18 : 16,
+                                          fontSize: isPresent
+                                            ? { xs: 14, sm: 18 }
+                                            : { xs: 13, sm: 16 },
                                           letterSpacing: -0.3,
                                           color: isPresent
                                             ? theme.palette.text.primary
