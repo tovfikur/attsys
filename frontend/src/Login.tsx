@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import api from "./api";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
@@ -134,8 +134,14 @@ export default function Login() {
 
   const host = typeof window !== "undefined" ? window.location.hostname : "";
   const sub = host.split(".")[0];
-  const tenantHint =
-    localStorage.getItem("tenant") || sessionStorage.getItem("tenant") || "";
+  const [tenantHint, setTenantHint] = useState(() => {
+    return (
+      localStorage.getItem("tenant") || sessionStorage.getItem("tenant") || ""
+    );
+  });
+  const [tenantPick, setTenantPick] = useState("");
+  const [tenantPickBusy, setTenantPickBusy] = useState(false);
+  const [tenantPickError, setTenantPickError] = useState("");
 
   const isRootHost = useMemo(() => {
     const h = host.toLowerCase();
@@ -170,17 +176,47 @@ export default function Login() {
     return "";
   }, [host, rootDomain]);
 
+  useEffect(() => {
+    if (!isMobile) return;
+    if (!isRootHost) return;
+    if (tenantFromHost) return;
+    if (!tenantHint) return;
+
+    const t = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const r = await api.get("/api/tenant", {
+            headers: { "X-Tenant-ID": tenantHint },
+          });
+          const type = (r.data as { tenant?: { type?: unknown } | null } | null)
+            ?.tenant?.type;
+          if (type === "tenant") return;
+        } catch {
+          return;
+        }
+        localStorage.removeItem("tenant");
+        sessionStorage.removeItem("tenant");
+        setTenantHint("");
+        setTenantPickError("Saved subdomain is invalid. Please enter again.");
+      })();
+    }, 0);
+
+    return () => window.clearTimeout(t);
+  }, [isMobile, isRootHost, tenantFromHost, tenantHint]);
+
+  const effectiveTenantHint = isMobile ? tenantHint : "";
+
   const isSuperadminPortal =
-    isRootHost ||
-    (!tenantFromHost &&
-      (!host.includes(".") || sub === "superadmin") &&
-      !tenantHint);
+    !isMobile &&
+    (isRootHost ||
+      (!tenantFromHost &&
+        (!host.includes(".") || sub === "superadmin") &&
+        !effectiveTenantHint));
 
   const tenantSubdomain = useMemo(() => {
     if (tenantFromHost) return tenantFromHost;
-    if (isRootHost) return "";
-    return tenantHint || "";
-  }, [isRootHost, tenantFromHost, tenantHint]);
+    return effectiveTenantHint || "";
+  }, [tenantFromHost, effectiveTenantHint]);
 
   const [tenantPortalMode, setTenantPortalMode] = useState<
     "employee" | "admin"
@@ -192,6 +228,41 @@ export default function Login() {
     return "admin";
   });
 
+  const handlePickTenant = async () => {
+    const v = tenantPick.trim().toLowerCase();
+    setTenantPickError("");
+    if (!v) {
+      setTenantPickError("Please enter your tenant subdomain.");
+      return;
+    }
+    if (!/^[a-z0-9-]+$/.test(v)) {
+      setTenantPickError(
+        "Invalid subdomain. Use lowercase letters, numbers, or hyphens."
+      );
+      return;
+    }
+    setTenantPickBusy(true);
+    try {
+      const r = await api.get("/api/tenant", {
+        headers: { "X-Tenant-ID": v },
+      });
+      const type = (r.data as { tenant?: { type?: unknown } | null } | null)
+        ?.tenant?.type;
+      if (type !== "tenant") {
+        setTenantPickError("Subdomain not found. Please try again.");
+        return;
+      }
+      localStorage.setItem("tenant", v);
+      sessionStorage.removeItem("tenant");
+      setTenantHint(v);
+      setTenantPick("");
+    } catch (err: unknown) {
+      setTenantPickError(getErrorMessage(err, "Failed to verify subdomain"));
+    } finally {
+      setTenantPickBusy(false);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -199,6 +270,11 @@ export default function Login() {
     setShowTenantInactive(false);
 
     try {
+      if (isMobile && !tenantSubdomain) {
+        setError("Please enter your tenant subdomain first.");
+        setLoading(false);
+        return;
+      }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
         throw {
           response: {
@@ -368,6 +444,48 @@ export default function Login() {
                   : "Sign in to your Tenant Workspace"}
               </Typography>
             </Box>
+
+            {isMobile && isRootHost && !tenantFromHost && !tenantHint && (
+              <Stack spacing={1.25}>
+                <Typography variant="body2" color="text.secondary">
+                  Enter your tenant subdomain to continue
+                </Typography>
+                <Stack
+                  direction={isMobile ? "column" : "row"}
+                  spacing={1.5}
+                  alignItems="stretch"
+                >
+                  <TextField
+                    label="Subdomain"
+                    value={tenantPick}
+                    onChange={(e) => setTenantPick(e.target.value)}
+                    placeholder="e.g. acme"
+                    autoComplete="off"
+                    disabled={tenantPickBusy}
+                  />
+                  <Button
+                    variant="contained"
+                    onClick={() => void handlePickTenant()}
+                    disabled={tenantPickBusy}
+                    endIcon={
+                      tenantPickBusy ? (
+                        <CircularProgress size={18} />
+                      ) : (
+                        <ArrowForwardRounded />
+                      )
+                    }
+                    sx={{ borderRadius: 3, px: 2.5, whiteSpace: "nowrap" }}
+                  >
+                    Continue
+                  </Button>
+                </Stack>
+                {tenantPickError && (
+                  <Alert severity="error" variant="outlined">
+                    {tenantPickError}
+                  </Alert>
+                )}
+              </Stack>
+            )}
 
             {!isSuperadminPortal && (
               <Stack spacing={1.25}>

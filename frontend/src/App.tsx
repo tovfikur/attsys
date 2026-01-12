@@ -1,4 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter,
+  HashRouter,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
 import type { ReactElement } from "react";
 import Login from "./Login";
 import ResetPassword from "./ResetPassword";
@@ -15,7 +21,7 @@ import Leaves from "./Leaves";
 import EmployeePortal from "./EmployeePortal";
 import AppShell from "./layout/AppShell";
 import "./App.css";
-import { getToken, getUser } from "./utils/session";
+import { clearSession, getToken, getUser } from "./utils/session";
 
 function PrivateRoute({ children }: { children: ReactElement }) {
   const token = getToken();
@@ -63,14 +69,30 @@ function HomeRedirect() {
   const token = getToken();
   const user = getUser();
   if (!token || !user) return <Navigate to="/login" />;
+  const isMobile =
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 900px)").matches;
+  if (isMobile && user.role === "superadmin") {
+    clearSession();
+    return <Navigate to="/login" />;
+  }
   if (user.role === "employee") return <Navigate to="/employee-portal" />;
   if (user.role === "superadmin") return <Navigate to="/dashboard" />;
   return <Navigate to="/employees" />;
 }
 
 function App() {
+  const isNative =
+    typeof window !== "undefined" &&
+    (window.location.protocol === "capacitor:" ||
+      window.location.protocol === "file:" ||
+      "Capacitor" in (window as unknown as Record<string, unknown>));
+  const isMobile =
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 900px)").matches;
+  const Router = isNative ? HashRouter : BrowserRouter;
   return (
-    <BrowserRouter>
+    <Router>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/employee-login" element={<Login />} />
@@ -78,9 +100,13 @@ function App() {
         <Route
           path="/dashboard"
           element={
-            <RoleRoute role="superadmin">
-              <Dashboard />
-            </RoleRoute>
+            isMobile ? (
+              <Navigate to="/" />
+            ) : (
+              <RoleRoute role="superadmin">
+                <Dashboard />
+              </RoleRoute>
+            )
           }
         />
         <Route
@@ -165,7 +191,7 @@ function App() {
         />
         <Route path="/" element={<HomeRedirect />} />
       </Routes>
-    </BrowserRouter>
+    </Router>
   );
 }
 

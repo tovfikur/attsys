@@ -11,6 +11,11 @@ function getRootDomain(): string {
   return (v || "").toLowerCase();
 }
 
+function isMobileViewport(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
 const TWO_PART_PUBLIC_SUFFIXES = new Set<string>([
   "ac.in",
   "ac.jp",
@@ -115,7 +120,11 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider
       theme={createAppTheme(
-        getTenantFromHost(window.location.hostname) ? "tenant" : "superadmin"
+        isMobileViewport()
+          ? "tenant"
+          : getTenantFromHost(window.location.hostname)
+          ? "tenant"
+          : "superadmin"
       )}
     >
       <CssBaseline />

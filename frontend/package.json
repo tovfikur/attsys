@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:android": "tsc -b && vite build --base=./",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
+    "cap:android": "npm run build:android && npx cap sync android",
+    "android:open": "npx cap open android",
     "preview": "vite preview",
     "test:e2e": "(C:\\\\tools\\\\php\\\\php.exe ..\\\\backend\\\\run_migration.php || echo DB unavailable, skipping migrations) && (C:\\\\tools\\\\php\\\\php.exe ..\\\\backend\\\\update_schema_shifts.php || echo DB unavailable, skipping schema) && playwright test",
     "test:e2e:docker": "set PLAYWRIGHT_USE_DOCKER=1&& playwright test tests/e2e/docker-superadmin-tenant.spec.ts"
@@ -17,6 +20,8 @@
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
+    "@capacitor/android": "^7.0.1",
+    "@capacitor/core": "^7.0.1",
     "axios": "^1.13.2",
     "lucide-react": "^0.562.0",
     "react": "^19.2.0",
@@ -31,6 +36,7 @@
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "@capacitor/cli": "^7.0.1",
     "autoprefixer": "^10.4.23",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",

@@ -11,6 +11,11 @@ function getTenantHint(): string | null {
   );
 }
 
+function isMobileViewport(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
 function getRootDomain(): string {
   const v = (import.meta as unknown as { env?: Record<string, string> }).env
     ?.VITE_ROOT_DOMAIN;
@@ -108,13 +113,6 @@ function inferRootDomainFromHost(host: string): string {
   return suffix2;
 }
 
-function isRootHost(host: string): boolean {
-  const h = (host || "").toLowerCase();
-  const root = getRootDomain() || inferRootDomainFromHost(h);
-  if (!root) return h === "localhost" || isIpHost(h);
-  return h === root || h === `www.${root}`;
-}
-
 function getTenantFromHost(host: string): string | null {
   const h = (host || "").toLowerCase();
   if (!h) return null;
@@ -160,12 +158,7 @@ api.interceptors.request.use((config) => {
     config.headers = config.headers || {};
     config.headers["X-Tenant-ID"] = tenantFromHost;
   } else {
-    if (typeof window !== "undefined" && isRootHost(host)) {
-      sessionStorage.removeItem("tenant");
-      localStorage.removeItem("tenant");
-      return config;
-    }
-    const tenantHint = getTenantHint();
+    const tenantHint = isMobileViewport() ? getTenantHint() : null;
     if (tenantHint) {
       config.headers = config.headers || {};
       config.headers["X-Tenant-ID"] = tenantHint;
