@@ -113,19 +113,28 @@ class AuthController
             $row = $chk->fetch();
             if ($row && $row['banned_until'] && strtotime($row['banned_until']) > time()) { http_response_code(429); echo json_encode(['error'=>'Too many attempts']); return; }
         }
-        $tStmt = $pdo->prepare('SELECT id, name FROM tenants WHERE subdomain=?');
+        $tStmt = $pdo->prepare('SELECT id, name, status FROM tenants WHERE subdomain=?');
         $tStmt->execute([$sub]);
         $tenant = $tStmt->fetch();
         if (!$tenant) {
             if (strtolower($sub) === 'demo' && strtolower($email) === 'owner@tenant.com' && $password === 'secret') {
                 $ins = $pdo->prepare('INSERT INTO tenants(subdomain, name, status) VALUES (?, ?, ?)');
                 $ins->execute(['demo', 'Demo Tenant', 'active']);
-                $tStmt = $pdo->prepare('SELECT id, name FROM tenants WHERE subdomain=?');
+                $tStmt = $pdo->prepare('SELECT id, name, status FROM tenants WHERE subdomain=?');
                 $tStmt->execute(['demo']);
                 $tenant = $tStmt->fetch();
             }
         }
         if (!$tenant) { http_response_code(404); echo json_encode(['error'=>'Tenant not found']); return; }
+        $tenantStatus = strtolower(trim((string)($tenant['status'] ?? 'active')));
+        if ($tenantStatus !== 'active') {
+            http_response_code(403);
+            echo json_encode([
+                'error' => 'This tenant is inactive. Please contact Kenroo to login to this tenant.',
+                'code' => 'TENANT_INACTIVE',
+            ]);
+            return;
+        }
         try {
             $uStmt = $pdo->prepare('SELECT id, name, email, role, employee_id, password_hash FROM tenant_users WHERE tenant_id=? AND email=? AND status="active"');
             $uStmt->execute([$tenant['id'], $email]);

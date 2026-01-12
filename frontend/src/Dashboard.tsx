@@ -5,12 +5,10 @@ import {
   Button,
   Card,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -38,6 +36,7 @@ interface Tenant {
   subdomain: string;
   status: string;
   created_at: string;
+  note?: string | null;
 }
 
 const TWO_PART_PUBLIC_SUFFIXES = new Set<string>([
@@ -119,17 +118,34 @@ const getRootDomain = (): string => {
 export default function Dashboard() {
   const [tenantInfo, setTenantInfo] = useState<TenantData | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  const [resetForm, setResetForm] = useState({
+  const [menu, setMenu] = useState<"tenants" | "create" | "password">(
+    "tenants"
+  );
+  const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState("");
+  const [resetForm, setResetForm] = useState<{
+    subdomain: string;
+    email: string;
+    new_password: string;
+  }>({
     subdomain: "",
     email: "",
     new_password: "",
   });
   const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetOk, setResetOk] = useState("");
 
-  const [newTenant, setNewTenant] = useState({ name: "", subdomain: "" });
+  const [newTenant, setNewTenant] = useState<{
+    name: string;
+    subdomain: string;
+    email: string;
+    password: string;
+    note: string;
+  }>({ name: "", subdomain: "", email: "", password: "", note: "" });
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState("");
+  const [createError, setCreateError] = useState("");
+  const [createOk, setCreateOk] = useState("");
 
   const user = getUser();
   const userName = user?.name || "Admin";
@@ -161,25 +177,64 @@ export default function Dashboard() {
     }
   };
 
+  const handleToggleTenantStatus = async (t: Tenant) => {
+    const next =
+      (t.status || "").toLowerCase() === "active" ? "inactive" : "active";
+    setStatusError("");
+    setStatusBusyId(t.id);
+    try {
+      await api.post("/api/tenants/status", { id: t.id, status: next });
+      await fetchTenants();
+    } catch (err: unknown) {
+      setStatusError(getErrorMessage(err, "Failed to update tenant status"));
+    } finally {
+      setStatusBusyId(null);
+    }
+  };
+
   const handleCreateTenant = async () => {
     setCreating(true);
-    setError("");
+    setCreateError("");
+    setCreateOk("");
 
     // Validate subdomain client-side
     if (!/^[a-z0-9-]+$/.test(newTenant.subdomain)) {
-      setError(
+      setCreateError(
         "Invalid subdomain. Use lowercase letters, numbers, or hyphens."
       );
       setCreating(false);
       return;
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newTenant.email.trim())) {
+      setCreateError("Invalid tenant email.");
+      setCreating(false);
+      return;
+    }
+    if (newTenant.password.length < 6) {
+      setCreateError("Password must be at least 6 characters.");
+      setCreating(false);
+      return;
+    }
     try {
-      await api.post("/api/tenants", newTenant);
-      setShowModal(false);
-      setNewTenant({ name: "", subdomain: "" });
+      await api.post("/api/tenants", {
+        name: newTenant.name,
+        subdomain: newTenant.subdomain,
+        email: newTenant.email.trim().toLowerCase(),
+        password: newTenant.password,
+        note: newTenant.note.trim() ? newTenant.note.trim() : null,
+      });
+      setNewTenant({
+        name: "",
+        subdomain: "",
+        email: "",
+        password: "",
+        note: "",
+      });
+      setCreateOk("Tenant created.");
       fetchTenants(); // Refresh list
+      setMenu("tenants");
     } catch (err: unknown) {
-      setError(getErrorMessage(err, "Failed to create tenant"));
+      setCreateError(getErrorMessage(err, "Failed to create tenant"));
     } finally {
       setCreating(false);
     }
@@ -187,17 +242,26 @@ export default function Dashboard() {
 
   const handleResetPassword = async () => {
     setResetBusy(true);
-    setError("");
+    setResetError("");
+    setResetOk("");
     try {
       await api.post("/api/tenant_users/reset_password", resetForm);
       setResetForm({ subdomain: "", email: "", new_password: "" });
-      alert("Password updated");
+      setResetOk("Password updated.");
     } catch (err: unknown) {
-      setError(getErrorMessage(err, "Failed to update password"));
+      setResetError(getErrorMessage(err, "Failed to update password"));
     } finally {
       setResetBusy(false);
     }
   };
+
+  const formatCreatedAt = useMemo(() => {
+    return (raw: string) => {
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return raw || "—";
+      return d.toLocaleString();
+    };
+  }, []);
 
   const summary = useMemo(() => {
     const activeCount = tenants.filter((t) => t.status === "active").length;
@@ -319,10 +383,18 @@ export default function Dashboard() {
                 variant="contained"
                 size="large"
                 startIcon={<AddRounded />}
-                onClick={() => setShowModal(true)}
+                onClick={() => setMenu("create")}
                 sx={{ borderRadius: 3 }}
               >
                 Create tenant
+              </Button>
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={() => setMenu("password")}
+                sx={{ borderRadius: 3 }}
+              >
+                Set password
               </Button>
             </Stack>
           </Card>
@@ -333,191 +405,301 @@ export default function Dashboard() {
         <Box sx={{ mt: 3 }}>
           <Card
             sx={{
-              p: 2.5,
               borderRadius: 4,
               boxShadow: "0 30px 80px rgba(0,0,0,0.10)",
+              overflow: "hidden",
             }}
           >
-            <Stack spacing={2}>
-              <Typography sx={{ fontWeight: 900, fontSize: 18 }}>
-                Tenant Password Reset
-              </Typography>
-              {error && <Typography color="error">{error}</Typography>}
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-                <TextField
-                  label="Subdomain"
-                  value={resetForm.subdomain}
-                  onChange={(e) =>
-                    setResetForm({
-                      ...resetForm,
-                      subdomain: e.target.value.toLowerCase(),
-                    })
-                  }
-                  required
-                />
-                <TextField
-                  label="Tenant Email"
-                  type="email"
-                  value={resetForm.email}
-                  onChange={(e) =>
-                    setResetForm({ ...resetForm, email: e.target.value })
-                  }
-                  required
-                />
-                <TextField
-                  label="New Password"
-                  type="password"
-                  value={resetForm.new_password}
-                  onChange={(e) =>
-                    setResetForm({ ...resetForm, new_password: e.target.value })
-                  }
-                  required
-                />
-              </Stack>
-              <Box>
-                <Button
-                  variant="outlined"
-                  onClick={handleResetPassword}
-                  disabled={resetBusy}
-                  sx={{ borderRadius: 3 }}
-                >
-                  {resetBusy ? "Updating…" : "Set tenant password"}
-                </Button>
-              </Box>
-            </Stack>
+            <Tabs
+              value={menu}
+              onChange={(_, v) => setMenu(v)}
+              variant="fullWidth"
+              sx={{
+                px: 2,
+                pt: 1,
+                "& .MuiTab-root": { textTransform: "none", fontWeight: 800 },
+              }}
+              TabIndicatorProps={{ style: { height: 2 } }}
+            >
+              <Tab value="tenants" label="Tenants" />
+              <Tab value="create" label="Create Tenant" />
+              <Tab value="password" label="Set Password" />
+            </Tabs>
+            <Divider />
+
+            <Box sx={{ p: 2.5 }}>
+              {menu === "tenants" && (
+                <Box>
+                  <Stack
+                    direction="row"
+                    alignItems="baseline"
+                    justifyContent="space-between"
+                    sx={{ mb: 1.5 }}
+                  >
+                    <Typography sx={{ fontWeight: 900, fontSize: 18 }}>
+                      Tenants
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Open a tenant portal in a new tab
+                    </Typography>
+                  </Stack>
+                  {statusError ? (
+                    <Typography color="error" sx={{ mb: 1.5 }}>
+                      {statusError}
+                    </Typography>
+                  ) : null}
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: {
+                        xs: "1fr",
+                        sm: "repeat(2, 1fr)",
+                        lg: "repeat(3, 1fr)",
+                      },
+                      gap: 2,
+                    }}
+                  >
+                    {tenants.map((t) => (
+                      <Card
+                        key={t.id}
+                        sx={{
+                          p: 2.25,
+                          borderRadius: 4,
+                          boxShadow: "0 30px 80px rgba(0,0,0,0.10)",
+                          transition:
+                            "transform 200ms ease, box-shadow 200ms ease",
+                          "&:hover": {
+                            transform: "translateY(-2px)",
+                            boxShadow: "0 40px 120px rgba(0,0,0,0.16)",
+                          },
+                        }}
+                      >
+                        <Stack spacing={1.25}>
+                          <Stack
+                            direction="row"
+                            justifyContent="space-between"
+                            alignItems="center"
+                          >
+                            <Typography sx={{ fontWeight: 900 }}>
+                              {t.name}
+                            </Typography>
+                            <Chip
+                              size="small"
+                              label={t.status}
+                              color={
+                                t.status === "active" ? "success" : "default"
+                              }
+                            />
+                          </Stack>
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{ fontFamily: "monospace" }}
+                          >
+                            {t.subdomain}.{rootDomain}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Created: {formatCreatedAt(t.created_at)}
+                          </Typography>
+                          {t.note ? (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              Note: {t.note}
+                            </Typography>
+                          ) : null}
+                          <Divider />
+                          <Stack direction="row" spacing={1}>
+                            <Button
+                              variant="contained"
+                              href={`${protocol}//${t.subdomain}.${rootDomain}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              sx={{ borderRadius: 3, flex: 1 }}
+                            >
+                              Visit portal
+                            </Button>
+                            <Button
+                              variant={
+                                t.status === "active" ? "outlined" : "contained"
+                              }
+                              color={
+                                t.status === "active" ? "error" : "success"
+                              }
+                              onClick={() => void handleToggleTenantStatus(t)}
+                              disabled={statusBusyId === t.id}
+                              sx={{ borderRadius: 3, flex: 1 }}
+                            >
+                              {statusBusyId === t.id
+                                ? "Updating…"
+                                : t.status === "active"
+                                ? "Deactivate"
+                                : "Activate"}
+                            </Button>
+                          </Stack>
+                        </Stack>
+                      </Card>
+                    ))}
+                    {tenants.length === 0 && (
+                      <Card sx={{ p: 3, borderRadius: 4 }}>
+                        <Typography color="text.secondary">
+                          No tenants found.
+                        </Typography>
+                      </Card>
+                    )}
+                  </Box>
+                </Box>
+              )}
+
+              {menu === "create" && (
+                <Box sx={{ maxWidth: 820 }}>
+                  <Stack spacing={2}>
+                    <Typography sx={{ fontWeight: 900, fontSize: 18 }}>
+                      Create Tenant
+                    </Typography>
+                    {createError ? (
+                      <Typography color="error">{createError}</Typography>
+                    ) : null}
+                    {createOk ? (
+                      <Typography color="success.main" sx={{ fontWeight: 800 }}>
+                        {createOk}
+                      </Typography>
+                    ) : null}
+                    <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                      <TextField
+                        label="Company name"
+                        value={newTenant.name}
+                        onChange={(e) =>
+                          setNewTenant({ ...newTenant, name: e.target.value })
+                        }
+                        required
+                      />
+                      <TextField
+                        label="Subdomain"
+                        value={newTenant.subdomain}
+                        onChange={(e) =>
+                          setNewTenant({
+                            ...newTenant,
+                            subdomain: e.target.value.toLowerCase(),
+                          })
+                        }
+                        required
+                        helperText="Lowercase letters, numbers, and hyphens only."
+                      />
+                    </Stack>
+                    <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                      <TextField
+                        label="Tenant Email"
+                        type="email"
+                        value={newTenant.email}
+                        onChange={(e) =>
+                          setNewTenant({ ...newTenant, email: e.target.value })
+                        }
+                        required
+                      />
+                      <TextField
+                        label="Tenant Password"
+                        type="password"
+                        value={newTenant.password}
+                        onChange={(e) =>
+                          setNewTenant({
+                            ...newTenant,
+                            password: e.target.value,
+                          })
+                        }
+                        required
+                      />
+                    </Stack>
+                    <TextField
+                      label="Note"
+                      value={newTenant.note}
+                      onChange={(e) =>
+                        setNewTenant({ ...newTenant, note: e.target.value })
+                      }
+                      multiline
+                      minRows={2}
+                      placeholder="Optional note for this tenant"
+                    />
+                    <Box>
+                      <Button
+                        variant="contained"
+                        onClick={handleCreateTenant}
+                        disabled={creating}
+                        sx={{ borderRadius: 3 }}
+                      >
+                        {creating ? "Provisioning…" : "Create tenant"}
+                      </Button>
+                    </Box>
+                  </Stack>
+                </Box>
+              )}
+
+              {menu === "password" && (
+                <Box sx={{ maxWidth: 820 }}>
+                  <Stack spacing={2}>
+                    <Typography sx={{ fontWeight: 900, fontSize: 18 }}>
+                      Set Tenant Password
+                    </Typography>
+                    {resetError ? (
+                      <Typography color="error">{resetError}</Typography>
+                    ) : null}
+                    {resetOk ? (
+                      <Typography color="success.main" sx={{ fontWeight: 800 }}>
+                        {resetOk}
+                      </Typography>
+                    ) : null}
+                    <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                      <TextField
+                        label="Subdomain"
+                        value={resetForm.subdomain}
+                        onChange={(e) =>
+                          setResetForm({
+                            ...resetForm,
+                            subdomain: e.target.value.toLowerCase(),
+                          })
+                        }
+                        required
+                      />
+                      <TextField
+                        label="Tenant Email"
+                        type="email"
+                        value={resetForm.email}
+                        onChange={(e) =>
+                          setResetForm({ ...resetForm, email: e.target.value })
+                        }
+                        required
+                      />
+                      <TextField
+                        label="New Password"
+                        type="password"
+                        value={resetForm.new_password}
+                        onChange={(e) =>
+                          setResetForm({
+                            ...resetForm,
+                            new_password: e.target.value,
+                          })
+                        }
+                        required
+                      />
+                    </Stack>
+                    <Box>
+                      <Button
+                        variant="outlined"
+                        onClick={handleResetPassword}
+                        disabled={resetBusy}
+                        sx={{ borderRadius: 3 }}
+                      >
+                        {resetBusy ? "Updating…" : "Set tenant password"}
+                      </Button>
+                    </Box>
+                  </Stack>
+                </Box>
+              )}
+            </Box>
           </Card>
         </Box>
       )}
-
-      {isSuperadmin && (
-        <Box sx={{ mt: 3 }}>
-          <Stack
-            direction="row"
-            alignItems="baseline"
-            justifyContent="space-between"
-            sx={{ mb: 1.5 }}
-          >
-            <Typography sx={{ fontWeight: 900, fontSize: 18 }}>
-              Tenants
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Open a tenant portal in a new tab
-            </Typography>
-          </Stack>
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: {
-                xs: "1fr",
-                sm: "repeat(2, 1fr)",
-                lg: "repeat(3, 1fr)",
-              },
-              gap: 2,
-            }}
-          >
-            {tenants.map((t) => (
-              <Card
-                key={t.id}
-                sx={{
-                  p: 2.25,
-                  borderRadius: 4,
-                  boxShadow: "0 30px 80px rgba(0,0,0,0.10)",
-                  transition: "transform 200ms ease, box-shadow 200ms ease",
-                  "&:hover": {
-                    transform: "translateY(-2px)",
-                    boxShadow: "0 40px 120px rgba(0,0,0,0.16)",
-                  },
-                }}
-              >
-                <Stack spacing={1.25}>
-                  <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                  >
-                    <Typography sx={{ fontWeight: 900 }}>{t.name}</Typography>
-                    <Chip
-                      size="small"
-                      label={t.status}
-                      color={t.status === "active" ? "success" : "default"}
-                    />
-                  </Stack>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ fontFamily: "monospace" }}
-                  >
-                    {t.subdomain}.{rootDomain}
-                  </Typography>
-                  <Divider />
-                  <Button
-                    variant="contained"
-                    href={`${protocol}//${t.subdomain}.${rootDomain}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    sx={{ borderRadius: 3 }}
-                  >
-                    Visit portal
-                  </Button>
-                </Stack>
-              </Card>
-            ))}
-            {tenants.length === 0 && (
-              <Card sx={{ p: 3, borderRadius: 4 }}>
-                <Typography color="text.secondary">
-                  No tenants found.
-                </Typography>
-              </Card>
-            )}
-          </Box>
-        </Box>
-      )}
-
-      <Dialog
-        open={showModal}
-        onClose={() => setShowModal(false)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle sx={{ fontWeight: 900 }}>Create Tenant</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {error && <Typography color="error">{error}</Typography>}
-            <TextField
-              label="Company name"
-              value={newTenant.name}
-              onChange={(e) =>
-                setNewTenant({ ...newTenant, name: e.target.value })
-              }
-              required
-            />
-            <TextField
-              label="Subdomain"
-              value={newTenant.subdomain}
-              onChange={(e) =>
-                setNewTenant({
-                  ...newTenant,
-                  subdomain: e.target.value.toLowerCase(),
-                })
-              }
-              required
-              helperText="Lowercase letters, numbers, and hyphens only."
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setShowModal(false)} variant="text">
-            Cancel
-          </Button>
-          <Button
-            onClick={handleCreateTenant}
-            variant="contained"
-            disabled={creating}
-          >
-            {creating ? "Provisioning…" : "Create"}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }

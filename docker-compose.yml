@@ -43,6 +43,7 @@ services:
       DB_NAME: attendance_saas
       DB_USER: attendance
       DB_PASS: attpass
+      FACE_API_URL: "http://face_api:5000"
     working_dir: /app
     volumes:
       - ./backend:/app
@@ -51,6 +52,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      face_api:
+        condition: service_started
+
+  face_api:
+    build:
+      context: ./face_api
+    container_name: attendance_face_api
+    restart: unless-stopped
+    ports:
+      - "${ATT_FACE_API_PORT:-5172}:5000"
 
   frontend:
     image: node:20-alpine

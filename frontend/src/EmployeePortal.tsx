@@ -4,6 +4,7 @@ import { getErrorMessage } from "./utils/errors";
 import {
   Alert,
   alpha,
+  Avatar,
   Box,
   Button,
   ButtonBase,
@@ -105,6 +106,17 @@ type HolidayRecord = {
   created_at?: string;
 };
 
+type LeaveType = {
+  id?: string | number;
+  code: string;
+  name: string;
+  is_paid?: number | boolean;
+  requires_document?: number | boolean;
+  active?: number | boolean;
+  sort_order?: number;
+  created_at?: string;
+};
+
 type EvidenceItem = {
   id: string;
   employee_id: string;
@@ -120,7 +132,7 @@ type EvidenceItem = {
   image_data_url: string | null;
 };
 
-type BiometricModality = "face" | "fingerprint";
+type BiometricModality = "face";
 type BiometricAction = "clock_in" | "clock_out" | "enroll";
 type BiometricGeo = {
   latitude: number;
@@ -192,6 +204,7 @@ export default function EmployeePortal() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
   const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [holidays, setHolidays] = useState<HolidayRecord[]>([]);
   const [workingDays, setWorkingDays] = useState<string>("");
   const [leaveTotals, setLeaveTotals] = useState<{
@@ -214,8 +227,6 @@ export default function EmployeePortal() {
   const [biometricOpen, setBiometricOpen] = useState(false);
   const [biometricAction, setBiometricAction] =
     useState<BiometricAction>("clock_in");
-  const [biometricModality, setBiometricModality] =
-    useState<BiometricModality>("face");
   const [biometricImage, setBiometricImage] = useState("");
   const [biometricBusy, setBiometricBusy] = useState(false);
   const [biometricError, setBiometricError] = useState("");
@@ -240,6 +251,44 @@ export default function EmployeePortal() {
     reason: "",
   });
 
+  const selectableLeaveTypes = useMemo<LeaveType[]>(() => {
+    const normalized = leaveTypes
+      .map((t) => ({
+        ...t,
+        code: String(t.code || "").trim(),
+        name: String(t.name || "").trim(),
+      }))
+      .filter((t) => t.code !== "" && t.name !== "");
+    if (normalized.length > 0) return normalized;
+    return [
+      { code: "casual", name: "Casual" },
+      { code: "sick", name: "Sick" },
+      { code: "annual", name: "Annual" },
+      { code: "unpaid", name: "Unpaid" },
+    ];
+  }, [leaveTypes]);
+
+  const leaveTypeNameByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of selectableLeaveTypes) {
+      const code = String(t.code || "")
+        .trim()
+        .toLowerCase();
+      const name = String(t.name || "").trim();
+      if (code && name) m.set(code, name);
+    }
+    return m;
+  }, [selectableLeaveTypes]);
+
+  const formatLeaveTypeLabel = useCallback(
+    (raw: unknown) => {
+      const code = String(raw ?? "").trim();
+      if (!code) return "leave";
+      return leaveTypeNameByCode.get(code.toLowerCase()) || code;
+    },
+    [leaveTypeNameByCode]
+  );
+
   const [dayOpen, setDayOpen] = useState(false);
   const [dayDate, setDayDate] = useState("");
   const [dayRows, setDayRows] = useState<AttendanceRow[]>([]);
@@ -251,6 +300,37 @@ export default function EmployeePortal() {
   const [evidenceItems, setEvidenceItems] = useState<EvidenceItem[]>([]);
 
   const lastRefreshAtRef = useRef(0);
+  const profilePhotoUrlRef = useRef<string | null>(null);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+
+  const role = useMemo(() => {
+    return String(me?.user?.role || "");
+  }, [me]);
+
+  const canEnrollBiometrics = useMemo(() => {
+    if (!role) return false;
+    return role !== "employee" && role !== "superadmin";
+  }, [role]);
+
+  const canEditOwnProfile = useMemo(() => {
+    return role === "employee";
+  }, [role]);
+
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [editProfileBusy, setEditProfileBusy] = useState(false);
+  const [editProfileError, setEditProfileError] = useState("");
+  const [editProfileOk, setEditProfileOk] = useState("");
+  const [editProfileForm, setEditProfileForm] = useState<{
+    email: string;
+    personal_phone: string;
+    present_address: string;
+    permanent_address: string;
+  }>({
+    email: "",
+    personal_phone: "",
+    present_address: "",
+    permanent_address: "",
+  });
 
   const employeeId = useMemo(() => {
     const raw = me?.employee?.id || me?.user?.employee_id;
@@ -276,6 +356,19 @@ export default function EmployeePortal() {
       setMe(null);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const fetchLeaveTypes = useCallback(async () => {
+    try {
+      const res = await api.get("/api/leave_types");
+      setLeaveTypes(
+        Array.isArray(res.data?.leave_types)
+          ? (res.data.leave_types as LeaveType[])
+          : []
+      );
+    } catch {
+      setLeaveTypes([]);
     }
   }, []);
 
@@ -321,16 +414,21 @@ export default function EmployeePortal() {
   }, [stopBiometricCamera]);
 
   const openEnrollBiometric = useCallback(() => {
+    if (!canEnrollBiometrics) {
+      setClockMsg({
+        type: "error",
+        message: "Only tenant users can enroll biometrics.",
+      });
+      return;
+    }
     setBiometricAction("enroll");
-    setBiometricModality("face");
     setBiometricImage("");
     setBiometricError("");
     setBiometricOpen(true);
-  }, []);
+  }, [canEnrollBiometrics]);
 
   const openClockBiometric = useCallback((type: "in" | "out") => {
     setBiometricAction(type === "in" ? "clock_in" : "clock_out");
-    setBiometricModality("face");
     setBiometricImage("");
     setBiometricError("");
     setBiometricOpen(true);
@@ -352,20 +450,94 @@ export default function EmployeePortal() {
     }
   }, [employeeId]);
 
+  const refreshProfilePhoto = useCallback(async () => {
+    if (!employeeId) {
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+        profilePhotoUrlRef.current = null;
+      }
+      setProfilePhotoUrl(null);
+      return;
+    }
+    try {
+      const res = await api.get("/api/me/profile_photo", {
+        responseType: "blob",
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+      });
+      if (res.status === 404 || !res.data) {
+        if (profilePhotoUrlRef.current) {
+          URL.revokeObjectURL(profilePhotoUrlRef.current);
+          profilePhotoUrlRef.current = null;
+        }
+        setProfilePhotoUrl(null);
+        return;
+      }
+      const blob = res.data as Blob;
+      if (!blob.size) {
+        if (profilePhotoUrlRef.current) {
+          URL.revokeObjectURL(profilePhotoUrlRef.current);
+          profilePhotoUrlRef.current = null;
+        }
+        setProfilePhotoUrl(null);
+        return;
+      }
+      const nextUrl = URL.createObjectURL(blob);
+      if (profilePhotoUrlRef.current)
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+      profilePhotoUrlRef.current = nextUrl;
+      setProfilePhotoUrl(nextUrl);
+    } catch {
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+        profilePhotoUrlRef.current = null;
+      }
+      setProfilePhotoUrl(null);
+    }
+  }, [employeeId]);
+
   useEffect(() => {
     void fetchMe();
   }, [fetchMe]);
 
   useEffect(() => {
+    void fetchLeaveTypes();
+  }, [fetchLeaveTypes]);
+
+  useEffect(() => {
+    if (selectableLeaveTypes.length === 0) return;
+    const codes = new Set(
+      selectableLeaveTypes.map((t) => String(t.code || ""))
+    );
+    setApplyForm((p) => {
+      const cur = String(p.leave_type || "").trim();
+      const next = codes.has(cur)
+        ? cur
+        : String(selectableLeaveTypes[0]?.code || "");
+      if (!next || cur === next) return p;
+      return { ...p, leave_type: next };
+    });
+  }, [selectableLeaveTypes]);
+
+  useEffect(() => {
     if (!employeeId) return;
     void fetchEmployeeMonth();
     void refreshOpenShift();
-  }, [employeeId, fetchEmployeeMonth, refreshOpenShift]);
+    void refreshProfilePhoto();
+  }, [employeeId, fetchEmployeeMonth, refreshOpenShift, refreshProfilePhoto]);
 
   useEffect(() => {
     if (!employeeId) return;
     void fetchEmployeeMonth();
   }, [employeeId, fetchEmployeeMonth, monthStr]);
+
+  useEffect(() => {
+    return () => {
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+        profilePhotoUrlRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const triggerRefresh = () => {
@@ -638,9 +810,13 @@ export default function EmployeePortal() {
     setBiometricError("");
     try {
       if (biometricAction === "enroll") {
+        if (!canEnrollBiometrics) {
+          setBiometricError("Only tenant users can enroll biometrics.");
+          return;
+        }
         await api.post("/api/biometrics/enroll", {
           employee_id: employeeId,
-          biometric_modality: biometricModality,
+          biometric_modality: "face",
           biometric_image: biometricImage,
         });
         setClockMsg({ type: "success", message: "Biometric enrolled" });
@@ -650,7 +826,7 @@ export default function EmployeePortal() {
 
       const geo = await getBiometricGeo();
       const ok = await clock(biometricAction === "clock_in" ? "in" : "out", {
-        modality: biometricModality,
+        modality: "face",
         image: biometricImage,
         geo,
       });
@@ -663,12 +839,57 @@ export default function EmployeePortal() {
   }, [
     biometricAction,
     biometricImage,
-    biometricModality,
+    canEnrollBiometrics,
     clock,
     closeBiometric,
     employeeId,
     getBiometricGeo,
   ]);
+
+  const openEditProfile = useCallback(() => {
+    setEditProfileError("");
+    setEditProfileOk("");
+    setEditProfileForm({
+      email: String(me?.employee?.email || ""),
+      personal_phone: String(me?.employee?.personal_phone || ""),
+      present_address: String(me?.employee?.present_address || ""),
+      permanent_address: String(me?.employee?.permanent_address || ""),
+    });
+    setEditProfileOpen(true);
+  }, [me]);
+
+  const closeEditProfile = useCallback(() => {
+    setEditProfileOpen(false);
+    setEditProfileBusy(false);
+  }, []);
+
+  const submitEditProfile = useCallback(async () => {
+    setEditProfileBusy(true);
+    setEditProfileError("");
+    setEditProfileOk("");
+    try {
+      const payload = {
+        email: editProfileForm.email,
+        personal_phone: editProfileForm.personal_phone,
+        present_address: editProfileForm.present_address,
+        permanent_address: editProfileForm.permanent_address,
+      };
+      const res = await api.post("/api/me/update", payload);
+      const updated = res.data?.employee || null;
+      if (updated) {
+        setMe((prev) => {
+          if (!prev) return prev;
+          return { ...prev, employee: updated as MeResponse["employee"] };
+        });
+      }
+      setEditProfileOk("Profile updated");
+      setEditProfileOpen(false);
+    } catch (err: unknown) {
+      setEditProfileError(getErrorMessage(err, "Failed to update profile"));
+    } finally {
+      setEditProfileBusy(false);
+    }
+  }, [editProfileForm]);
 
   const applyLeave = useCallback(async () => {
     if (!employeeId) return;
@@ -751,7 +972,7 @@ export default function EmployeePortal() {
   }, []);
 
   const chipSx = useMemo(() => {
-    const base = { fontWeight: 900, border: "1px solid" } as const;
+    const base = { fontWeight: 700, border: "1px solid" } as const;
     return {
       ok: {
         ...base,
@@ -779,6 +1000,26 @@ export default function EmployeePortal() {
       },
     };
   }, [theme]);
+
+  const panelCardSx = useMemo(
+    () =>
+      ({
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: 3,
+        bgcolor: "background.paper",
+      } as const),
+    []
+  );
+
+  const recentAttendance = useMemo(() => {
+    const list = attendance
+      .slice()
+      .sort((a, b) =>
+        String(b.clock_in || "").localeCompare(String(a.clock_in || ""))
+      );
+    return list.slice(0, 6);
+  }, [attendance]);
 
   const leaveStatusCounts = useMemo(() => {
     const c = { approved: 0, pending: 0, rejected: 0 };
@@ -836,23 +1077,14 @@ export default function EmployeePortal() {
         sx={{
           minHeight: "100vh",
           py: 6,
-          background: `radial-gradient(1200px 500px at 20% 0%, ${alpha(
-            theme.palette.primary.main,
-            0.12
-          )} 0%, transparent 60%), radial-gradient(900px 420px at 90% 10%, ${alpha(
-            theme.palette.secondary.main,
-            0.1
-          )} 0%, transparent 55%), linear-gradient(180deg, ${alpha(
-            theme.palette.text.primary,
-            0.02
-          )} 0%, transparent 40%)`,
+          bgcolor: "background.default",
         }}
       >
-        <Container maxWidth="lg" sx={{ pb: 4 }}>
-          <Paper variant="outlined" sx={{ borderRadius: 5, p: 4 }}>
+        <Container maxWidth="xl" sx={{ pb: 4 }}>
+          <Paper variant="outlined" sx={{ borderRadius: 3, p: 4 }}>
             <Stack direction="row" spacing={2} alignItems="center">
               <CircularProgress size={22} />
-              <Typography sx={{ fontWeight: 900 }}>Loading portal…</Typography>
+              <Typography sx={{ fontWeight: 700 }}>Loading portal…</Typography>
             </Stack>
           </Paper>
         </Container>
@@ -866,20 +1098,11 @@ export default function EmployeePortal() {
         sx={{
           minHeight: "100vh",
           py: 6,
-          background: `radial-gradient(1200px 500px at 20% 0%, ${alpha(
-            theme.palette.primary.main,
-            0.12
-          )} 0%, transparent 60%), radial-gradient(900px 420px at 90% 10%, ${alpha(
-            theme.palette.secondary.main,
-            0.1
-          )} 0%, transparent 55%), linear-gradient(180deg, ${alpha(
-            theme.palette.text.primary,
-            0.02
-          )} 0%, transparent 40%)`,
+          bgcolor: "background.default",
         }}
       >
-        <Container maxWidth="lg" sx={{ pb: 4 }}>
-          <Alert severity="error" sx={{ borderRadius: 4 }}>
+        <Container maxWidth="xl" sx={{ pb: 4 }}>
+          <Alert severity="error" sx={{ borderRadius: 2 }}>
             {error}
           </Alert>
         </Container>
@@ -893,20 +1116,11 @@ export default function EmployeePortal() {
         sx={{
           minHeight: "100vh",
           py: 6,
-          background: `radial-gradient(1200px 500px at 20% 0%, ${alpha(
-            theme.palette.primary.main,
-            0.12
-          )} 0%, transparent 60%), radial-gradient(900px 420px at 90% 10%, ${alpha(
-            theme.palette.secondary.main,
-            0.1
-          )} 0%, transparent 55%), linear-gradient(180deg, ${alpha(
-            theme.palette.text.primary,
-            0.02
-          )} 0%, transparent 40%)`,
+          bgcolor: "background.default",
         }}
       >
-        <Container maxWidth="lg" sx={{ pb: 4 }}>
-          <Alert severity="warning" sx={{ borderRadius: 4 }}>
+        <Container maxWidth="xl" sx={{ pb: 4 }}>
+          <Alert severity="warning" sx={{ borderRadius: 2 }}>
             Employee account is not linked to an employee record.
           </Alert>
         </Container>
@@ -922,200 +1136,417 @@ export default function EmployeePortal() {
       sx={{
         minHeight: "100vh",
         py: { xs: 2, sm: 3 },
-        background: `radial-gradient(1200px 500px at 20% 0%, ${alpha(
-          theme.palette.primary.main,
-          0.12
-        )} 0%, transparent 60%), radial-gradient(900px 420px at 90% 10%, ${alpha(
-          theme.palette.secondary.main,
-          0.1
-        )} 0%, transparent 55%), linear-gradient(180deg, ${alpha(
-          theme.palette.text.primary,
-          0.02
-        )} 0%, transparent 40%)`,
+        bgcolor: "background.default",
       }}
     >
-      <Container maxWidth="lg" sx={{ pb: 4 }}>
+      <Container maxWidth="xl" sx={{ pb: 4 }}>
         <Stack spacing={2.5}>
-          <Paper
-            variant="outlined"
+          <Box
             sx={{
-              borderRadius: 5,
-              p: { xs: 2, sm: 2.75 },
-              boxShadow: "0 24px 60px rgba(0,0,0,0.10)",
-              bgcolor: alpha(theme.palette.background.paper, 0.92),
-              backdropFilter: "blur(10px)",
-              borderColor: alpha(theme.palette.text.primary, 0.1),
-              backgroundImage: `linear-gradient(135deg, ${alpha(
-                theme.palette.primary.main,
-                0.14
-              )} 0%, transparent 60%)`,
+              display: "grid",
+              gridTemplateColumns: {
+                xs: "1fr",
+                lg: "minmax(0, 1fr) 420px",
+                xl: "minmax(0, 1fr) 460px",
+              },
+              gap: 2,
+              alignItems: "stretch",
             }}
           >
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={2}
-              alignItems={{ sm: "center" }}
+            <Paper
+              variant="outlined"
+              sx={{
+                borderRadius: 3,
+                p: { xs: 2, sm: 2.5 },
+                height: "100%",
+              }}
             >
-              <Stack
-                direction="row"
-                spacing={1.5}
-                alignItems="center"
-                sx={{ flex: 1, minWidth: 0 }}
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) auto" },
+                  gap: 2,
+                  alignItems: "center",
+                }}
               >
-                <Box
-                  sx={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 999,
-                    display: "grid",
-                    placeItems: "center",
-                    color: theme.palette.primary.contrastText,
-                    backgroundImage: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-                    boxShadow: `0 12px 30px ${alpha(
-                      theme.palette.primary.main,
-                      0.28
-                    )}`,
-                    flex: "0 0 auto",
-                  }}
+                <Stack
+                  direction="row"
+                  spacing={1.5}
+                  alignItems="center"
+                  sx={{ minWidth: 0 }}
                 >
-                  <Typography sx={{ fontWeight: 900, letterSpacing: 0.5 }}>
+                  <Avatar
+                    variant="circular"
+                    src={profilePhotoUrl || undefined}
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      fontWeight: 700,
+                      bgcolor: "primary.main",
+                      border: "1px solid",
+                      borderColor: "divider",
+                      flex: "0 0 auto",
+                    }}
+                  >
                     {initials}
-                  </Typography>
-                </Box>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 950, fontSize: 18 }} noWrap>
-                    {displayName}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" noWrap>
-                    {me?.employee?.code ? `Code: ${me.employee.code} • ` : ""}
-                    {me?.employee?.shift_name
-                      ? `Shift: ${me.employee.shift_name}`
-                      : ""}
-                  </Typography>
-                  {workingDays && (
-                    <Typography variant="caption" color="text.secondary" noWrap>
-                      Working days: {workingDays}
+                  </Avatar>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 800 }} noWrap>
+                      {displayName}
                     </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      noWrap
+                      sx={{ fontWeight: 500 }}
+                    >
+                      {me?.employee?.designation
+                        ? `${me.employee.designation} • `
+                        : ""}
+                      {me?.employee?.department
+                        ? `${me.employee.department} • `
+                        : ""}
+                      {me?.employee?.code ? `Code: ${me.employee.code}` : ""}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      noWrap
+                      sx={{ fontWeight: 500 }}
+                    >
+                      {me?.employee?.shift_name
+                        ? `Shift: ${me.employee.shift_name}`
+                        : "Shift: —"}
+                      {workingDays ? ` • ${workingDays}` : ""}
+                    </Typography>
+                  </Box>
+                </Stack>
+
+                <Stack
+                  spacing={1}
+                  alignItems={{ xs: "flex-start", md: "flex-end" }}
+                >
+                  <Chip
+                    size="small"
+                    icon={<AccessTimeRounded fontSize="small" />}
+                    label={
+                      openShift === null
+                        ? "Shift: Unknown"
+                        : openShift
+                        ? "Shift: Open"
+                        : "Shift: Closed"
+                    }
+                    color={
+                      openShift === null
+                        ? "default"
+                        : openShift
+                        ? "success"
+                        : "warning"
+                    }
+                    variant="outlined"
+                    sx={{ fontWeight: 700 }}
+                  />
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    flexWrap="wrap"
+                    useFlexGap
+                    justifyContent={{ xs: "flex-start", md: "flex-end" }}
+                  >
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<RefreshRounded />}
+                      onClick={() => {
+                        void fetchEmployeeMonth();
+                        void refreshOpenShift();
+                        void refreshProfilePhoto();
+                      }}
+                      disabled={statsLoading || clockBusy}
+                      sx={{ borderRadius: 2, fontWeight: 700 }}
+                    >
+                      Refresh
+                    </Button>
+                    {canEditOwnProfile ? (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={openEditProfile}
+                        disabled={editProfileBusy || statsLoading}
+                        sx={{ borderRadius: 2, fontWeight: 700 }}
+                      >
+                        Edit Profile
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={() => setApplyOpen(true)}
+                      disabled={applyBusy || statsLoading}
+                      sx={{ borderRadius: 2, fontWeight: 700 }}
+                    >
+                      Apply Leave
+                    </Button>
+                  </Stack>
+                </Stack>
+              </Box>
+
+              <Divider sx={{ my: 2 }} />
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) auto" },
+                  gap: 2,
+                  alignItems: { md: "center" },
+                }}
+              >
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="center"
+                  sx={{ flexWrap: "wrap" }}
+                >
+                  {canEnrollBiometrics ? (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={openEnrollBiometric}
+                      disabled={clockBusy || biometricBusy}
+                      sx={{ borderRadius: 2, fontWeight: 700 }}
+                    >
+                      Enroll Biometrics
+                    </Button>
+                  ) : null}
+                  {showClockIn && (
+                    <Button
+                      size="small"
+                      color="success"
+                      variant="contained"
+                      startIcon={<LoginRounded />}
+                      onClick={() => openClockBiometric("in")}
+                      disabled={clockBusy || biometricBusy}
+                      sx={{ borderRadius: 2, fontWeight: 700 }}
+                    >
+                      Clock In
+                    </Button>
                   )}
-                </Box>
-              </Stack>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Button
-                  size="small"
-                  startIcon={<RefreshRounded />}
-                  onClick={() => {
-                    void fetchEmployeeMonth();
-                    void refreshOpenShift();
-                  }}
-                  disabled={statsLoading || clockBusy}
-                  sx={{ borderRadius: 2, fontWeight: 900 }}
-                >
-                  Refresh
-                </Button>
-                <Button
-                  size="small"
-                  variant="contained"
-                  onClick={() => setApplyOpen(true)}
-                  disabled={applyBusy || statsLoading}
-                  sx={{
-                    borderRadius: 2,
-                    fontWeight: 900,
-                    backgroundImage: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-                    boxShadow: `0 14px 30px ${alpha(
-                      theme.palette.primary.main,
-                      0.3
-                    )}`,
-                  }}
-                >
-                  Apply Leave
-                </Button>
-              </Stack>
-            </Stack>
-            <Divider sx={{ my: 2 }} />
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={2}
-              alignItems={{ sm: "center" }}
+                  {showClockOut && (
+                    <Button
+                      size="small"
+                      color="warning"
+                      variant="contained"
+                      startIcon={<ExitToAppRounded />}
+                      onClick={() => openClockBiometric("out")}
+                      disabled={clockBusy || biometricBusy}
+                      sx={{ borderRadius: 2, fontWeight: 700 }}
+                    >
+                      Clock Out
+                    </Button>
+                  )}
+                </Stack>
+                <Stack direction="row" justifyContent={{ md: "flex-end" }}>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={monthLabel}
+                    sx={{ fontWeight: 700 }}
+                  />
+                </Stack>
+              </Box>
+
+              {clockMsg && (
+                <Alert severity={clockMsg.type} sx={{ mt: 2, borderRadius: 2 }}>
+                  {clockMsg.message}
+                </Alert>
+              )}
+            </Paper>
+
+            <Paper
+              variant="outlined"
+              sx={{
+                borderRadius: 3,
+                p: { xs: 1.5, sm: 2 },
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+              }}
             >
-              <Stack direction="row" spacing={1} alignItems="center">
-                <AccessTimeRounded fontSize="small" />
-                <Typography sx={{ fontWeight: 800 }}>
-                  {openShift === null
-                    ? "Shift status: unknown"
-                    : openShift
-                    ? "Shift status: open"
-                    : "Shift status: closed"}
-                </Typography>
-              </Stack>
-              <Box sx={{ flex: 1 }} />
-              <Stack direction="row" spacing={1}>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={openEnrollBiometric}
-                  disabled={clockBusy || biometricBusy}
-                  sx={{ borderRadius: 2, fontWeight: 900 }}
+              <Box
+                sx={{
+                  width: "100%",
+                  display: "flex",
+                  flexWrap: "nowrap",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: { xs: 1, sm: 1.25 },
+                  overflowX: { xs: "auto", lg: "hidden" },
+                }}
+              >
+                <Stack
+                  spacing={0.75}
+                  alignItems="center"
+                  sx={{ flex: "1 1 0", minWidth: 100 }}
                 >
-                  Enroll Biometrics
-                </Button>
-                {showClockIn && (
-                  <Button
-                    size="small"
-                    color="success"
-                    variant="contained"
-                    startIcon={<LoginRounded />}
-                    onClick={() => openClockBiometric("in")}
-                    disabled={clockBusy || biometricBusy}
+                  <Box
                     sx={{
-                      borderRadius: 2,
-                      fontWeight: 900,
-                      boxShadow: `0 14px 30px ${alpha(
-                        theme.palette.success.main,
-                        0.25
-                      )}`,
+                      width: { xs: 52, sm: 62 },
+                      height: { xs: 52, sm: 62 },
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "2px solid",
+                      borderColor: "divider",
+                      bgcolor: alpha(theme.palette.primary.main, 0.08),
+                      flex: "0 0 auto",
                     }}
                   >
-                    Clock In
-                  </Button>
-                )}
-                {showClockOut && (
-                  <Button
-                    size="small"
-                    color="warning"
-                    variant="contained"
-                    startIcon={<ExitToAppRounded />}
-                    onClick={() => openClockBiometric("out")}
-                    disabled={clockBusy || biometricBusy}
+                    <Typography
+                      variant="h6"
+                      sx={{ fontWeight: 900, lineHeight: 1 }}
+                    >
+                      {attendanceByDate.size}
+                    </Typography>
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
                     sx={{
-                      borderRadius: 2,
-                      fontWeight: 900,
-                      boxShadow: `0 14px 30px ${alpha(
-                        theme.palette.warning.main,
-                        0.22
-                      )}`,
+                      fontWeight: 800,
+                      letterSpacing: 0.6,
+                      textTransform: "uppercase",
                     }}
                   >
-                    Clock Out
-                  </Button>
-                )}
-              </Stack>
-            </Stack>
-            {clockMsg && (
-              <Alert severity={clockMsg.type} sx={{ mt: 2, borderRadius: 2 }}>
-                {clockMsg.message}
-              </Alert>
-            )}
-          </Paper>
+                    Days Present
+                  </Typography>
+                </Stack>
+
+                <Stack
+                  spacing={0.75}
+                  alignItems="center"
+                  sx={{ flex: "1 1 0", minWidth: 100 }}
+                >
+                  <Box
+                    sx={{
+                      width: { xs: 52, sm: 62 },
+                      height: { xs: 52, sm: 62 },
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "2px solid",
+                      borderColor: "divider",
+                      bgcolor: alpha(theme.palette.success.main, 0.1),
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    <Typography
+                      variant="h6"
+                      sx={{ fontWeight: 900, lineHeight: 1 }}
+                    >
+                      {leaveTotals ? leaveTotals.total : "—"}
+                    </Typography>
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{
+                      fontWeight: 800,
+                      letterSpacing: 0.6,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Leaves
+                  </Typography>
+                </Stack>
+
+                <Stack
+                  spacing={0.75}
+                  alignItems="center"
+                  sx={{ flex: "1 1 0", minWidth: 100 }}
+                >
+                  <Box
+                    sx={{
+                      width: { xs: 52, sm: 62 },
+                      height: { xs: 52, sm: 62 },
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "2px solid",
+                      borderColor: "divider",
+                      bgcolor: alpha(theme.palette.warning.main, 0.12),
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    <Typography
+                      variant="h6"
+                      sx={{ fontWeight: 900, lineHeight: 1 }}
+                    >
+                      {holidays.length}
+                    </Typography>
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{
+                      fontWeight: 800,
+                      letterSpacing: 0.6,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Holidays
+                  </Typography>
+                </Stack>
+
+                <Stack
+                  spacing={0.75}
+                  alignItems="center"
+                  sx={{ flex: "1 1 0", minWidth: 120 }}
+                >
+                  <Box
+                    sx={{
+                      width: { xs: 52, sm: 62 },
+                      height: { xs: 52, sm: 62 },
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "2px solid",
+                      borderColor: "divider",
+                      bgcolor: alpha(theme.palette.info.main, 0.1),
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    <Typography
+                      variant="h6"
+                      sx={{ fontWeight: 900, lineHeight: 1 }}
+                    >
+                      {leaves.length}
+                    </Typography>
+                  </Box>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{
+                      fontWeight: 800,
+                      letterSpacing: 0.6,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Leave Requests
+                  </Typography>
+                </Stack>
+              </Box>
+            </Paper>
+          </Box>
 
           <Paper
             variant="outlined"
             sx={{
-              borderRadius: 5,
+              borderRadius: 3,
               overflow: "hidden",
-              boxShadow: "0 24px 70px rgba(0,0,0,0.10)",
-              bgcolor: alpha(theme.palette.background.paper, 0.92),
-              backdropFilter: "blur(10px)",
-              borderColor: alpha(theme.palette.text.primary, 0.1),
             }}
           >
             <Tabs
@@ -1123,16 +1554,19 @@ export default function EmployeePortal() {
               onChange={(_, v) => setTab(v)}
               variant="fullWidth"
               sx={{
-                px: 1.25,
-                pt: 1.25,
-                pb: 0.25,
+                px: 2,
+                pt: 1,
+                pb: 0,
                 "& .MuiTab-root": {
                   textTransform: "none",
-                  fontWeight: 900,
-                  minHeight: 44,
+                  fontWeight: 700,
+                  minHeight: 48,
+                },
+                "& .MuiTab-root.Mui-selected": {
+                  color: theme.palette.primary.dark,
                 },
               }}
-              TabIndicatorProps={{ style: { height: 3, borderRadius: 99 } }}
+              TabIndicatorProps={{ style: { height: 2 } }}
             >
               <Tab label="Calendar" />
               <Tab label="Leaves" />
@@ -1155,145 +1589,355 @@ export default function EmployeePortal() {
               )}
 
               {tab === 2 && (
-                <Stack spacing={2}>
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.text.primary, 0.1),
-                      borderRadius: 4,
-                      p: 2,
-                      bgcolor: alpha(theme.palette.background.paper, 0.72),
-                      backdropFilter: "blur(10px)",
-                    }}
-                  >
-                    <Typography sx={{ fontWeight: 900, mb: 1 }}>
-                      This Month
-                    </Typography>
-                    <Stack
-                      direction={{ xs: "column", sm: "row" }}
-                      spacing={1.5}
-                    >
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="body2" color="text.secondary">
-                          Leave totals
-                        </Typography>
-                        <Typography sx={{ fontWeight: 900 }}>
-                          {leaveTotals
-                            ? `${leaveTotals.total} total • ${leaveTotals.paid} paid • ${leaveTotals.unpaid} unpaid`
-                            : "—"}
-                        </Typography>
-                      </Box>
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="body2" color="text.secondary">
-                          Month
-                        </Typography>
-                        <Typography sx={{ fontWeight: 900 }}>
-                          {monthLabel}
-                        </Typography>
-                      </Box>
-                    </Stack>
-                  </Paper>
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", md: "1.2fr 0.8fr" },
+                    gap: 2,
+                    alignItems: "start",
+                  }}
+                >
+                  <Stack spacing={2}>
+                    <Paper elevation={0} sx={{ ...panelCardSx, p: 2 }}>
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1.5}
+                        alignItems={{ sm: "center" }}
+                      >
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography sx={{ fontWeight: 800 }}>
+                            Monthly Overview
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Attendance, leaves, holidays, and totals.
+                          </Typography>
+                        </Box>
+                        <Chip
+                          label={monthLabel}
+                          sx={{
+                            fontWeight: 800,
+                            bgcolor: alpha(theme.palette.primary.main, 0.12),
+                            color: theme.palette.primary.dark,
+                          }}
+                        />
+                      </Stack>
 
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.text.primary, 0.1),
-                      borderRadius: 4,
-                      p: 2,
-                      bgcolor: alpha(theme.palette.background.paper, 0.72),
-                      backdropFilter: "blur(10px)",
-                    }}
-                  >
-                    <Typography sx={{ fontWeight: 900, mb: 1 }}>
-                      Quick Summary
-                    </Typography>
-                    <Stack spacing={1}>
-                      <Typography variant="body2" color="text.secondary">
-                        Days with punches: {attendanceByDate.size}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Leave days (records): {leaves.length}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Holidays: {holidays.length}
-                      </Typography>
-                    </Stack>
-                  </Paper>
+                      <Box
+                        sx={{
+                          mt: 2,
+                          display: "grid",
+                          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr 1fr" },
+                          gap: 1.25,
+                        }}
+                      >
+                        <Paper
+                          elevation={0}
+                          sx={{
+                            border: "1px solid",
+                            borderColor: alpha(theme.palette.text.primary, 0.1),
+                            borderRadius: 3.5,
+                            p: 1.5,
+                            bgcolor: alpha(theme.palette.success.main, 0.08),
+                          }}
+                        >
+                          <Typography variant="overline" color="text.secondary">
+                            Days Present
+                          </Typography>
+                          <Typography
+                            sx={{
+                              fontWeight: 800,
+                              fontSize: 24,
+                              lineHeight: 1.1,
+                            }}
+                          >
+                            {attendanceByDate.size}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            With punches
+                          </Typography>
+                        </Paper>
 
-                  {me?.employee && (
-                    <Paper
-                      elevation={0}
-                      sx={{
-                        border: "1px solid",
-                        borderColor: alpha(theme.palette.text.primary, 0.1),
-                        borderRadius: 4,
-                        p: 2,
-                        bgcolor: alpha(theme.palette.background.paper, 0.72),
-                        backdropFilter: "blur(10px)",
-                      }}
-                    >
-                      <Typography sx={{ fontWeight: 900, mb: 1 }}>
+                        <Paper
+                          elevation={0}
+                          sx={{
+                            border: "1px solid",
+                            borderColor: alpha(theme.palette.text.primary, 0.1),
+                            borderRadius: 3.5,
+                            p: 1.5,
+                            bgcolor: alpha(theme.palette.warning.main, 0.09),
+                          }}
+                        >
+                          <Typography variant="overline" color="text.secondary">
+                            Leaves
+                          </Typography>
+                          <Typography
+                            sx={{
+                              fontWeight: 800,
+                              fontSize: 24,
+                              lineHeight: 1.1,
+                            }}
+                          >
+                            {leaveTotals ? leaveTotals.total : "—"}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {leaveTotals
+                              ? `${leaveTotals.paid} paid • ${leaveTotals.unpaid} unpaid`
+                              : "Totals unavailable"}
+                          </Typography>
+                        </Paper>
+
+                        <Paper
+                          elevation={0}
+                          sx={{
+                            border: "1px solid",
+                            borderColor: alpha(theme.palette.text.primary, 0.1),
+                            borderRadius: 3.5,
+                            p: 1.5,
+                            bgcolor: alpha(theme.palette.primary.main, 0.08),
+                          }}
+                        >
+                          <Typography variant="overline" color="text.secondary">
+                            Holidays
+                          </Typography>
+                          <Typography
+                            sx={{
+                              fontWeight: 800,
+                              fontSize: 24,
+                              lineHeight: 1.1,
+                            }}
+                          >
+                            {holidays.length}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            In this month
+                          </Typography>
+                        </Paper>
+                      </Box>
+                    </Paper>
+
+                    <Paper elevation={0} sx={{ ...panelCardSx, p: 2 }}>
+                      <Typography sx={{ fontWeight: 800, mb: 1 }}>
+                        Recent Attendance
+                      </Typography>
+                      {recentAttendance.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          No attendance records to show.
+                        </Typography>
+                      ) : (
+                        <Stack spacing={1}>
+                          {recentAttendance.map((r) => {
+                            const inMethod = normalizeMethod(r.clock_in_method);
+                            const outMethod = normalizeMethod(
+                              r.clock_out_method
+                            );
+                            const inHasGeo =
+                              typeof r.clock_in_lat === "number" &&
+                              typeof r.clock_in_lng === "number";
+                            const outHasGeo =
+                              typeof r.clock_out_lat === "number" &&
+                              typeof r.clock_out_lng === "number";
+                            return (
+                              <Paper
+                                key={String(r.id || `${r.date}-${r.clock_in}`)}
+                                elevation={0}
+                                sx={{
+                                  border: "1px solid",
+                                  borderColor: alpha(
+                                    theme.palette.text.primary,
+                                    0.1
+                                  ),
+                                  borderRadius: 3.5,
+                                  p: 1.5,
+                                  bgcolor: alpha(
+                                    theme.palette.background.paper,
+                                    0.78
+                                  ),
+                                }}
+                              >
+                                <Stack
+                                  direction={{ xs: "column", sm: "row" }}
+                                  spacing={1}
+                                  alignItems={{ sm: "center" }}
+                                >
+                                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                                    <Typography sx={{ fontWeight: 800 }} noWrap>
+                                      {r.date} • {formatTime(r.clock_in)} →{" "}
+                                      {r.clock_out
+                                        ? formatTime(r.clock_out)
+                                        : "—"}
+                                    </Typography>
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                      noWrap
+                                    >
+                                      {minutesToHM(
+                                        Number(r.duration_minutes || 0)
+                                      )}
+                                    </Typography>
+                                  </Box>
+                                  <Stack
+                                    direction="row"
+                                    spacing={0.75}
+                                    flexWrap="wrap"
+                                    useFlexGap
+                                    sx={{ justifyContent: "flex-end" }}
+                                  >
+                                    <Chip
+                                      size="small"
+                                      label={`IN: ${methodLabel(inMethod)}`}
+                                      sx={chipSx.neutral}
+                                    />
+                                    <Chip
+                                      size="small"
+                                      label={`OUT: ${methodLabel(outMethod)}`}
+                                      sx={chipSx.neutral}
+                                    />
+                                    {(inHasGeo || outHasGeo) && (
+                                      <Chip
+                                        size="small"
+                                        label="Geo"
+                                        sx={{
+                                          fontWeight: 700,
+                                          bgcolor: alpha(
+                                            theme.palette.primary.main,
+                                            0.12
+                                          ),
+                                          color: theme.palette.primary.dark,
+                                          border: "1px solid",
+                                          borderColor: alpha(
+                                            theme.palette.primary.main,
+                                            0.24
+                                          ),
+                                        }}
+                                      />
+                                    )}
+                                  </Stack>
+                                </Stack>
+                              </Paper>
+                            );
+                          })}
+                        </Stack>
+                      )}
+                    </Paper>
+                  </Stack>
+
+                  <Stack spacing={2}>
+                    <Paper elevation={0} sx={{ ...panelCardSx, p: 2 }}>
+                      <Typography sx={{ fontWeight: 800, mb: 1 }}>
                         Profile
                       </Typography>
-                      <Stack spacing={0.75}>
-                        <Typography variant="body2" color="text.secondary">
-                          Gender: {me.employee.gender || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Date of Birth: {me.employee.date_of_birth || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Phone: {me.employee.personal_phone || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Email: {me.employee.email || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Department: {me.employee.department || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Designation: {me.employee.designation || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Employee Type: {me.employee.employee_type || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Date of Joining: {me.employee.date_of_joining || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Supervisor: {me.employee.supervisor_name || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Work Location: {me.employee.work_location || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Present Address: {me.employee.present_address || "—"}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Permanent Address:{" "}
-                          {me.employee.permanent_address || "—"}
-                        </Typography>
+                      <Box
+                        sx={{
+                          display: "grid",
+                          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" },
+                          gap: 1.25,
+                        }}
+                      >
+                        {[
+                          { k: "Employee", v: displayName },
+                          { k: "Code", v: me?.employee?.code || "—" },
+                          {
+                            k: "Department",
+                            v: me?.employee?.department || "—",
+                          },
+                          {
+                            k: "Designation",
+                            v: me?.employee?.designation || "—",
+                          },
+                          {
+                            k: "Employee Type",
+                            v: me?.employee?.employee_type || "—",
+                          },
+                          { k: "Status", v: me?.employee?.status || "—" },
+                        ].map((it) => (
+                          <Paper
+                            key={it.k}
+                            elevation={0}
+                            sx={{
+                              border: "1px solid",
+                              borderColor: alpha(
+                                theme.palette.text.primary,
+                                0.1
+                              ),
+                              borderRadius: 3,
+                              p: 1.5,
+                              bgcolor: alpha(
+                                theme.palette.background.paper,
+                                0.78
+                              ),
+                            }}
+                          >
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ fontWeight: 700 }}
+                            >
+                              {it.k}
+                            </Typography>
+                            <Typography sx={{ fontWeight: 800 }} noWrap>
+                              {String(it.v || "—")}
+                            </Typography>
+                          </Paper>
+                        ))}
+                      </Box>
+                    </Paper>
+
+                    <Paper elevation={0} sx={{ ...panelCardSx, p: 2 }}>
+                      <Typography sx={{ fontWeight: 800, mb: 1 }}>
+                        Contact & Work
+                      </Typography>
+                      <Stack spacing={1}>
+                        {[
+                          { k: "Email", v: me?.employee?.email || "—" },
+                          {
+                            k: "Phone",
+                            v: me?.employee?.personal_phone || "—",
+                          },
+                          {
+                            k: "Supervisor",
+                            v: me?.employee?.supervisor_name || "—",
+                          },
+                          {
+                            k: "Work Location",
+                            v: me?.employee?.work_location || "—",
+                          },
+                          {
+                            k: "Date of Joining",
+                            v: me?.employee?.date_of_joining || "—",
+                          },
+                        ].map((it) => (
+                          <Stack
+                            key={it.k}
+                            direction="row"
+                            spacing={1.5}
+                            alignItems="baseline"
+                          >
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ fontWeight: 700, minWidth: 130 }}
+                            >
+                              {it.k}
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              sx={{ fontWeight: 700, minWidth: 0 }}
+                              noWrap
+                            >
+                              {String(it.v || "—")}
+                            </Typography>
+                          </Stack>
+                        ))}
                       </Stack>
                     </Paper>
-                  )}
-                </Stack>
+                  </Stack>
+                </Box>
               )}
 
               {tab === 0 && (
                 <Stack spacing={2}>
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.text.primary, 0.1),
-                      borderRadius: 4,
-                      p: 1.5,
-                      bgcolor: alpha(theme.palette.background.paper, 0.72),
-                      backdropFilter: "blur(10px)",
-                    }}
-                  >
+                  <Paper elevation={0} sx={{ ...panelCardSx, p: 1.5 }}>
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Button
                         size="small"
@@ -1305,18 +1949,26 @@ export default function EmployeePortal() {
                               new Date(d.getFullYear(), d.getMonth() - 1, 1)
                           )
                         }
-                        sx={{ borderRadius: 2, fontWeight: 900 }}
+                        sx={{ borderRadius: 2, fontWeight: 700 }}
                       >
                         Prev
                       </Button>
                       <Box sx={{ flex: 1, textAlign: "center" }}>
-                        <Typography sx={{ fontWeight: 950, lineHeight: 1.1 }}>
+                        <Typography sx={{ fontWeight: 800, lineHeight: 1.1 }}>
                           {monthLabel}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
                           {monthStr}
                         </Typography>
                       </Box>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setMonth(new Date())}
+                        sx={{ borderRadius: 2, fontWeight: 700 }}
+                      >
+                        Today
+                      </Button>
                       <Button
                         size="small"
                         variant="outlined"
@@ -1327,24 +1979,14 @@ export default function EmployeePortal() {
                               new Date(d.getFullYear(), d.getMonth() + 1, 1)
                           )
                         }
-                        sx={{ borderRadius: 2, fontWeight: 900 }}
+                        sx={{ borderRadius: 2, fontWeight: 700 }}
                       >
                         Next
                       </Button>
                     </Stack>
                   </Paper>
 
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.text.primary, 0.1),
-                      borderRadius: 4,
-                      p: 1.5,
-                      bgcolor: alpha(theme.palette.background.paper, 0.72),
-                      backdropFilter: "blur(10px)",
-                    }}
-                  >
+                  <Paper elevation={0} sx={{ ...panelCardSx, p: 1.5 }}>
                     <Box
                       sx={{
                         display: "grid",
@@ -1361,7 +2003,6 @@ export default function EmployeePortal() {
                             sx={{
                               py: 0.75,
                               textAlign: "center",
-                              fontWeight: 900,
                               color: "text.secondary",
                               letterSpacing: 0.6,
                               textTransform: "uppercase",
@@ -1369,7 +2010,7 @@ export default function EmployeePortal() {
                           >
                             <Typography
                               variant="caption"
-                              sx={{ fontWeight: 900 }}
+                              sx={{ fontWeight: 700 }}
                             >
                               {w}
                             </Typography>
@@ -1426,9 +2067,9 @@ export default function EmployeePortal() {
                         const badge = holiday
                           ? { label: "Holiday", sx: chipSx.neutral }
                           : approvedLeave
-                          ? { label: "Leave", sx: chipSx.warn }
+                          ? { label: "Leave", sx: chipSx.ok }
                           : pendingLeave
-                          ? { label: "Pending", sx: chipSx.neutral }
+                          ? { label: "Pending", sx: chipSx.warn }
                           : rejectedLeave
                           ? { label: "Rejected", sx: chipSx.error }
                           : punch
@@ -1443,8 +2084,8 @@ export default function EmployeePortal() {
                           : punch
                           ? minutesToHM(punch.minutes)
                           : leaveList.length > 0
-                          ? `${String(
-                              leaveList[0]?.leave_type || "leave"
+                          ? `${formatLeaveTypeLabel(
+                              leaveList[0]?.leave_type
                             )} • ${String(leaveList[0]?.day_part || "full")}`
                           : "";
                         const isAbsent =
@@ -1522,24 +2163,16 @@ export default function EmployeePortal() {
                               borderRadius: 3,
                               overflow: "hidden",
                               border: "1px solid",
-                              borderColor: alpha(
-                                theme.palette.text.primary,
-                                0.08
-                              ),
+                              borderColor: "divider",
                               bgcolor: alpha(
                                 theme.palette.background.paper,
                                 0.92
                               ),
-                              boxShadow: "0 10px 26px rgba(0,0,0,0.06)",
-                              transform: "translateY(0px)",
-                              transition:
-                                "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
+                              transition: "border-color 140ms ease",
                               "&:hover": {
-                                transform: "translateY(-2px)",
-                                boxShadow: "0 16px 36px rgba(0,0,0,0.10)",
                                 borderColor: alpha(
                                   theme.palette.primary.main,
-                                  0.26
+                                  0.2
                                 ),
                               },
                             }}
@@ -1566,9 +2199,9 @@ export default function EmployeePortal() {
                                 >
                                   <Typography
                                     sx={{
-                                      fontWeight: 950,
-                                      fontSize: 28,
-                                      letterSpacing: -0.5,
+                                      fontWeight: 800,
+                                      fontSize: 24,
+                                      letterSpacing: -0.3,
                                       color: isToday
                                         ? theme.palette.primary.main
                                         : theme.palette.text.primary,
@@ -1608,7 +2241,7 @@ export default function EmployeePortal() {
                                   >
                                     <Typography
                                       variant="caption"
-                                      sx={{ fontWeight: 900, lineHeight: 1 }}
+                                      sx={{ fontWeight: 700, lineHeight: 1 }}
                                     >
                                       {cell.day}
                                     </Typography>
@@ -1628,7 +2261,7 @@ export default function EmployeePortal() {
                                     >
                                       <Typography
                                         variant="caption"
-                                        sx={{ fontWeight: 900 }}
+                                        sx={{ fontWeight: 700 }}
                                       >
                                         {badge.label}
                                       </Typography>
@@ -1658,7 +2291,7 @@ export default function EmployeePortal() {
                                             size="small"
                                             label={methodLabel(m)}
                                             sx={{
-                                              fontWeight: 900,
+                                              fontWeight: 700,
                                               bgcolor: alpha(
                                                 theme.palette.text.primary,
                                                 0.06
@@ -1671,7 +2304,7 @@ export default function EmployeePortal() {
                                           size="small"
                                           label="Mixed"
                                           sx={{
-                                            fontWeight: 900,
+                                            fontWeight: 700,
                                             bgcolor: alpha(
                                               theme.palette.text.primary,
                                               0.06
@@ -1684,7 +2317,7 @@ export default function EmployeePortal() {
                                           size="small"
                                           label="GPS"
                                           sx={{
-                                            fontWeight: 900,
+                                            fontWeight: 700,
                                             bgcolor: alpha(
                                               theme.palette.primary.main,
                                               0.12
@@ -1714,12 +2347,9 @@ export default function EmployeePortal() {
                                     >
                                       <Typography
                                         sx={{
-                                          fontWeight: 950,
+                                          fontWeight: 800,
                                           fontSize: isPresent ? 18 : 16,
                                           letterSpacing: -0.3,
-                                          transform: isPresent
-                                            ? "translateY(15px)"
-                                            : "none",
                                           color: isPresent
                                             ? theme.palette.text.primary
                                             : isAbsent
@@ -1741,7 +2371,7 @@ export default function EmployeePortal() {
                                           top: "calc(50% + 16px)",
                                           left: "50%",
                                           transform: "translateX(-50%)",
-                                          fontWeight: 900,
+                                          fontWeight: 700,
                                           color: isPresent
                                             ? theme.palette.success.dark
                                             : "text.secondary",
@@ -1780,12 +2410,12 @@ export default function EmployeePortal() {
                                         color: isToday
                                           ? theme.palette.primary.contrastText
                                           : theme.palette.text.primary,
-                                        fontWeight: 900,
+                                        fontWeight: 700,
                                       }}
                                     >
                                       <Typography
                                         variant="caption"
-                                        sx={{ fontWeight: 900, lineHeight: 1 }}
+                                        sx={{ fontWeight: 700, lineHeight: 1 }}
                                       >
                                         {cell.day}
                                       </Typography>
@@ -1800,7 +2430,7 @@ export default function EmployeePortal() {
                                     >
                                       <Typography
                                         variant="caption"
-                                        sx={{ fontWeight: 900 }}
+                                        sx={{ fontWeight: 700 }}
                                       >
                                         {badge.label}
                                       </Typography>
@@ -1835,308 +2465,339 @@ export default function EmployeePortal() {
               )}
 
               {tab === 1 && (
-                <Stack spacing={2}>
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                    gap: 2,
+                    alignItems: "start",
+                  }}
+                >
                   <Paper
                     elevation={0}
-                    sx={{
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.text.primary, 0.1),
-                      borderRadius: 4,
-                      p: 1.5,
-                      bgcolor: alpha(theme.palette.background.paper, 0.72),
-                      backdropFilter: "blur(10px)",
-                    }}
+                    sx={{ ...panelCardSx, p: 1.5, gridColumn: "1 / -1" }}
                   >
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<ChevronLeft />}
-                        onClick={() =>
-                          setMonth(
-                            (d) =>
-                              new Date(d.getFullYear(), d.getMonth() - 1, 1)
-                          )
-                        }
-                        sx={{ borderRadius: 2, fontWeight: 900 }}
-                      >
-                        Prev
-                      </Button>
-                      <Box sx={{ flex: 1, textAlign: "center" }}>
-                        <Typography sx={{ fontWeight: 950, lineHeight: 1.1 }}>
-                          {monthLabel}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {monthStr}
-                        </Typography>
-                      </Box>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        endIcon={<ChevronRight />}
-                        onClick={() =>
-                          setMonth(
-                            (d) =>
-                              new Date(d.getFullYear(), d.getMonth() + 1, 1)
-                          )
-                        }
-                        sx={{ borderRadius: 2, fontWeight: 900 }}
-                      >
-                        Next
-                      </Button>
-                    </Stack>
-                  </Paper>
-
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.text.primary, 0.1),
-                      borderRadius: 4,
-                      p: 2,
-                      bgcolor: alpha(theme.palette.background.paper, 0.72),
-                      backdropFilter: "blur(10px)",
-                    }}
-                  >
-                    <Typography sx={{ fontWeight: 900, mb: 1 }}>
-                      Totals
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {leaveTotals
-                        ? `${leaveTotals.total} total • ${leaveTotals.paid} paid • ${leaveTotals.unpaid} unpaid`
-                        : "—"}
-                    </Typography>
-                  </Paper>
-
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      border: "1px solid",
-                      borderColor: alpha(theme.palette.text.primary, 0.1),
-                      borderRadius: 4,
-                      p: 2,
-                      bgcolor: alpha(theme.palette.background.paper, 0.72),
-                      backdropFilter: "blur(10px)",
-                    }}
-                  >
-                    <Typography sx={{ fontWeight: 900, mb: 1 }}>
-                      Overview
-                    </Typography>
                     <Stack
-                      direction="row"
-                      spacing={1}
-                      flexWrap="wrap"
-                      useFlexGap
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1.5}
+                      alignItems={{ sm: "center" }}
                     >
-                      {(
-                        [
-                          { key: "all", label: `All (${leaves.length})` },
-                          {
-                            key: "pending",
-                            label: `Pending (${leaveStatusCounts.pending})`,
-                          },
-                          {
-                            key: "approved",
-                            label: `Approved (${leaveStatusCounts.approved})`,
-                          },
-                          {
-                            key: "rejected",
-                            label: `Rejected (${leaveStatusCounts.rejected})`,
-                          },
-                        ] as const
-                      ).map((b) => (
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        sx={{ flex: 1 }}
+                      >
                         <Button
-                          key={b.key}
                           size="small"
-                          variant={
-                            leaveStatusFilter === b.key
-                              ? "contained"
-                              : "outlined"
+                          variant="outlined"
+                          startIcon={<ChevronLeft />}
+                          onClick={() =>
+                            setMonth(
+                              (d) =>
+                                new Date(d.getFullYear(), d.getMonth() - 1, 1)
+                            )
                           }
-                          onClick={() => setLeaveStatusFilter(b.key)}
-                          sx={{ borderRadius: 2, fontWeight: 900 }}
+                          sx={{ borderRadius: 2, fontWeight: 700 }}
                         >
-                          {b.label}
+                          Prev
                         </Button>
-                      ))}
+                        <Box sx={{ flex: 1, textAlign: "center" }}>
+                          <Typography sx={{ fontWeight: 800, lineHeight: 1.1 }}>
+                            {monthLabel}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {monthStr}
+                          </Typography>
+                        </Box>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          endIcon={<ChevronRight />}
+                          onClick={() =>
+                            setMonth(
+                              (d) =>
+                                new Date(d.getFullYear(), d.getMonth() + 1, 1)
+                            )
+                          }
+                          sx={{ borderRadius: 2, fontWeight: 700 }}
+                        >
+                          Next
+                        </Button>
+                      </Stack>
+
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        flexWrap="wrap"
+                        useFlexGap
+                      >
+                        {(
+                          [
+                            { key: "all", label: `All (${leaves.length})` },
+                            {
+                              key: "pending",
+                              label: `Pending (${leaveStatusCounts.pending})`,
+                            },
+                            {
+                              key: "approved",
+                              label: `Approved (${leaveStatusCounts.approved})`,
+                            },
+                            {
+                              key: "rejected",
+                              label: `Rejected (${leaveStatusCounts.rejected})`,
+                            },
+                          ] as const
+                        ).map((b) => (
+                          <Button
+                            key={b.key}
+                            size="small"
+                            variant={
+                              leaveStatusFilter === b.key
+                                ? "contained"
+                                : "outlined"
+                            }
+                            onClick={() => setLeaveStatusFilter(b.key)}
+                            sx={{ borderRadius: 2, fontWeight: 700 }}
+                          >
+                            {b.label}
+                          </Button>
+                        ))}
+                      </Stack>
+                    </Stack>
+
+                    <Divider sx={{ my: 1.5 }} />
+
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1.5}
+                    >
+                      <Paper
+                        elevation={0}
+                        sx={{
+                          border: "1px solid",
+                          borderColor: "divider",
+                          borderRadius: 3,
+                          p: 1.5,
+                          bgcolor: alpha(theme.palette.warning.main, 0.08),
+                          flex: 1,
+                        }}
+                      >
+                        <Typography variant="overline" color="text.secondary">
+                          Leave Totals
+                        </Typography>
+                        <Typography sx={{ fontWeight: 800 }}>
+                          {leaveTotals ? `${leaveTotals.total} total` : "—"}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {leaveTotals
+                            ? `${leaveTotals.paid} paid • ${leaveTotals.unpaid} unpaid`
+                            : "Totals unavailable"}
+                        </Typography>
+                      </Paper>
+
+                      <Paper
+                        elevation={0}
+                        sx={{
+                          border: "1px solid",
+                          borderColor: "divider",
+                          borderRadius: 3,
+                          p: 1.5,
+                          bgcolor: alpha(theme.palette.text.primary, 0.03),
+                          flex: 1,
+                        }}
+                      >
+                        <Typography variant="overline" color="text.secondary">
+                          Requests Loaded
+                        </Typography>
+                        <Typography sx={{ fontWeight: 800 }}>
+                          {leaves.length}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Records in this month
+                        </Typography>
+                      </Paper>
                     </Stack>
                   </Paper>
 
-                  {filteredLeaves.length === 0 ? (
-                    <Typography variant="body2" color="text.secondary">
-                      No leaves to show.
+                  <Paper elevation={0} sx={{ ...panelCardSx, p: 2 }}>
+                    <Typography sx={{ fontWeight: 800, mb: 1 }}>
+                      Upcoming ({leavesUpcoming.length})
                     </Typography>
-                  ) : (
-                    <Stack spacing={2}>
-                      <Box>
-                        <Typography sx={{ fontWeight: 900, mb: 1 }}>
-                          Upcoming ({leavesUpcoming.length})
-                        </Typography>
-                        <Stack spacing={1}>
-                          {leavesUpcoming.length === 0 ? (
-                            <Typography variant="body2" color="text.secondary">
-                              No upcoming leaves.
-                            </Typography>
-                          ) : (
-                            leavesUpcoming.map((l) => {
-                              const status = String(l.status || "pending")
-                                .toLowerCase()
-                                .trim();
-                              const dayName = new Date(
-                                `${l.date}T00:00:00`
-                              ).toLocaleDateString("default", {
-                                weekday: "short",
-                              });
-                              return (
-                                <Paper
-                                  key={String(l.id)}
-                                  elevation={0}
+                    {filteredLeaves.length === 0 ||
+                    leavesUpcoming.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No upcoming leaves.
+                      </Typography>
+                    ) : (
+                      <Stack spacing={1}>
+                        {leavesUpcoming.map((l) => {
+                          const status = String(l.status || "pending")
+                            .toLowerCase()
+                            .trim();
+                          const dayName = new Date(
+                            `${l.date}T00:00:00`
+                          ).toLocaleDateString("default", { weekday: "short" });
+                          return (
+                            <Paper
+                              key={String(l.id)}
+                              elevation={0}
+                              sx={{
+                                border: "1px solid",
+                                borderColor: "divider",
+                                borderRadius: 3,
+                                p: 1.5,
+                                bgcolor: alpha(
+                                  theme.palette.background.paper,
+                                  0.78
+                                ),
+                                transition: "border-color 140ms ease",
+                                "&:hover": {
+                                  borderColor: alpha(
+                                    theme.palette.primary.main,
+                                    0.2
+                                  ),
+                                },
+                              }}
+                            >
+                              <Stack
+                                direction={{ xs: "column", sm: "row" }}
+                                spacing={1.5}
+                                alignItems={{ sm: "center" }}
+                              >
+                                <Box sx={{ flex: 1 }}>
+                                  <Typography sx={{ fontWeight: 800 }}>
+                                    {l.date} • {dayName}
+                                  </Typography>
+                                  <Typography
+                                    variant="body2"
+                                    color="text.secondary"
+                                  >
+                                    {formatLeaveTypeLabel(l.leave_type)} •{" "}
+                                    {String(l.day_part || "full")}
+                                    {l.reason ? ` • ${l.reason}` : ""}
+                                  </Typography>
+                                </Box>
+                                <Box
                                   sx={{
-                                    border: "1px solid",
-                                    borderColor: alpha(
-                                      theme.palette.text.primary,
-                                      0.1
-                                    ),
-                                    borderRadius: 4,
-                                    p: 1.5,
-                                    bgcolor: alpha(
-                                      theme.palette.background.paper,
-                                      0.78
-                                    ),
+                                    px: 1.25,
+                                    py: 0.5,
+                                    borderRadius: 999,
+                                    ...(status === "approved"
+                                      ? chipSx.ok
+                                      : status === "rejected"
+                                      ? chipSx.error
+                                      : status === "pending"
+                                      ? chipSx.warn
+                                      : chipSx.neutral),
                                   }}
                                 >
-                                  <Stack
-                                    direction={{ xs: "column", sm: "row" }}
-                                    spacing={1.5}
-                                    alignItems={{ sm: "center" }}
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ fontWeight: 700 }}
                                   >
-                                    <Box sx={{ flex: 1 }}>
-                                      <Typography sx={{ fontWeight: 900 }}>
-                                        {l.date} • {dayName}
-                                      </Typography>
-                                      <Typography
-                                        variant="body2"
-                                        color="text.secondary"
-                                      >
-                                        {String(l.leave_type || "leave")} •{" "}
-                                        {String(l.day_part || "full")}
-                                        {l.reason ? ` • ${l.reason}` : ""}
-                                      </Typography>
-                                    </Box>
-                                    <Box
-                                      sx={{
-                                        px: 1.25,
-                                        py: 0.5,
-                                        borderRadius: 999,
-                                        ...(status === "approved"
-                                          ? chipSx.warn
-                                          : status === "rejected"
-                                          ? chipSx.error
-                                          : chipSx.neutral),
-                                      }}
-                                    >
-                                      <Typography
-                                        variant="caption"
-                                        sx={{ fontWeight: 900 }}
-                                      >
-                                        {String(l.status || "pending")}
-                                      </Typography>
-                                    </Box>
-                                  </Stack>
-                                </Paper>
-                              );
-                            })
-                          )}
-                        </Stack>
-                      </Box>
+                                    {String(l.status || "pending")}
+                                  </Typography>
+                                </Box>
+                              </Stack>
+                            </Paper>
+                          );
+                        })}
+                      </Stack>
+                    )}
+                  </Paper>
 
-                      <Box>
-                        <Typography sx={{ fontWeight: 900, mb: 1 }}>
-                          Past ({leavesPast.length})
-                        </Typography>
-                        <Stack spacing={1}>
-                          {leavesPast.length === 0 ? (
-                            <Typography variant="body2" color="text.secondary">
-                              No past leaves.
-                            </Typography>
-                          ) : (
-                            leavesPast
-                              .slice()
-                              .reverse()
-                              .map((l) => {
-                                const status = String(l.status || "pending")
-                                  .toLowerCase()
-                                  .trim();
-                                const dayName = new Date(
-                                  `${l.date}T00:00:00`
-                                ).toLocaleDateString("default", {
-                                  weekday: "short",
-                                });
-                                return (
-                                  <Paper
-                                    key={String(l.id)}
-                                    elevation={0}
+                  <Paper elevation={0} sx={{ ...panelCardSx, p: 2 }}>
+                    <Typography sx={{ fontWeight: 800, mb: 1 }}>
+                      Past ({leavesPast.length})
+                    </Typography>
+                    {filteredLeaves.length === 0 || leavesPast.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No past leaves.
+                      </Typography>
+                    ) : (
+                      <Stack spacing={1}>
+                        {leavesPast
+                          .slice()
+                          .reverse()
+                          .map((l) => {
+                            const status = String(l.status || "pending")
+                              .toLowerCase()
+                              .trim();
+                            const dayName = new Date(
+                              `${l.date}T00:00:00`
+                            ).toLocaleDateString("default", {
+                              weekday: "short",
+                            });
+                            return (
+                              <Paper
+                                key={String(l.id)}
+                                elevation={0}
+                                sx={{
+                                  border: "1px solid",
+                                  borderColor: "divider",
+                                  borderRadius: 3,
+                                  p: 1.5,
+                                  bgcolor: alpha(
+                                    theme.palette.background.paper,
+                                    0.78
+                                  ),
+                                  transition: "border-color 140ms ease",
+                                  "&:hover": {
+                                    borderColor: alpha(
+                                      theme.palette.primary.main,
+                                      0.2
+                                    ),
+                                  },
+                                }}
+                              >
+                                <Stack
+                                  direction={{ xs: "column", sm: "row" }}
+                                  spacing={1.5}
+                                  alignItems={{ sm: "center" }}
+                                >
+                                  <Box sx={{ flex: 1 }}>
+                                    <Typography sx={{ fontWeight: 800 }}>
+                                      {l.date} • {dayName}
+                                    </Typography>
+                                    <Typography
+                                      variant="body2"
+                                      color="text.secondary"
+                                    >
+                                      {formatLeaveTypeLabel(l.leave_type)} •{" "}
+                                      {String(l.day_part || "full")}
+                                      {l.reason ? ` • ${l.reason}` : ""}
+                                    </Typography>
+                                  </Box>
+                                  <Box
                                     sx={{
-                                      border: "1px solid",
-                                      borderColor: alpha(
-                                        theme.palette.text.primary,
-                                        0.1
-                                      ),
-                                      borderRadius: 4,
-                                      p: 1.5,
-                                      bgcolor: alpha(
-                                        theme.palette.background.paper,
-                                        0.78
-                                      ),
+                                      px: 1.25,
+                                      py: 0.5,
+                                      borderRadius: 999,
+                                      ...(status === "approved"
+                                        ? chipSx.ok
+                                        : status === "rejected"
+                                        ? chipSx.error
+                                        : status === "pending"
+                                        ? chipSx.warn
+                                        : chipSx.neutral),
                                     }}
                                   >
-                                    <Stack
-                                      direction={{ xs: "column", sm: "row" }}
-                                      spacing={1.5}
-                                      alignItems={{ sm: "center" }}
+                                    <Typography
+                                      variant="caption"
+                                      sx={{ fontWeight: 700 }}
                                     >
-                                      <Box sx={{ flex: 1 }}>
-                                        <Typography sx={{ fontWeight: 900 }}>
-                                          {l.date} • {dayName}
-                                        </Typography>
-                                        <Typography
-                                          variant="body2"
-                                          color="text.secondary"
-                                        >
-                                          {String(l.leave_type || "leave")} •{" "}
-                                          {String(l.day_part || "full")}
-                                          {l.reason ? ` • ${l.reason}` : ""}
-                                        </Typography>
-                                      </Box>
-                                      <Box
-                                        sx={{
-                                          px: 1.25,
-                                          py: 0.5,
-                                          borderRadius: 999,
-                                          ...(status === "approved"
-                                            ? chipSx.warn
-                                            : status === "rejected"
-                                            ? chipSx.error
-                                            : chipSx.neutral),
-                                        }}
-                                      >
-                                        <Typography
-                                          variant="caption"
-                                          sx={{ fontWeight: 900 }}
-                                        >
-                                          {String(l.status || "pending")}
-                                        </Typography>
-                                      </Box>
-                                    </Stack>
-                                  </Paper>
-                                );
-                              })
-                          )}
-                        </Stack>
-                      </Box>
-                    </Stack>
-                  )}
-                </Stack>
+                                      {String(l.status || "pending")}
+                                    </Typography>
+                                  </Box>
+                                </Stack>
+                              </Paper>
+                            );
+                          })}
+                      </Stack>
+                    )}
+                  </Paper>
+                </Box>
               )}
             </Box>
           </Paper>
@@ -2149,7 +2810,7 @@ export default function EmployeePortal() {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ fontWeight: 900 }}>{dayDate || "Day"}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 800 }}>{dayDate || "Day"}</DialogTitle>
         <DialogContent>
           {(() => {
             const holiday = dayDate
@@ -2171,8 +2832,8 @@ export default function EmployeePortal() {
 
                 {leaveList.length > 0 ? (
                   <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                    {`Leave • ${String(
-                      leaveList[0]?.leave_type || "leave"
+                    {`Leave • ${formatLeaveTypeLabel(
+                      leaveList[0]?.leave_type
                     )} • ${String(leaveList[0]?.day_part || "full")} • ${String(
                       leaveList[0]?.status || "pending"
                     )}`}
@@ -2184,7 +2845,7 @@ export default function EmployeePortal() {
                     elevation={0}
                     sx={{
                       border: "1px solid",
-                      borderColor: alpha(theme.palette.text.primary, 0.1),
+                      borderColor: "divider",
                       borderRadius: 3,
                       p: 1.5,
                     }}
@@ -2195,13 +2856,13 @@ export default function EmployeePortal() {
                       alignItems={{ sm: "center" }}
                       justifyContent="space-between"
                     >
-                      <Typography sx={{ fontWeight: 900 }}>
+                      <Typography sx={{ fontWeight: 800 }}>
                         {formatTime(punch.firstIn)} →{" "}
                         {formatTime(punch.lastOut)}
                       </Typography>
                       <Typography
                         color="text.secondary"
-                        sx={{ fontWeight: 900 }}
+                        sx={{ fontWeight: 700 }}
                       >
                         {minutesToHM(punch.minutes)}
                       </Typography>
@@ -2235,7 +2896,7 @@ export default function EmployeePortal() {
                           elevation={0}
                           sx={{
                             border: "1px solid",
-                            borderColor: alpha(theme.palette.text.primary, 0.1),
+                            borderColor: "divider",
                             borderRadius: 3,
                             p: 1.5,
                           }}
@@ -2247,13 +2908,13 @@ export default function EmployeePortal() {
                               alignItems={{ sm: "center" }}
                               justifyContent="space-between"
                             >
-                              <Typography sx={{ fontWeight: 900 }}>
+                              <Typography sx={{ fontWeight: 800 }}>
                                 #{idx + 1} • {formatTime(r.clock_in)} →{" "}
                                 {r.clock_out ? formatTime(r.clock_out) : "—"}
                               </Typography>
                               <Typography
                                 color="text.secondary"
-                                sx={{ fontWeight: 900 }}
+                                sx={{ fontWeight: 700 }}
                               >
                                 {minutesToHM(Number(r.duration_minutes || 0))}
                               </Typography>
@@ -2269,7 +2930,7 @@ export default function EmployeePortal() {
                                 size="small"
                                 label={`IN: ${methodLabel(inMethod)}`}
                                 sx={{
-                                  fontWeight: 900,
+                                  fontWeight: 700,
                                   bgcolor: "background.default",
                                 }}
                               />
@@ -2279,7 +2940,7 @@ export default function EmployeePortal() {
                                   r.clock_out ? methodLabel(outMethod) : "—"
                                 }`}
                                 sx={{
-                                  fontWeight: 900,
+                                  fontWeight: 700,
                                   bgcolor: "background.default",
                                 }}
                               />
@@ -2289,7 +2950,7 @@ export default function EmployeePortal() {
                                   size="small"
                                   label={String(r.clock_in_device_id)}
                                   sx={{
-                                    fontWeight: 900,
+                                    fontWeight: 700,
                                     bgcolor: "background.default",
                                   }}
                                 />
@@ -2300,7 +2961,7 @@ export default function EmployeePortal() {
                                   size="small"
                                   label={String(r.clock_out_device_id)}
                                   sx={{
-                                    fontWeight: 900,
+                                    fontWeight: 700,
                                     bgcolor: "background.default",
                                   }}
                                 />
@@ -2311,7 +2972,7 @@ export default function EmployeePortal() {
                                   variant="outlined"
                                   startIcon={<VisibilityRounded />}
                                   onClick={() => void openEvidence(r)}
-                                  sx={{ borderRadius: 2, fontWeight: 900 }}
+                                  sx={{ borderRadius: 2, fontWeight: 700 }}
                                 >
                                   Evidence
                                 </Button>
@@ -2406,7 +3067,7 @@ export default function EmployeePortal() {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ fontWeight: 900 }}>
+        <DialogTitle sx={{ fontWeight: 800 }}>
           Evidence{evidenceFor?.id ? ` • #${String(evidenceFor.id)}` : ""}
         </DialogTitle>
         <DialogContent>
@@ -2419,7 +3080,7 @@ export default function EmployeePortal() {
             {evidenceBusy ? (
               <Stack direction="row" spacing={1.5} alignItems="center">
                 <CircularProgress size={20} />
-                <Typography color="text.secondary" sx={{ fontWeight: 900 }}>
+                <Typography color="text.secondary" sx={{ fontWeight: 700 }}>
                   Loading…
                 </Typography>
               </Stack>
@@ -2437,7 +3098,7 @@ export default function EmployeePortal() {
                   elevation={0}
                   sx={{
                     border: "1px solid",
-                    borderColor: alpha(theme.palette.text.primary, 0.1),
+                    borderColor: "divider",
                     borderRadius: 3,
                     p: 1.5,
                   }}
@@ -2449,14 +3110,14 @@ export default function EmployeePortal() {
                       alignItems={{ sm: "center" }}
                       justifyContent="space-between"
                     >
-                      <Typography sx={{ fontWeight: 900 }}>
+                      <Typography sx={{ fontWeight: 800 }}>
                         {String(ev.event_type || "event")} •{" "}
                         {String(ev.modality || "biometric")}
                       </Typography>
                       <Typography
                         variant="caption"
                         color="text.secondary"
-                        sx={{ fontWeight: 900 }}
+                        sx={{ fontWeight: 700 }}
                       >
                         {formatTime(ev.created_at)}
                       </Typography>
@@ -2508,13 +3169,98 @@ export default function EmployeePortal() {
         </DialogActions>
       </Dialog>
       <Dialog
+        open={editProfileOpen}
+        onClose={editProfileBusy ? undefined : closeEditProfile}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>Edit Profile</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {editProfileError ? (
+              <Alert severity="error" sx={{ borderRadius: 2 }}>
+                {editProfileError}
+              </Alert>
+            ) : null}
+            {editProfileOk ? (
+              <Alert severity="success" sx={{ borderRadius: 2 }}>
+                {editProfileOk}
+              </Alert>
+            ) : null}
+            <TextField
+              label="Email"
+              type="email"
+              value={editProfileForm.email}
+              onChange={(e) =>
+                setEditProfileForm((p) => ({ ...p, email: e.target.value }))
+              }
+              disabled={editProfileBusy}
+              fullWidth
+            />
+            <TextField
+              label="Phone"
+              value={editProfileForm.personal_phone}
+              onChange={(e) =>
+                setEditProfileForm((p) => ({
+                  ...p,
+                  personal_phone: e.target.value,
+                }))
+              }
+              disabled={editProfileBusy}
+              fullWidth
+            />
+            <TextField
+              label="Present address"
+              value={editProfileForm.present_address}
+              onChange={(e) =>
+                setEditProfileForm((p) => ({
+                  ...p,
+                  present_address: e.target.value,
+                }))
+              }
+              disabled={editProfileBusy}
+              fullWidth
+              multiline
+              minRows={2}
+            />
+            <TextField
+              label="Permanent address"
+              value={editProfileForm.permanent_address}
+              onChange={(e) =>
+                setEditProfileForm((p) => ({
+                  ...p,
+                  permanent_address: e.target.value,
+                }))
+              }
+              disabled={editProfileBusy}
+              fullWidth
+              multiline
+              minRows={2}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeEditProfile} disabled={editProfileBusy}>
+            Close
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void submitEditProfile()}
+            disabled={editProfileBusy}
+          >
+            {editProfileBusy ? "Please wait…" : "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
         open={applyOpen}
         onClose={() => setApplyOpen(false)}
         maxWidth="sm"
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ fontWeight: 900 }}>Apply Leave</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 800 }}>Apply Leave</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             {applyError && (
@@ -2556,10 +3302,11 @@ export default function EmployeePortal() {
                   setApplyForm((p) => ({ ...p, leave_type: e.target.value }))
                 }
               >
-                <MenuItem value="casual">Casual</MenuItem>
-                <MenuItem value="sick">Sick</MenuItem>
-                <MenuItem value="annual">Annual</MenuItem>
-                <MenuItem value="unpaid">Unpaid</MenuItem>
+                {selectableLeaveTypes.map((t) => (
+                  <MenuItem key={t.code} value={t.code}>
+                    {t.name}
+                  </MenuItem>
+                ))}
               </TextField>
               <TextField
                 select
@@ -2611,7 +3358,7 @@ export default function EmployeePortal() {
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
-        <DialogTitle sx={{ fontWeight: 900 }}>
+        <DialogTitle sx={{ fontWeight: 800 }}>
           {biometricAction === "enroll"
             ? "Enroll Biometrics"
             : biometricAction === "clock_in"
@@ -2625,100 +3372,69 @@ export default function EmployeePortal() {
                 {biometricError}
               </Alert>
             ) : null}
-            <TextField
-              select
-              label="Modality"
-              value={biometricModality}
-              onChange={(e) =>
-                setBiometricModality(e.target.value as BiometricModality)
-              }
-            >
-              <MenuItem value="face">Face (Selfie)</MenuItem>
-              <MenuItem value="fingerprint">Fingerprint (Image)</MenuItem>
-            </TextField>
-
-            {biometricModality === "face" ? (
-              <Stack spacing={1.25}>
-                <Box
-                  sx={{
-                    width: "100%",
-                    bgcolor: "background.default",
-                    borderRadius: 2,
-                    overflow: "hidden",
-                    border: "1px solid",
-                    borderColor: alpha(theme.palette.text.primary, 0.12),
-                  }}
-                >
-                  <Box
-                    component="video"
-                    ref={biometricVideoRef}
-                    muted
-                    playsInline
-                    autoPlay
-                    sx={{ width: "100%", display: "block" }}
-                  />
-                </Box>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  <Button
-                    variant="outlined"
-                    onClick={() => void startBiometricCamera()}
-                    disabled={biometricBusy}
-                    sx={{ borderRadius: 2, fontWeight: 900 }}
-                  >
-                    Start Camera
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={stopBiometricCamera}
-                    disabled={biometricBusy}
-                    sx={{ borderRadius: 2, fontWeight: 900 }}
-                  >
-                    Stop Camera
-                  </Button>
-                  <Button
-                    variant="contained"
-                    onClick={captureBiometricSelfie}
-                    disabled={biometricBusy}
-                    sx={{ borderRadius: 2, fontWeight: 900 }}
-                  >
-                    Take Selfie
-                  </Button>
-                  <Button
-                    component="label"
-                    variant="outlined"
-                    disabled={biometricBusy}
-                    sx={{ borderRadius: 2, fontWeight: 900 }}
-                  >
-                    Upload Image
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      onChange={(e) =>
-                        onPickBiometricFile(e.target.files?.[0] || null)
-                      }
-                    />
-                  </Button>
-                </Stack>
-              </Stack>
-            ) : (
-              <Button
-                component="label"
-                variant="outlined"
-                disabled={biometricBusy}
-                sx={{ borderRadius: 2, fontWeight: 900 }}
+            <Stack spacing={1.25}>
+              <Box
+                sx={{
+                  width: "100%",
+                  bgcolor: "background.default",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                  border: "1px solid",
+                  borderColor: alpha(theme.palette.text.primary, 0.12),
+                }}
               >
-                Upload Fingerprint Image
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) =>
-                    onPickBiometricFile(e.target.files?.[0] || null)
-                  }
+                <Box
+                  component="video"
+                  ref={biometricVideoRef}
+                  muted
+                  playsInline
+                  autoPlay
+                  sx={{ width: "100%", display: "block" }}
                 />
-              </Button>
-            )}
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant="outlined"
+                  onClick={() => void startBiometricCamera()}
+                  disabled={biometricBusy}
+                  sx={{ borderRadius: 2, fontWeight: 700 }}
+                >
+                  Start Camera
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={stopBiometricCamera}
+                  disabled={biometricBusy}
+                  sx={{ borderRadius: 2, fontWeight: 700 }}
+                >
+                  Stop Camera
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={captureBiometricSelfie}
+                  disabled={biometricBusy}
+                  sx={{ borderRadius: 2, fontWeight: 700 }}
+                >
+                  Take Selfie
+                </Button>
+                <Button
+                  component="label"
+                  variant="outlined"
+                  disabled={biometricBusy}
+                  sx={{ borderRadius: 2, fontWeight: 700 }}
+                >
+                  Upload Image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) =>
+                      onPickBiometricFile(e.target.files?.[0] || null)
+                    }
+                  />
+                </Button>
+              </Stack>
+            </Stack>
 
             {biometricImage ? (
               <Box

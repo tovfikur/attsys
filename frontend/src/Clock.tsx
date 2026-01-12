@@ -34,7 +34,6 @@ interface ClockRecord {
   early_leave_minutes?: number;
 }
 
-type BiometricModality = "face" | "fingerprint";
 type BiometricAction = "clock_in" | "clock_out" | "enroll";
 type BiometricGeo = {
   latitude: number;
@@ -58,8 +57,6 @@ export default function Clock() {
   const [biometricOpen, setBiometricOpen] = useState(false);
   const [biometricAction, setBiometricAction] =
     useState<BiometricAction>("clock_in");
-  const [biometricModality, setBiometricModality] =
-    useState<BiometricModality>("face");
   const [biometricImage, setBiometricImage] = useState("");
   const [biometricBusy, setBiometricBusy] = useState(false);
   const [biometricError, setBiometricError] = useState("");
@@ -161,7 +158,6 @@ export default function Clock() {
 
   const openBiometric = useCallback((action: BiometricAction) => {
     setBiometricAction(action);
-    setBiometricModality("face");
     setBiometricImage("");
     setBiometricError("");
     setBiometricOpen(true);
@@ -218,7 +214,7 @@ export default function Clock() {
   const clock = async (
     type: "in" | "out",
     biometric: {
-      modality: BiometricModality;
+      modality: "face";
       image: string;
       geo?: BiometricGeo | null;
     }
@@ -275,7 +271,7 @@ export default function Clock() {
       if (biometricAction === "enroll") {
         await api.post("/api/biometrics/enroll", {
           employee_id: employeeId,
-          biometric_modality: biometricModality,
+          biometric_modality: "face",
           biometric_image: biometricImage,
         });
         setResult({ type: "success", message: "Biometric enrolled" });
@@ -283,7 +279,7 @@ export default function Clock() {
         return;
       }
       await clock(biometricAction === "clock_in" ? "in" : "out", {
-        modality: biometricModality,
+        modality: "face",
         image: biometricImage,
         geo: await getBiometricGeo(),
       });
@@ -410,98 +406,65 @@ export default function Clock() {
               </Alert>
             ) : null}
 
-            <FormControl fullWidth>
-              <InputLabel id="biometric-modality-label">Modality</InputLabel>
-              <Select
-                labelId="biometric-modality-label"
-                value={biometricModality}
-                label="Modality"
-                onChange={(e) =>
-                  setBiometricModality(e.target.value as BiometricModality)
-                }
+            <Stack spacing={1.25}>
+              <Box
+                sx={{
+                  width: "100%",
+                  bgcolor: "background.default",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                  border: "1px solid",
+                  borderColor: "divider",
+                }}
               >
-                <MenuItem value="face">Face (Selfie)</MenuItem>
-                <MenuItem value="fingerprint">Fingerprint (Image)</MenuItem>
-              </Select>
-            </FormControl>
-
-            {biometricModality === "face" ? (
-              <Stack spacing={1.25}>
                 <Box
-                  sx={{
-                    width: "100%",
-                    bgcolor: "background.default",
-                    borderRadius: 2,
-                    overflow: "hidden",
-                    border: "1px solid",
-                    borderColor: "divider",
-                  }}
-                >
-                  <Box
-                    component="video"
-                    ref={biometricVideoRef}
-                    muted
-                    playsInline
-                    autoPlay
-                    sx={{ width: "100%", display: "block" }}
-                  />
-                </Box>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  <Button
-                    variant="outlined"
-                    onClick={() => void startBiometricCamera()}
-                    disabled={biometricBusy}
-                  >
-                    Start Camera
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={stopBiometricCamera}
-                    disabled={biometricBusy}
-                  >
-                    Stop Camera
-                  </Button>
-                  <Button
-                    variant="contained"
-                    onClick={captureBiometricSelfie}
-                    disabled={biometricBusy}
-                  >
-                    Take Selfie
-                  </Button>
-                  <Button
-                    component="label"
-                    variant="outlined"
-                    disabled={biometricBusy}
-                  >
-                    Upload Image
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      onChange={(e) =>
-                        onPickBiometricFile(e.target.files?.[0] || null)
-                      }
-                    />
-                  </Button>
-                </Stack>
-              </Stack>
-            ) : (
-              <Button
-                component="label"
-                variant="outlined"
-                disabled={biometricBusy}
-              >
-                Upload Fingerprint Image
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) =>
-                    onPickBiometricFile(e.target.files?.[0] || null)
-                  }
+                  component="video"
+                  ref={biometricVideoRef}
+                  muted
+                  playsInline
+                  autoPlay
+                  sx={{ width: "100%", display: "block" }}
                 />
-              </Button>
-            )}
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant="outlined"
+                  onClick={() => void startBiometricCamera()}
+                  disabled={biometricBusy}
+                >
+                  Start Camera
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={stopBiometricCamera}
+                  disabled={biometricBusy}
+                >
+                  Stop Camera
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={captureBiometricSelfie}
+                  disabled={biometricBusy}
+                >
+                  Take Selfie
+                </Button>
+                <Button
+                  component="label"
+                  variant="outlined"
+                  disabled={biometricBusy}
+                >
+                  Upload Image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) =>
+                      onPickBiometricFile(e.target.files?.[0] || null)
+                    }
+                  />
+                </Button>
+              </Stack>
+            </Stack>
 
             {biometricImage ? (
               <Box

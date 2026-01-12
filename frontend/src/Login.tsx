@@ -110,6 +110,10 @@ export default function Login() {
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(true);
   const [twofa, setTwofa] = useState(false);
+  const [showTenantInactive, setShowTenantInactive] = useState(false);
+  const [tenantInactiveMessage, setTenantInactiveMessage] = useState(
+    "This tenant is inactive. Please contact Kenroo to login to this tenant."
+  );
 
   // Forgot Password State
   const [showForgot, setShowForgot] = useState(false);
@@ -192,6 +196,7 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setShowTenantInactive(false);
 
     try {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
@@ -231,6 +236,26 @@ export default function Login() {
       }
     } catch (err: unknown) {
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      const code = axios.isAxiosError(err)
+        ? (err.response?.data as { code?: unknown } | undefined)?.code
+        : undefined;
+      if (
+        !isSuperadminPortal &&
+        status === 403 &&
+        String(code || "") === "TENANT_INACTIVE"
+      ) {
+        const msg = axios.isAxiosError(err)
+          ? (err.response?.data as { error?: unknown } | undefined)?.error
+          : undefined;
+        setTenantInactiveMessage(
+          typeof msg === "string" && msg.trim()
+            ? msg
+            : "This tenant is inactive. Please contact Kenroo to login to this tenant."
+        );
+        setShowTenantInactive(true);
+        setError("");
+        return;
+      }
       if (status === 429)
         setError("Too many attempts. Please try again later.");
       else
@@ -657,6 +682,30 @@ export default function Login() {
           </Paper>
         </Box>
       )}
+
+      <Dialog
+        open={showTenantInactive}
+        onClose={() => setShowTenantInactive(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>Tenant inactive</DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            {tenantInactiveMessage}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button
+            variant="contained"
+            onClick={() => setShowTenantInactive(false)}
+            sx={{ borderRadius: 2 }}
+          >
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Forgot Password Modal */}
       <Dialog

@@ -35,6 +35,30 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+CREATE TABLE IF NOT EXISTS leave_allocations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  employee_id INT NOT NULL,
+  leave_type VARCHAR(16) NOT NULL,
+  year INT NOT NULL,
+  allocated_days DECIMAL(6,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_leave_allocations (tenant_id, employee_id, leave_type, year),
+  KEY idx_leave_allocations_tenant_employee_year (tenant_id, employee_id, year),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS tenant_leave_settings (
+  tenant_id INT NOT NULL,
+  auto_approve TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (tenant_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 SET @ar_has_clock_out_method := (
   SELECT COUNT(*)
   FROM information_schema.columns
@@ -193,6 +217,21 @@ SET @sql := IF(@uniq_leaves_exists = 0, 'ALTER TABLE leaves ADD UNIQUE KEY uniq_
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS leave_types (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  code VARCHAR(16) NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  is_paid BOOLEAN NOT NULL DEFAULT 1,
+  requires_document BOOLEAN NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT 1,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_leave_types_tenant_code (tenant_id, code),
+  INDEX idx_leave_types_tenant_active (tenant_id, active, sort_order),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS holidays (
   id INT AUTO_INCREMENT PRIMARY KEY,

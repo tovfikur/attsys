@@ -14,9 +14,11 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   MenuItem,
   Paper,
   Stack,
+  Switch,
   TextField,
   Typography,
   useTheme,
@@ -42,6 +44,21 @@ type Employee = {
   created_at: string;
 };
 
+type LeaveType = {
+  id?: string | number;
+  code: string;
+  name: string;
+  is_paid?: number | boolean;
+  requires_document?: number | boolean;
+  active?: number | boolean;
+  sort_order?: number;
+  created_at?: string;
+};
+
+type LeaveSettings = {
+  auto_approve: 0 | 1;
+};
+
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 const formatMonth = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
@@ -52,6 +69,7 @@ const formatDate = (y: number, m0: number, day: number) =>
 export default function Leaves() {
   const theme = useTheme();
   const role = getUser()?.role || "";
+  const canManage = role === "hr_admin" || role === "tenant_owner";
   const canApprove =
     role === "manager" || role === "hr_admin" || role === "tenant_owner";
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -59,15 +77,57 @@ export default function Leaves() {
   const [error, setError] = useState("");
   const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [employeeId, setEmployeeId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string>("");
   const [actionOk, setActionOk] = useState<string>("");
+  const [leaveTypesOpen, setLeaveTypesOpen] = useState(false);
+  const [leaveTypesBusy, setLeaveTypesBusy] = useState(false);
+  const [leaveTypesError, setLeaveTypesError] = useState("");
+  const [leaveTypesOk, setLeaveTypesOk] = useState("");
+  const [leaveSettingsOpen, setLeaveSettingsOpen] = useState(false);
+  const [leaveSettingsBusy, setLeaveSettingsBusy] = useState(false);
+  const [leaveSettingsError, setLeaveSettingsError] = useState("");
+  const [leaveSettingsOk, setLeaveSettingsOk] = useState("");
+  const [leaveSettingsDraft, setLeaveSettingsDraft] = useState<LeaveSettings>({
+    auto_approve: 0,
+  });
+  const [leaveTypeEditing, setLeaveTypeEditing] = useState<LeaveType | null>(
+    null
+  );
+  const [leaveTypeDraft, setLeaveTypeDraft] = useState<{
+    code: string;
+    name: string;
+    is_paid: 0 | 1;
+    requires_document: 0 | 1;
+    active: 0 | 1;
+    sort_order: number;
+  }>({
+    code: "",
+    name: "",
+    is_paid: 1,
+    requires_document: 0,
+    active: 1,
+    sort_order: 0,
+  });
   const lastRefreshAtRef = useRef(0);
 
   const monthStr = useMemo(() => formatMonth(currentDate), [currentDate]);
+
+  const leaveTypeNameByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of leaveTypes) {
+      const code = String(t.code || "")
+        .trim()
+        .toLowerCase();
+      const name = String(t.name || "").trim();
+      if (code && name) m.set(code, name);
+    }
+    return m;
+  }, [leaveTypes]);
 
   const employeesById = useMemo(() => {
     const m = new Map<string, Employee>();
@@ -112,6 +172,196 @@ export default function Leaves() {
     }
   }, [role]);
 
+  const fetchLeaveTypes = useCallback(async () => {
+    try {
+      const qs = new URLSearchParams();
+      if (canManage) qs.set("include_inactive", "1");
+      const res = await api.get(`/api/leave_types?${qs.toString()}`);
+      setLeaveTypes(
+        Array.isArray(res.data?.leave_types)
+          ? (res.data.leave_types as LeaveType[])
+          : []
+      );
+    } catch {
+      setLeaveTypes([]);
+    }
+  }, [canManage]);
+
+  const openLeaveTypes = useCallback(() => {
+    setLeaveTypesOpen(true);
+    setLeaveTypesError("");
+    setLeaveTypesOk("");
+    setLeaveTypeEditing(null);
+    setLeaveTypeDraft({
+      code: "",
+      name: "",
+      is_paid: 1,
+      requires_document: 0,
+      active: 1,
+      sort_order: 0,
+    });
+    void fetchLeaveTypes();
+  }, [fetchLeaveTypes]);
+
+  const fetchLeaveSettings = useCallback(async () => {
+    if (!canManage) return;
+    try {
+      const res = await api.get("/api/leave_settings");
+      const raw = res.data?.settings?.auto_approve;
+      const auto_approve = Number(raw) ? 1 : 0;
+      setLeaveSettingsDraft({ auto_approve });
+    } catch {
+      setLeaveSettingsDraft({ auto_approve: 0 });
+    }
+  }, [canManage]);
+
+  const openLeaveSettings = useCallback(() => {
+    setLeaveSettingsOpen(true);
+    setLeaveSettingsError("");
+    setLeaveSettingsOk("");
+    void fetchLeaveSettings();
+  }, [fetchLeaveSettings]);
+
+  const saveLeaveSettings = useCallback(async () => {
+    if (!canManage) return;
+    setLeaveSettingsBusy(true);
+    setLeaveSettingsError("");
+    setLeaveSettingsOk("");
+    try {
+      await api.post("/api/leave_settings", {
+        auto_approve: leaveSettingsDraft.auto_approve,
+      });
+      setLeaveSettingsOk("Saved");
+      await fetchLeaveSettings();
+    } catch (err: unknown) {
+      setLeaveSettingsError(getErrorMessage(err, "Failed to save settings"));
+    } finally {
+      setLeaveSettingsBusy(false);
+    }
+  }, [canManage, fetchLeaveSettings, leaveSettingsDraft.auto_approve]);
+
+  const startNewLeaveType = useCallback(() => {
+    setLeaveTypesError("");
+    setLeaveTypesOk("");
+    setLeaveTypeEditing(null);
+    setLeaveTypeDraft({
+      code: "",
+      name: "",
+      is_paid: 1,
+      requires_document: 0,
+      active: 1,
+      sort_order: 0,
+    });
+  }, []);
+
+  const startEditLeaveType = useCallback((t: LeaveType) => {
+    setLeaveTypesError("");
+    setLeaveTypesOk("");
+    setLeaveTypeEditing(t);
+    setLeaveTypeDraft({
+      code: String(t.code || ""),
+      name: String(t.name || ""),
+      is_paid: Number(t.is_paid) ? 1 : 0,
+      requires_document: Number(t.requires_document) ? 1 : 0,
+      active: Number(t.active) ? 1 : 0,
+      sort_order: Number.isFinite(Number(t.sort_order))
+        ? Number(t.sort_order)
+        : 0,
+    });
+  }, []);
+
+  const saveLeaveType = useCallback(async () => {
+    const code = leaveTypeDraft.code.trim().toLowerCase();
+    const name = leaveTypeDraft.name.trim();
+    if (!code || !name) {
+      setLeaveTypesError("Code and name are required.");
+      return;
+    }
+    setLeaveTypesBusy(true);
+    setLeaveTypesError("");
+    setLeaveTypesOk("");
+    try {
+      await api.post("/api/leave_types", {
+        code,
+        name,
+        is_paid: leaveTypeDraft.is_paid,
+        requires_document: leaveTypeDraft.requires_document,
+        active: leaveTypeDraft.active,
+        sort_order: leaveTypeDraft.sort_order,
+      });
+      setLeaveTypesOk("Saved");
+      await fetchLeaveTypes();
+      setLeaveTypeEditing(null);
+      setLeaveTypeDraft({
+        code: "",
+        name: "",
+        is_paid: 1,
+        requires_document: 0,
+        active: 1,
+        sort_order: 0,
+      });
+    } catch (err: unknown) {
+      setLeaveTypesError(getErrorMessage(err, "Failed to save leave type"));
+    } finally {
+      setLeaveTypesBusy(false);
+    }
+  }, [fetchLeaveTypes, leaveTypeDraft]);
+
+  const deactivateLeaveType = useCallback(
+    async (t: LeaveType) => {
+      const code = String(t.code || "")
+        .trim()
+        .toLowerCase();
+      if (!code) return;
+      if (!window.confirm(`Deactivate leave type "${t.name}"?`)) return;
+      setLeaveTypesBusy(true);
+      setLeaveTypesError("");
+      setLeaveTypesOk("");
+      try {
+        await api.post("/api/leave_types/deactivate", { code });
+        setLeaveTypesOk("Updated");
+        await fetchLeaveTypes();
+      } catch (err: unknown) {
+        setLeaveTypesError(getErrorMessage(err, "Failed to update leave type"));
+      } finally {
+        setLeaveTypesBusy(false);
+      }
+    },
+    [fetchLeaveTypes]
+  );
+
+  const activateLeaveType = useCallback(
+    async (t: LeaveType) => {
+      const code = String(t.code || "")
+        .trim()
+        .toLowerCase();
+      const name = String(t.name || "").trim();
+      if (!code || !name) return;
+      setLeaveTypesBusy(true);
+      setLeaveTypesError("");
+      setLeaveTypesOk("");
+      try {
+        await api.post("/api/leave_types", {
+          code,
+          name,
+          is_paid: Number(t.is_paid) ? 1 : 0,
+          requires_document: Number(t.requires_document) ? 1 : 0,
+          active: 1,
+          sort_order: Number.isFinite(Number(t.sort_order))
+            ? Number(t.sort_order)
+            : 0,
+        });
+        setLeaveTypesOk("Updated");
+        await fetchLeaveTypes();
+      } catch (err: unknown) {
+        setLeaveTypesError(getErrorMessage(err, "Failed to update leave type"));
+      } finally {
+        setLeaveTypesBusy(false);
+      }
+    },
+    [fetchLeaveTypes]
+  );
+
   const fetchLeaves = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -143,7 +393,10 @@ export default function Leaves() {
       setActionError("");
       setActionOk("");
       try {
-        await api.post("/api/leaves/update", { id: leaveId, status: nextStatus });
+        await api.post("/api/leaves/update", {
+          id: leaveId,
+          status: nextStatus,
+        });
         setActionOk("Updated");
         await fetchLeaves();
         notifyAttendanceUpdated();
@@ -159,6 +412,10 @@ export default function Leaves() {
   useEffect(() => {
     void fetchEmployees();
   }, [fetchEmployees]);
+
+  useEffect(() => {
+    void fetchLeaveTypes();
+  }, [fetchLeaveTypes]);
 
   useEffect(() => {
     void fetchLeaves();
@@ -287,6 +544,26 @@ export default function Leaves() {
           </Typography>
         </Box>
         <Stack direction="row" spacing={1.5} alignItems="center">
+          {canManage ? (
+            <Button
+              variant="outlined"
+              onClick={openLeaveTypes}
+              disabled={leaveTypesBusy}
+              sx={{ borderRadius: 2 }}
+            >
+              Leave Types
+            </Button>
+          ) : null}
+          {canManage ? (
+            <Button
+              variant="outlined"
+              onClick={openLeaveSettings}
+              disabled={leaveSettingsBusy}
+              sx={{ borderRadius: 2 }}
+            >
+              Leave Settings
+            </Button>
+          ) : null}
           <Button
             variant="outlined"
             startIcon={<RefreshRounded />}
@@ -512,7 +789,10 @@ export default function Leaves() {
                 const emp = employeesById.get(String(l.employee_id));
                 const name = emp?.name || `Employee #${String(l.employee_id)}`;
                 const code = emp?.code ? ` (${emp.code})` : "";
-                const type = (l.leave_type || "leave").toString();
+                const typeCode = (l.leave_type || "leave").toString();
+                const type =
+                  leaveTypeNameByCode.get(typeCode.trim().toLowerCase()) ||
+                  typeCode;
                 const part = (l.day_part || "full").toString();
                 const status = (l.status || "pending").toString();
                 const statusLower = status.trim().toLowerCase();
@@ -579,6 +859,338 @@ export default function Leaves() {
               })}
             </Stack>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={leaveTypesOpen}
+        onClose={() => {
+          setLeaveTypesOpen(false);
+          setLeaveTypesBusy(false);
+          setLeaveTypesError("");
+          setLeaveTypesOk("");
+          setLeaveTypeEditing(null);
+        }}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>Leave Types</DialogTitle>
+        <DialogContent dividers sx={{ p: 2.5 }}>
+          {leaveTypesError ? (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+              {leaveTypesError}
+            </Alert>
+          ) : null}
+          {leaveTypesOk ? (
+            <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+              {leaveTypesOk}
+            </Alert>
+          ) : null}
+
+          <Paper
+            elevation={0}
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 2,
+              p: 2,
+              bgcolor: "background.default",
+              mb: 2,
+            }}
+          >
+            <Stack spacing={1.5}>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1.5}
+                alignItems={{ sm: "center" }}
+              >
+                <Typography sx={{ fontWeight: 900, flex: 1 }}>
+                  {leaveTypeEditing ? "Edit Type" : "New Type"}
+                </Typography>
+                <Button
+                  variant="outlined"
+                  onClick={startNewLeaveType}
+                  disabled={leaveTypesBusy}
+                  sx={{ borderRadius: 2 }}
+                >
+                  New
+                </Button>
+              </Stack>
+
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <TextField
+                  label="Code"
+                  value={leaveTypeDraft.code}
+                  onChange={(e) => {
+                    const raw = e.target.value || "";
+                    const cleaned = raw
+                      .toLowerCase()
+                      .replace(/[^a-z0-9_]/g, "")
+                      .slice(0, 16);
+                    setLeaveTypeDraft((p) => ({ ...p, code: cleaned }));
+                  }}
+                  disabled={!!leaveTypeEditing || leaveTypesBusy}
+                  size="small"
+                  sx={{ minWidth: { sm: 180 } }}
+                />
+                <TextField
+                  label="Name"
+                  value={leaveTypeDraft.name}
+                  onChange={(e) =>
+                    setLeaveTypeDraft((p) => ({ ...p, name: e.target.value }))
+                  }
+                  disabled={leaveTypesBusy}
+                  fullWidth
+                  size="small"
+                />
+              </Stack>
+
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <TextField
+                  select
+                  label="Paid"
+                  value={leaveTypeDraft.is_paid}
+                  onChange={(e) =>
+                    setLeaveTypeDraft((p) => ({
+                      ...p,
+                      is_paid: Number(e.target.value) ? 1 : 0,
+                    }))
+                  }
+                  disabled={leaveTypesBusy}
+                  size="small"
+                  sx={{ minWidth: { sm: 180 } }}
+                >
+                  <MenuItem value={1}>Paid</MenuItem>
+                  <MenuItem value={0}>Unpaid</MenuItem>
+                </TextField>
+                <TextField
+                  select
+                  label="Document"
+                  value={leaveTypeDraft.requires_document}
+                  onChange={(e) =>
+                    setLeaveTypeDraft((p) => ({
+                      ...p,
+                      requires_document: Number(e.target.value) ? 1 : 0,
+                    }))
+                  }
+                  disabled={leaveTypesBusy}
+                  size="small"
+                  sx={{ minWidth: { sm: 220 } }}
+                >
+                  <MenuItem value={0}>Not required</MenuItem>
+                  <MenuItem value={1}>Required</MenuItem>
+                </TextField>
+                <TextField
+                  select
+                  label="Active"
+                  value={leaveTypeDraft.active}
+                  onChange={(e) =>
+                    setLeaveTypeDraft((p) => ({
+                      ...p,
+                      active: Number(e.target.value) ? 1 : 0,
+                    }))
+                  }
+                  disabled={leaveTypesBusy}
+                  size="small"
+                  sx={{ minWidth: { sm: 180 } }}
+                >
+                  <MenuItem value={1}>Active</MenuItem>
+                  <MenuItem value={0}>Inactive</MenuItem>
+                </TextField>
+                <TextField
+                  label="Sort"
+                  type="number"
+                  value={leaveTypeDraft.sort_order}
+                  onChange={(e) =>
+                    setLeaveTypeDraft((p) => ({
+                      ...p,
+                      sort_order: Number(e.target.value || 0),
+                    }))
+                  }
+                  disabled={leaveTypesBusy}
+                  size="small"
+                  sx={{ minWidth: { sm: 120 } }}
+                />
+              </Stack>
+
+              <Stack direction="row" spacing={1.5} justifyContent="flex-end">
+                <Button
+                  variant="contained"
+                  onClick={() => void saveLeaveType()}
+                  disabled={
+                    leaveTypesBusy ||
+                    !leaveTypeDraft.code.trim() ||
+                    !leaveTypeDraft.name.trim()
+                  }
+                >
+                  {leaveTypesBusy ? "Working..." : "Save"}
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
+
+          <Typography sx={{ fontWeight: 900, mb: 1 }}>All Types</Typography>
+          {leaveTypes.length === 0 ? (
+            <Typography color="text.secondary">No leave types.</Typography>
+          ) : (
+            <Stack spacing={1}>
+              {leaveTypes.map((t) => {
+                const active = Number(t.active) ? true : false;
+                return (
+                  <Paper
+                    key={t.code}
+                    elevation={0}
+                    sx={{
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 2,
+                      p: 2,
+                      bgcolor: "background.default",
+                    }}
+                  >
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1.5}
+                      alignItems={{ sm: "center" }}
+                    >
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontWeight: 900 }} noWrap>
+                          {t.name}{" "}
+                          <Typography
+                            component="span"
+                            color="text.secondary"
+                            sx={{ fontWeight: 800 }}
+                          >
+                            ({t.code})
+                          </Typography>
+                        </Typography>
+                        <Stack
+                          direction="row"
+                          spacing={1}
+                          flexWrap="wrap"
+                          useFlexGap
+                        >
+                          <Chip
+                            size="small"
+                            label={Number(t.is_paid) ? "Paid" : "Unpaid"}
+                            sx={{ fontWeight: 900 }}
+                          />
+                          <Chip
+                            size="small"
+                            label={
+                              Number(t.requires_document)
+                                ? "Document required"
+                                : "No document"
+                            }
+                            sx={{ fontWeight: 900 }}
+                          />
+                          <Chip
+                            size="small"
+                            label={active ? "Active" : "Inactive"}
+                            sx={{ fontWeight: 900 }}
+                          />
+                        </Stack>
+                      </Box>
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => startEditLeaveType(t)}
+                          disabled={leaveTypesBusy}
+                        >
+                          Edit
+                        </Button>
+                        {active ? (
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            onClick={() => void deactivateLeaveType(t)}
+                            disabled={leaveTypesBusy}
+                          >
+                            Deactivate
+                          </Button>
+                        ) : (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => void activateLeaveType(t)}
+                            disabled={leaveTypesBusy}
+                          >
+                            Activate
+                          </Button>
+                        )}
+                      </Stack>
+                    </Stack>
+                  </Paper>
+                );
+              })}
+            </Stack>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={leaveSettingsOpen}
+        onClose={() => {
+          setLeaveSettingsOpen(false);
+          setLeaveSettingsBusy(false);
+          setLeaveSettingsError("");
+          setLeaveSettingsOk("");
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>Leave Settings</DialogTitle>
+        <DialogContent dividers sx={{ p: 2.5 }}>
+          {leaveSettingsError ? (
+            <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+              {leaveSettingsError}
+            </Alert>
+          ) : null}
+          {leaveSettingsOk ? (
+            <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+              {leaveSettingsOk}
+            </Alert>
+          ) : null}
+
+          <Paper
+            elevation={0}
+            sx={{
+              border: "1px solid",
+              borderColor: "divider",
+              borderRadius: 2,
+              p: 2,
+              bgcolor: "background.default",
+            }}
+          >
+            <Stack spacing={1.5}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={leaveSettingsDraft.auto_approve === 1}
+                    onChange={(e) =>
+                      setLeaveSettingsDraft({
+                        auto_approve: e.target.checked ? 1 : 0,
+                      })
+                    }
+                  />
+                }
+                label="Auto-approve leave requests"
+              />
+              <Stack direction="row" spacing={1.5} justifyContent="flex-end">
+                <Button
+                  variant="contained"
+                  onClick={() => void saveLeaveSettings()}
+                  disabled={leaveSettingsBusy}
+                >
+                  {leaveSettingsBusy ? "Working..." : "Save"}
+                </Button>
+              </Stack>
+            </Stack>
+          </Paper>
         </DialogContent>
       </Dialog>
     </Container>

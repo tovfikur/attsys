@@ -4,8 +4,13 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-function run(cmd: string, cwd: string) {
-  execSync(cmd, { cwd, stdio: "inherit" });
+function run(cmd: string, cwd: string, opts?: { allowFailure?: boolean }) {
+  try {
+    execSync(cmd, { cwd, stdio: "inherit" });
+  } catch (e) {
+    if (opts?.allowFailure) return;
+    throw e;
+  }
 }
 
 async function getFreePort(): Promise<number> {
@@ -76,7 +81,7 @@ test.describe("docker e2e: superadmin + tenant isolation", () => {
     rootUrl = `http://localhost:${webPort}`;
     apiHealthUrl = `http://localhost:${apiPort}/api/health`;
 
-    run("docker compose down -v", repoRoot);
+    run("docker compose down -v", repoRoot, { allowFailure: true });
     run("docker compose up -d --build", repoRoot);
 
     await waitForHttpOk(apiHealthUrl, 180_000);
@@ -84,7 +89,7 @@ test.describe("docker e2e: superadmin + tenant isolation", () => {
   });
 
   test.afterAll(() => {
-    run("docker compose down -v", repoRoot);
+    run("docker compose down -v", repoRoot, { allowFailure: true });
   });
 
   test("builds docker, creates tenant, logs into tenant subdomain", async ({

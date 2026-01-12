@@ -229,3 +229,27 @@ SET @sql := IF(@ea_idx_exists = 0, 'ALTER TABLE employee_attachments ADD INDEX i
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+SET @tenants_has_note := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'tenants'
+    AND column_name = 'note'
+);
+SET @sql := IF(@tenants_has_note = 0, 'ALTER TABLE tenants ADD COLUMN note TEXT NULL', 'DO 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @tenants_has_logo_path := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'tenants'
+    AND column_name = 'logo_path'
+);
+SET @sql := IF(@tenants_has_logo_path = 0, 'ALTER TABLE tenants ADD COLUMN logo_path VARCHAR(255) NULL', 'DO 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

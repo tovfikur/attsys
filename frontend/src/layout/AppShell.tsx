@@ -72,25 +72,25 @@ const navItems: NavItem[] = [
     label: "Employees",
     to: "/employees",
     icon: <PeopleAltRounded />,
-    roles: ["superadmin", "tenant_owner", "hr_admin", "manager"],
+    roles: ["tenant_owner", "hr_admin", "manager"],
   },
   {
     label: "Clock",
     to: "/clock",
     icon: <AccessTimeRounded />,
-    roles: ["superadmin", "tenant_owner", "hr_admin", "manager"],
+    roles: ["tenant_owner", "hr_admin", "manager"],
   },
   {
     label: "Attendance",
     to: "/attendance",
     icon: <QueryStatsRounded />,
-    roles: ["superadmin", "tenant_owner", "hr_admin", "manager"],
+    roles: ["tenant_owner", "hr_admin", "manager"],
   },
   {
     label: "Leaves",
     to: "/leaves",
     icon: <EventNoteRounded />,
-    roles: ["superadmin", "tenant_owner", "hr_admin", "manager"],
+    roles: ["tenant_owner", "hr_admin", "manager"],
   },
   {
     label: "Shifts",
@@ -119,6 +119,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const profilePhotoUrlRef = useRef<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [tenantLogoUrl, setTenantLogoUrl] = useState<string | null>(null);
+  const tenantLogoUrlRef = useRef<string | null>(null);
+  const [tenantLogoBusy, setTenantLogoBusy] = useState(false);
+  const tenantLogoInputRef = useRef<HTMLInputElement | null>(null);
   const [toast, setToast] = useState<{
     open: boolean;
     message: string;
@@ -213,12 +217,62 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshTenantLogo = async () => {
+    if (!user || role === "superadmin") {
+      if (tenantLogoUrlRef.current) {
+        URL.revokeObjectURL(tenantLogoUrlRef.current);
+        tenantLogoUrlRef.current = null;
+      }
+      setTenantLogoUrl(null);
+      return;
+    }
+    try {
+      const res = await api.get("/api/tenant/logo", {
+        responseType: "blob",
+        validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+      });
+      if (res.status === 404 || !res.data) {
+        if (tenantLogoUrlRef.current) {
+          URL.revokeObjectURL(tenantLogoUrlRef.current);
+          tenantLogoUrlRef.current = null;
+        }
+        setTenantLogoUrl(null);
+        return;
+      }
+      const blob = res.data as Blob;
+      if (!blob.size) {
+        if (tenantLogoUrlRef.current) {
+          URL.revokeObjectURL(tenantLogoUrlRef.current);
+          tenantLogoUrlRef.current = null;
+        }
+        setTenantLogoUrl(null);
+        return;
+      }
+      const nextUrl = URL.createObjectURL(blob);
+      if (tenantLogoUrlRef.current)
+        URL.revokeObjectURL(tenantLogoUrlRef.current);
+      tenantLogoUrlRef.current = nextUrl;
+      setTenantLogoUrl(nextUrl);
+    } catch {
+      if (tenantLogoUrlRef.current) {
+        URL.revokeObjectURL(tenantLogoUrlRef.current);
+        tenantLogoUrlRef.current = null;
+      }
+      setTenantLogoUrl(null);
+    }
+  };
+
   useEffect(() => {
     refreshProfilePhoto();
+    refreshTenantLogo();
     return () => {
       if (profilePhotoUrlRef.current) {
         URL.revokeObjectURL(profilePhotoUrlRef.current);
         profilePhotoUrlRef.current = null;
+      }
+      if (tenantLogoUrlRef.current) {
+        URL.revokeObjectURL(tenantLogoUrlRef.current);
+        tenantLogoUrlRef.current = null;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -226,6 +280,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const handleChoosePhoto = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleChooseTenantLogo = () => {
+    tenantLogoInputRef.current?.click();
   };
 
   const handlePhotoSelected = async (
@@ -258,6 +316,36 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const handleTenantLogoSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setTenantLogoBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.post("/api/tenant/logo/upload", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      await refreshTenantLogo();
+      setToast({
+        open: true,
+        message: "Tenant logo updated",
+        severity: "success",
+      });
+    } catch (err: unknown) {
+      setToast({
+        open: true,
+        message: getErrorMessage(err, "Failed to upload tenant logo"),
+        severity: "error",
+      });
+    } finally {
+      setTenantLogoBusy(false);
+    }
+  };
+
   const items = useMemo(() => {
     return navItems.filter((i) => !i.roles || i.roles.includes(role));
   }, [role]);
@@ -274,6 +362,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return role === "superadmin" ? "Super Admin" : "Workspace";
   }, [location.pathname, role]);
 
+  const brandLogoSrc = useMemo(() => {
+    if (role === "superadmin") return "/icon.svg";
+    return tenantLogoUrl || "/icon.svg";
+  }, [role, tenantLogoUrl]);
+
   const drawerWidth = 280;
 
   const drawer = (
@@ -281,6 +374,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <Box sx={{ p: 2.5 }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Avatar
+            src={brandLogoSrc}
             sx={{
               bgcolor: "primary.main",
               width: 40,
@@ -445,18 +539,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             transformOrigin={{ horizontal: "right", vertical: "top" }}
             anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
           >
-            <MenuItem
-              onClick={() => {
-                setUserMenuEl(null);
-                handleChoosePhoto();
-              }}
-              disabled={photoBusy || !user || role === "superadmin"}
-            >
-              <ListItemIcon>
-                <PhotoCameraRounded fontSize="small" />
-              </ListItemIcon>
-              {photoBusy ? "Uploading..." : "Change Photo"}
-            </MenuItem>
+            {role !== "superadmin" && role !== "employee" && (
+              <MenuItem
+                onClick={() => {
+                  setUserMenuEl(null);
+                  handleChoosePhoto();
+                }}
+                disabled={photoBusy || !user}
+              >
+                <ListItemIcon>
+                  <PhotoCameraRounded fontSize="small" />
+                </ListItemIcon>
+                {photoBusy ? "Uploading..." : "Change Photo"}
+              </MenuItem>
+            )}
+            {role === "tenant_owner" && (
+              <MenuItem
+                onClick={() => {
+                  setUserMenuEl(null);
+                  handleChooseTenantLogo();
+                }}
+                disabled={tenantLogoBusy || !user}
+              >
+                <ListItemIcon>
+                  <PhotoCameraRounded fontSize="small" />
+                </ListItemIcon>
+                {tenantLogoBusy ? "Uploading..." : "Change Tenant Logo"}
+              </MenuItem>
+            )}
             <MenuItem
               onClick={() => {
                 setUserMenuEl(null);
@@ -488,6 +598,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         type="file"
         accept="image/*"
         onChange={handlePhotoSelected}
+        style={{ display: "none" }}
+      />
+      <input
+        ref={tenantLogoInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleTenantLogoSelected}
         style={{ display: "none" }}
       />
       <Snackbar

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "./api";
 import { getErrorMessage } from "./utils/errors";
 import { getUser } from "./utils/session";
@@ -10,6 +10,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   IconButton,
   MenuItem,
   Paper,
@@ -98,6 +99,27 @@ interface HolidayRecord {
   created_at?: string;
 }
 
+interface LeaveType {
+  id?: string | number;
+  code: string;
+  name: string;
+  is_paid?: number | boolean;
+  requires_document?: number | boolean;
+  active?: number | boolean;
+  sort_order?: number;
+  created_at?: string;
+}
+
+interface LeaveAllocationRow {
+  employee_id: number;
+  year: number;
+  leave_type: string;
+  leave_type_name: string;
+  allocated_days: number;
+  used_days: number;
+  remaining_days: number;
+}
+
 // --- Main Component ---
 export default function Employees() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -109,6 +131,10 @@ export default function Employees() {
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
   const [loginEmployee, setLoginEmployee] = useState<Employee | null>(null);
   const [enrollEmployee, setEnrollEmployee] = useState<Employee | null>(null);
+  const [employeePhotoUrls, setEmployeePhotoUrls] = useState<
+    Record<string, string | null>
+  >({});
+  const employeePhotoUrlsRef = useRef<Record<string, string>>({});
 
   const role = getUser()?.role || "";
   const canManageEmployeeLogins = [
@@ -117,21 +143,71 @@ export default function Employees() {
     "hr_admin",
   ].includes(role);
 
-  const loadEmployees = async () => {
+  const refreshEmployeePhotos = useCallback(async (list: Employee[]) => {
+    const withPhoto = list.filter((e) => !!String(e.profile_photo_path || ""));
+    const results = await Promise.all(
+      withPhoto.map(async (e) => {
+        try {
+          const res = await api.get(
+            `/api/employees/profile_photo?employee_id=${encodeURIComponent(
+              e.id
+            )}`,
+            {
+              responseType: "blob",
+              validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+            }
+          );
+          if (res.status === 404 || !res.data) return [e.id, null] as const;
+          const blob = res.data as Blob;
+          if (!blob.size) return [e.id, null] as const;
+          const url = URL.createObjectURL(blob);
+          return [e.id, url] as const;
+        } catch {
+          return [e.id, null] as const;
+        }
+      })
+    );
+
+    const nextRef: Record<string, string> = {};
+    const nextState: Record<string, string | null> = {};
+    for (const [id, url] of results) {
+      if (url) {
+        nextRef[id] = url;
+        nextState[id] = url;
+      }
+    }
+
+    const prevRef = employeePhotoUrlsRef.current;
+    for (const [id, url] of Object.entries(prevRef)) {
+      if (!nextRef[id] || nextRef[id] !== url) URL.revokeObjectURL(url);
+    }
+    employeePhotoUrlsRef.current = nextRef;
+    setEmployeePhotoUrls(nextState);
+  }, []);
+
+  const loadEmployees = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get("/api/employees");
-      setEmployees(res.data.employees);
+      const list = (res.data?.employees || []) as Employee[];
+      setEmployees(list);
+      await refreshEmployeePhotos(list);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [refreshEmployeePhotos]);
 
   useEffect(() => {
-    loadEmployees();
-  }, []);
+    void loadEmployees();
+    return () => {
+      for (const url of Object.values(employeePhotoUrlsRef.current)) {
+        URL.revokeObjectURL(url);
+      }
+      employeePhotoUrlsRef.current = {};
+    };
+  }, [loadEmployees]);
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -248,6 +324,7 @@ export default function Employees() {
                     <TableCell>
                       <Stack direction="row" spacing={2} alignItems="center">
                         <Avatar
+                          src={employeePhotoUrls[emp.id] || undefined}
                           sx={{
                             bgcolor: "primary.light",
                             color: "primary.main",
@@ -598,7 +675,6 @@ function EnrollBiometricDialog({
   onClose: () => void;
 }) {
   const theme = useTheme();
-  const [modality, setModality] = useState<"face" | "fingerprint">("face");
   const [image, setImage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -622,7 +698,6 @@ function EnrollBiometricDialog({
     setError("");
     setOk("");
     setImage("");
-    setModality("face");
     onClose();
   }, [onClose, stopCamera]);
 
@@ -691,12 +766,10 @@ function EnrollBiometricDialog({
     try {
       await api.post("/api/biometrics/enroll", {
         employee_id: employee.id,
-        biometric_modality: modality,
+        biometric_modality: "face",
         biometric_image: image,
       });
-      setOk(
-        `Enrolled ${modality === "face" ? "face" : "fingerprint"} template`
-      );
+      setOk("Enrolled face template");
       setImage("");
       stopCamera();
     } catch (err: unknown) {
@@ -704,7 +777,7 @@ function EnrollBiometricDialog({
     } finally {
       setBusy(false);
     }
-  }, [employee.id, image, modality, stopCamera]);
+  }, [employee.id, image, stopCamera]);
 
   return (
     <Dialog
@@ -747,106 +820,69 @@ function EnrollBiometricDialog({
             </Alert>
           ) : null}
 
-          <TextField
-            select
-            label="Modality"
-            value={modality}
-            onChange={(e) => {
-              const next =
-                e.target.value === "fingerprint" ? "fingerprint" : "face";
-              setModality(next);
-              setError("");
-              setOk("");
-              setImage("");
-              stopCamera();
-            }}
-            disabled={busy}
-            fullWidth
-          >
-            <MenuItem value="face">Face</MenuItem>
-            <MenuItem value="fingerprint">Fingerprint</MenuItem>
-          </TextField>
-
-          {modality === "face" ? (
-            <Stack spacing={1.5}>
-              <Box
-                sx={{
-                  borderRadius: 2,
-                  overflow: "hidden",
-                  border: "1px solid",
-                  borderColor: alpha(theme.palette.text.primary, 0.12),
-                  bgcolor: "background.default",
-                  aspectRatio: "16 / 9",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Box
-                  component="video"
-                  ref={videoRef}
-                  muted
-                  playsInline
-                  sx={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              </Box>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Button
-                  variant="outlined"
-                  onClick={() => void startCamera()}
-                  disabled={busy}
-                  sx={{ borderRadius: 2, fontWeight: 900 }}
-                >
-                  Start Camera
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={stopCamera}
-                  disabled={busy}
-                  sx={{ borderRadius: 2, fontWeight: 900 }}
-                >
-                  Stop Camera
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={captureSelfie}
-                  disabled={busy}
-                  sx={{ borderRadius: 2, fontWeight: 900 }}
-                >
-                  Take Selfie
-                </Button>
-                <Button
-                  component="label"
-                  variant="outlined"
-                  disabled={busy}
-                  sx={{ borderRadius: 2, fontWeight: 900 }}
-                >
-                  Upload Image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) => onPickFile(e.target.files?.[0] || null)}
-                  />
-                </Button>
-              </Stack>
-            </Stack>
-          ) : (
-            <Button
-              component="label"
-              variant="outlined"
-              disabled={busy}
-              sx={{ borderRadius: 2, fontWeight: 900 }}
+          <Stack spacing={1.5}>
+            <Box
+              sx={{
+                borderRadius: 2,
+                overflow: "hidden",
+                border: "1px solid",
+                borderColor: alpha(theme.palette.text.primary, 0.12),
+                bgcolor: "background.default",
+                aspectRatio: "16 / 9",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
-              Upload Fingerprint Image
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={(e) => onPickFile(e.target.files?.[0] || null)}
+              <Box
+                component="video"
+                ref={videoRef}
+                muted
+                playsInline
+                sx={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
-            </Button>
-          )}
+            </Box>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Button
+                variant="outlined"
+                onClick={() => void startCamera()}
+                disabled={busy}
+                sx={{ borderRadius: 2, fontWeight: 900 }}
+              >
+                Start Camera
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={stopCamera}
+                disabled={busy}
+                sx={{ borderRadius: 2, fontWeight: 900 }}
+              >
+                Stop Camera
+              </Button>
+              <Button
+                variant="contained"
+                onClick={captureSelfie}
+                disabled={busy}
+                sx={{ borderRadius: 2, fontWeight: 900 }}
+              >
+                Take Selfie
+              </Button>
+              <Button
+                component="label"
+                variant="outlined"
+                disabled={busy}
+                sx={{ borderRadius: 2, fontWeight: 900 }}
+              >
+                Upload Image
+                <input
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(e) => onPickFile(e.target.files?.[0] || null)}
+                />
+              </Button>
+            </Stack>
+          </Stack>
 
           {image ? (
             <Box
@@ -1142,6 +1178,11 @@ function EditEmployeeDialog({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const theme = useTheme();
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+  const profilePhotoUrlRef = useRef<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [form, setForm] = useState({
     name: employee.name,
     code: employee.code,
@@ -1183,6 +1224,48 @@ function EditEmployeeDialog({
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
 
+  const refreshProfilePhoto = useCallback(async () => {
+    try {
+      const res = await api.get(
+        `/api/employees/profile_photo?employee_id=${encodeURIComponent(
+          employee.id
+        )}`,
+        {
+          responseType: "blob",
+          validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+        }
+      );
+      if (res.status === 404 || !res.data) {
+        if (profilePhotoUrlRef.current) {
+          URL.revokeObjectURL(profilePhotoUrlRef.current);
+          profilePhotoUrlRef.current = null;
+        }
+        setProfilePhotoUrl(null);
+        return;
+      }
+      const blob = res.data as Blob;
+      if (!blob.size) {
+        if (profilePhotoUrlRef.current) {
+          URL.revokeObjectURL(profilePhotoUrlRef.current);
+          profilePhotoUrlRef.current = null;
+        }
+        setProfilePhotoUrl(null);
+        return;
+      }
+      const nextUrl = URL.createObjectURL(blob);
+      if (profilePhotoUrlRef.current)
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+      profilePhotoUrlRef.current = nextUrl;
+      setProfilePhotoUrl(nextUrl);
+    } catch {
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+        profilePhotoUrlRef.current = null;
+      }
+      setProfilePhotoUrl(null);
+    }
+  }, [employee.id]);
+
   useEffect(() => {
     if (!open) return;
 
@@ -1208,6 +1291,7 @@ function EditEmployeeDialog({
     setAttachCategory("attachment");
     setAttachTitle("");
     setAttachFile(null);
+    setPhotoBusy(false);
 
     const run = async () => {
       setLoading(true);
@@ -1278,6 +1362,24 @@ function EditEmployeeDialog({
     employee.work_location,
     open,
   ]);
+
+  useEffect(() => {
+    if (!open) {
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+        profilePhotoUrlRef.current = null;
+      }
+      setProfilePhotoUrl(null);
+      return;
+    }
+    refreshProfilePhoto();
+    return () => {
+      if (profilePhotoUrlRef.current) {
+        URL.revokeObjectURL(profilePhotoUrlRef.current);
+        profilePhotoUrlRef.current = null;
+      }
+    };
+  }, [open, refreshProfilePhoto]);
 
   const submit = async () => {
     setBusy(true);
@@ -1398,6 +1500,34 @@ function EditEmployeeDialog({
     }
   };
 
+  const uploadProfilePhoto = async (file: File) => {
+    setPhotoBusy(true);
+    setError("");
+    setOk("");
+    try {
+      const fd = new FormData();
+      fd.append("employee_id", employee.id);
+      fd.append("file", file);
+      await api.post("/api/employees/profile_photo/upload", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      await refreshProfilePhoto();
+      setOk("Profile photo updated");
+      onSuccess();
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to upload profile photo"));
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const statusOptions = (() => {
+    const base = ["active", "inactive"];
+    if (form.status && !base.includes(form.status))
+      return [...base, form.status];
+    return base;
+  })();
+
   return (
     <Dialog
       open={open}
@@ -1414,165 +1544,336 @@ function EditEmployeeDialog({
           pb: 1,
         }}
       >
-        <Typography variant="h6" fontWeight={700}>
-          Edit Employee
-        </Typography>
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <Avatar
+            src={profilePhotoUrl || undefined}
+            sx={{
+              width: 36,
+              height: 36,
+              bgcolor: alpha(theme.palette.primary.main, 0.12),
+              color: theme.palette.primary.main,
+              fontWeight: 900,
+            }}
+          >
+            {(form.name || employee.name || "?")
+              .trim()
+              .slice(0, 1)
+              .toUpperCase()}
+          </Avatar>
+          <Box>
+            <Typography variant="h6" fontWeight={800} lineHeight={1.1}>
+              Edit Employee
+            </Typography>
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ mt: 0.35 }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {(form.name || employee.name || "").trim() || "—"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                •
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {(form.code || employee.code || "").trim() || "—"}
+              </Typography>
+              <Chip
+                size="small"
+                label={(form.status || "active").trim() || "active"}
+                sx={{
+                  ml: 0.5,
+                  fontWeight: 800,
+                  height: 22,
+                  bgcolor:
+                    (form.status || "").toLowerCase() === "active"
+                      ? alpha(theme.palette.success.main, 0.14)
+                      : alpha(theme.palette.text.primary, 0.06),
+                  color:
+                    (form.status || "").toLowerCase() === "active"
+                      ? theme.palette.success.main
+                      : theme.palette.text.secondary,
+                }}
+              />
+            </Stack>
+          </Box>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => photoInputRef.current?.click()}
+            disabled={photoBusy}
+            sx={{ borderRadius: 2, fontWeight: 900, ml: 1 }}
+          >
+            {photoBusy ? "Uploading..." : "Upload Photo"}
+          </Button>
+        </Stack>
         <IconButton onClick={onClose} size="small">
           <CloseIcon />
         </IconButton>
       </DialogTitle>
       <DialogContent dividers>
-        <Box display="flex" flexDirection="column" gap={2} pt={1}>
+        <Stack spacing={2.5} sx={{ pt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
           {ok && <Alert severity="success">{ok}</Alert>}
-          <TextField
-            label="Full Name"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            required
-            fullWidth
-          />
-          <TextField
-            label="Employee Code"
-            value={form.code}
-            onChange={(e) => setForm({ ...form, code: e.target.value })}
-            required
-            fullWidth
-          />
-          <TextField
-            select
-            label="Gender"
-            value={form.gender}
-            onChange={(e) => setForm({ ...form, gender: e.target.value })}
-            required
-            fullWidth
-          >
-            <MenuItem value="male">Male</MenuItem>
-            <MenuItem value="female">Female</MenuItem>
-            <MenuItem value="other">Other</MenuItem>
-          </TextField>
-          <TextField
-            label="Date of Birth"
-            type="date"
-            value={form.date_of_birth}
-            onChange={(e) =>
-              setForm({ ...form, date_of_birth: e.target.value })
-            }
-            required
-            fullWidth
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="Personal Phone Number"
-            value={form.personal_phone}
-            onChange={(e) =>
-              setForm({ ...form, personal_phone: e.target.value })
-            }
-            required
-            fullWidth
-          />
-          <TextField
-            label="Email Address"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            required
-            fullWidth
-          />
-          <TextField
-            label="Present Address"
-            value={form.present_address}
-            onChange={(e) =>
-              setForm({ ...form, present_address: e.target.value })
-            }
-            required
-            fullWidth
-            multiline
-            minRows={2}
-          />
-          <TextField
-            label="Permanent Address"
-            value={form.permanent_address}
-            onChange={(e) =>
-              setForm({ ...form, permanent_address: e.target.value })
-            }
-            required
-            fullWidth
-            multiline
-            minRows={2}
-          />
-          <TextField
-            label="Department"
-            value={form.department}
-            onChange={(e) => setForm({ ...form, department: e.target.value })}
-            required
-            fullWidth
-          />
-          <TextField
-            label="Designation / Role"
-            value={form.designation}
-            onChange={(e) => setForm({ ...form, designation: e.target.value })}
-            required
-            fullWidth
-          />
-          <TextField
-            select
-            label="Employee Type"
-            value={form.employee_type}
-            onChange={(e) =>
-              setForm({ ...form, employee_type: e.target.value })
-            }
-            required
-            fullWidth
-          >
-            <MenuItem value="permanent">Permanent</MenuItem>
-            <MenuItem value="contract">Contract</MenuItem>
-            <MenuItem value="intern">Intern</MenuItem>
-          </TextField>
-          <TextField
-            label="Date of Joining"
-            type="date"
-            value={form.date_of_joining}
-            onChange={(e) =>
-              setForm({ ...form, date_of_joining: e.target.value })
-            }
-            required
-            fullWidth
-            InputLabelProps={{ shrink: true }}
-          />
-          <TextField
-            label="Supervisor / Reporting Manager"
-            value={form.supervisor_name}
-            onChange={(e) =>
-              setForm({ ...form, supervisor_name: e.target.value })
-            }
-            required
-            fullWidth
-          />
-          <TextField
-            label="Work Location / Branch"
-            value={form.work_location}
-            onChange={(e) =>
-              setForm({ ...form, work_location: e.target.value })
-            }
-            required
-            fullWidth
-          />
-          <TextField
-            label="Status"
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value })}
-            fullWidth
-          />
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              alignItems={{ xs: "stretch", sm: "center" }}
+              justifyContent="space-between"
+            >
+              <Box>
+                <Typography variant="subtitle2" fontWeight={900}>
+                  Personal
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Basic employee identity details
+                </Typography>
+              </Box>
+            </Stack>
+            <Divider sx={{ my: 2 }} />
+            <Stack spacing={2}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  label="Full Name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  required
+                  fullWidth
+                  size="small"
+                />
+                <TextField
+                  label="Employee Code"
+                  value={form.code}
+                  onChange={(e) => setForm({ ...form, code: e.target.value })}
+                  required
+                  fullWidth
+                  size="small"
+                />
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  select
+                  label="Gender"
+                  value={form.gender}
+                  onChange={(e) => setForm({ ...form, gender: e.target.value })}
+                  required
+                  fullWidth
+                  size="small"
+                >
+                  <MenuItem value="male">Male</MenuItem>
+                  <MenuItem value="female">Female</MenuItem>
+                  <MenuItem value="other">Other</MenuItem>
+                </TextField>
+                <TextField
+                  label="Date of Birth"
+                  type="date"
+                  value={form.date_of_birth}
+                  onChange={(e) =>
+                    setForm({ ...form, date_of_birth: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  size="small"
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Stack>
+            </Stack>
+          </Paper>
 
-          <Box sx={{ mt: 1 }}>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-              Attachments
-            </Typography>
-            <Stack spacing={1.25}>
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+            <Box>
+              <Typography variant="subtitle2" fontWeight={900}>
+                Contact
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                How to reach the employee and addresses
+              </Typography>
+            </Box>
+            <Divider sx={{ my: 2 }} />
+            <Stack spacing={2}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  label="Personal Phone Number"
+                  value={form.personal_phone}
+                  onChange={(e) =>
+                    setForm({ ...form, personal_phone: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  size="small"
+                />
+                <TextField
+                  label="Email Address"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  required
+                  fullWidth
+                  size="small"
+                />
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  label="Present Address"
+                  value={form.present_address}
+                  onChange={(e) =>
+                    setForm({ ...form, present_address: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  size="small"
+                />
+                <TextField
+                  label="Permanent Address"
+                  value={form.permanent_address}
+                  onChange={(e) =>
+                    setForm({ ...form, permanent_address: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  size="small"
+                />
+              </Stack>
+            </Stack>
+          </Paper>
+
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+            <Box>
+              <Typography variant="subtitle2" fontWeight={900}>
+                Employment
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Department, role, and work details
+              </Typography>
+            </Box>
+            <Divider sx={{ my: 2 }} />
+            <Stack spacing={2}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  label="Department"
+                  value={form.department}
+                  onChange={(e) =>
+                    setForm({ ...form, department: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  size="small"
+                />
+                <TextField
+                  label="Designation / Role"
+                  value={form.designation}
+                  onChange={(e) =>
+                    setForm({ ...form, designation: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  size="small"
+                />
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  select
+                  label="Employee Type"
+                  value={form.employee_type}
+                  onChange={(e) =>
+                    setForm({ ...form, employee_type: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  size="small"
+                >
+                  <MenuItem value="permanent">Permanent</MenuItem>
+                  <MenuItem value="contract">Contract</MenuItem>
+                  <MenuItem value="intern">Intern</MenuItem>
+                </TextField>
+                <TextField
+                  label="Date of Joining"
+                  type="date"
+                  value={form.date_of_joining}
+                  onChange={(e) =>
+                    setForm({ ...form, date_of_joining: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  size="small"
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  label="Supervisor / Reporting Manager"
+                  value={form.supervisor_name}
+                  onChange={(e) =>
+                    setForm({ ...form, supervisor_name: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  size="small"
+                />
+                <TextField
+                  label="Work Location / Branch"
+                  value={form.work_location}
+                  onChange={(e) =>
+                    setForm({ ...form, work_location: e.target.value })
+                  }
+                  required
+                  fullWidth
+                  size="small"
+                />
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  select
+                  label="Status"
+                  value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  fullWidth
+                  size="small"
+                >
+                  {statusOptions.map((s) => (
+                    <MenuItem key={s} value={s}>
+                      {s}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+            </Stack>
+          </Paper>
+
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={1.5}
+              alignItems={{ xs: "stretch", sm: "center" }}
+              justifyContent="space-between"
+            >
+              <Box>
+                <Typography variant="subtitle2" fontWeight={900}>
+                  Attachments
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  CV, certificates, and supporting files
+                </Typography>
+              </Box>
+              <Chip
+                label={`${attachments.length} file${
+                  attachments.length === 1 ? "" : "s"
+                }`}
+                size="small"
+                sx={{ fontWeight: 800 }}
+              />
+            </Stack>
+            <Divider sx={{ my: 2 }} />
+            <Stack spacing={1.5}>
               <Stack
-                direction={{ xs: "column", sm: "row" }}
+                direction={{ xs: "column", md: "row" }}
                 spacing={1.5}
-                alignItems={{ xs: "stretch", sm: "center" }}
+                alignItems={{ xs: "stretch", md: "center" }}
               >
                 <TextField
                   select
@@ -1580,6 +1881,7 @@ function EditEmployeeDialog({
                   value={attachCategory}
                   onChange={(e) => setAttachCategory(e.target.value)}
                   fullWidth
+                  size="small"
                 >
                   <MenuItem value="cv">CV</MenuItem>
                   <MenuItem value="certificate">Certificate</MenuItem>
@@ -1590,41 +1892,50 @@ function EditEmployeeDialog({
                   value={attachTitle}
                   onChange={(e) => setAttachTitle(e.target.value)}
                   fullWidth
+                  size="small"
                 />
-                <Button
-                  component="label"
-                  variant="outlined"
-                  disabled={attachBusy || loading}
-                  sx={{
-                    borderRadius: 2,
-                    fontWeight: 900,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Choose File
-                  <input
-                    type="file"
-                    hidden
-                    onChange={(e) => setAttachFile(e.target.files?.[0] || null)}
-                  />
-                </Button>
-                <Button
-                  variant="contained"
-                  disabled={!attachFile || attachBusy || loading}
-                  onClick={() => void uploadAttachment()}
-                  sx={{
-                    borderRadius: 2,
-                    fontWeight: 900,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {attachBusy ? "Uploading..." : "Upload"}
-                </Button>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                  <Button
+                    component="label"
+                    variant="outlined"
+                    disabled={attachBusy || loading}
+                    sx={{
+                      borderRadius: 2,
+                      fontWeight: 900,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Choose File
+                    <input
+                      type="file"
+                      hidden
+                      onChange={(e) =>
+                        setAttachFile(e.target.files?.[0] || null)
+                      }
+                    />
+                  </Button>
+                  <Button
+                    variant="contained"
+                    disabled={!attachFile || attachBusy || loading}
+                    onClick={() => void uploadAttachment()}
+                    sx={{
+                      borderRadius: 2,
+                      fontWeight: 900,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {attachBusy ? "Uploading..." : "Upload"}
+                  </Button>
+                </Stack>
               </Stack>
               {attachFile && (
-                <Typography variant="caption" color="text.secondary">
-                  Selected: {attachFile.name}
-                </Typography>
+                <Chip
+                  label={attachFile.name}
+                  onDelete={() => setAttachFile(null)}
+                  deleteIcon={<DeleteIcon />}
+                  size="small"
+                  sx={{ alignSelf: "flex-start", fontWeight: 700 }}
+                />
               )}
               {attachments.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
@@ -1633,109 +1944,155 @@ function EditEmployeeDialog({
               ) : (
                 <Stack spacing={1}>
                   {attachments.map((a) => (
-                    <Stack
+                    <Paper
                       key={a.id}
-                      direction={{ xs: "column", sm: "row" }}
-                      spacing={1.25}
-                      alignItems={{ xs: "stretch", sm: "center" }}
-                      sx={{
-                        p: 1,
-                        borderRadius: 2,
-                        border: "1px solid",
-                        borderColor: "divider",
-                      }}
+                      variant="outlined"
+                      sx={{ p: 1.25, borderRadius: 2 }}
                     >
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="body2" fontWeight={800}>
-                          {a.original_name}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {a.category}
-                          {a.title ? ` • ${a.title}` : ""} •{" "}
-                          {new Date(a.created_at).toLocaleString()}
-                        </Typography>
-                      </Box>
-                      <Stack direction="row" spacing={1}>
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          onClick={() =>
-                            void downloadAttachment(a.id, a.original_name)
-                          }
-                        >
-                          Download
-                        </Button>
-                        <Button
-                          size="small"
-                          color="error"
-                          variant="outlined"
-                          onClick={() => void removeAttachment(a.id)}
-                        >
-                          Delete
-                        </Button>
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1.25}
+                        alignItems={{ xs: "stretch", sm: "center" }}
+                      >
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Tooltip title={a.original_name}>
+                            <Typography variant="body2" fontWeight={800} noWrap>
+                              {a.original_name}
+                            </Typography>
+                          </Tooltip>
+                          <Typography variant="caption" color="text.secondary">
+                            {a.category}
+                            {a.title ? ` • ${a.title}` : ""} •{" "}
+                            {new Date(a.created_at).toLocaleString()}
+                          </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() =>
+                              void downloadAttachment(a.id, a.original_name)
+                            }
+                          >
+                            Download
+                          </Button>
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            onClick={() => void removeAttachment(a.id)}
+                          >
+                            Delete
+                          </Button>
+                        </Stack>
                       </Stack>
-                    </Stack>
+                    </Paper>
                   ))}
                 </Stack>
               )}
             </Stack>
-          </Box>
+          </Paper>
 
-          <Box sx={{ mt: 1 }}>
-            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>
-              Per-device Sync IDs
-            </Typography>
-            {loading ? (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <CircularProgress size={18} />
-                <Typography variant="body2" color="text.secondary">
-                  Loading
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={1.5}
+              alignItems={{ xs: "stretch", sm: "center" }}
+              justifyContent="space-between"
+            >
+              <Box>
+                <Typography variant="subtitle2" fontWeight={900}>
+                  Per-device Sync IDs
                 </Typography>
-              </Stack>
-            ) : devicesSorted.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  Map employee IDs for each biometric device
+                </Typography>
+              </Box>
+              {loading ? (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <CircularProgress size={18} />
+                  <Typography variant="body2" color="text.secondary">
+                    Loading
+                  </Typography>
+                </Stack>
+              ) : (
+                <Chip
+                  label={`${devicesSorted.length} device${
+                    devicesSorted.length === 1 ? "" : "s"
+                  }`}
+                  size="small"
+                  sx={{ fontWeight: 800 }}
+                />
+              )}
+            </Stack>
+            <Divider sx={{ my: 2 }} />
+            {loading ? null : devicesSorted.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
                 No devices found.
               </Typography>
             ) : (
               <Stack spacing={1.25}>
                 {devicesSorted.map((d) => (
-                  <Stack
+                  <Paper
                     key={d.device_id}
-                    direction={{ xs: "column", sm: "row" }}
-                    spacing={1.5}
-                    alignItems={{ xs: "stretch", sm: "center" }}
+                    variant="outlined"
+                    sx={{ p: 1.25, borderRadius: 2 }}
                   >
-                    <Box sx={{ minWidth: { sm: 260 } }}>
-                      <Typography variant="body2" fontWeight={700}>
-                        {d.site_name || d.device_id}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {d.device_id}
-                      </Typography>
-                    </Box>
-                    <TextField
-                      label="Device Employee ID"
-                      value={deviceSyncIds[d.device_id] ?? ""}
-                      onChange={(e) =>
-                        setDeviceSyncIds((prev) => ({
-                          ...prev,
-                          [d.device_id]: e.target.value,
-                        }))
-                      }
-                      fullWidth
-                    />
-                  </Stack>
+                    <Stack
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1.5}
+                      alignItems={{ xs: "stretch", sm: "center" }}
+                    >
+                      <Box sx={{ minWidth: { sm: 260 } }}>
+                        <Typography variant="body2" fontWeight={800}>
+                          {d.site_name || d.device_id}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {d.device_id}
+                        </Typography>
+                      </Box>
+                      <TextField
+                        label="Device Employee ID"
+                        value={deviceSyncIds[d.device_id] ?? ""}
+                        onChange={(e) =>
+                          setDeviceSyncIds((prev) => ({
+                            ...prev,
+                            [d.device_id]: e.target.value,
+                          }))
+                        }
+                        fullWidth
+                        size="small"
+                      />
+                    </Stack>
+                  </Paper>
                 ))}
               </Stack>
             )}
-          </Box>
-        </Box>
+          </Paper>
+        </Stack>
       </DialogContent>
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0] || null;
+          e.target.value = "";
+          if (!f) return;
+          void uploadProfilePhoto(f);
+        }}
+      />
       <DialogActions sx={{ p: 3 }}>
         <Button onClick={onClose} color="inherit" sx={{ mr: 1 }}>
           Cancel
         </Button>
-        <Button variant="contained" onClick={submit} disabled={busy || loading}>
+        <Button
+          variant="contained"
+          onClick={submit}
+          disabled={busy || loading}
+          size="large"
+        >
           {busy ? "Saving..." : "Save"}
         </Button>
       </DialogActions>
@@ -1795,6 +2152,194 @@ function AttendanceDialog({
   const theme = useTheme();
   const lastRefreshAtRef = useRef(0);
   const role = getUser()?.role || "";
+  const canManageLeaveTypes = role === "hr_admin" || role === "tenant_owner";
+  const canManageLeaveAllocations =
+    role === "hr_admin" || role === "tenant_owner";
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+  const [allocYear, setAllocYear] = useState(() => new Date().getFullYear());
+  const [allocLoading, setAllocLoading] = useState(false);
+  const [allocError, setAllocError] = useState("");
+  const [allocOk, setAllocOk] = useState("");
+  const [allocBusyType, setAllocBusyType] = useState<string | null>(null);
+  const [allocations, setAllocations] = useState<LeaveAllocationRow[]>([]);
+  const [allocDraftByType, setAllocDraftByType] = useState<
+    Record<string, string>
+  >({});
+
+  const selectableLeaveTypes = useMemo<LeaveType[]>(() => {
+    const normalized = leaveTypes
+      .map((t) => {
+        const code = String(t.code || "").trim();
+        const name = String(t.name || "").trim();
+        const active = t.active === 0 || t.active === false ? 0 : 1;
+        const sort_order = Number.isFinite(Number(t.sort_order))
+          ? Number(t.sort_order)
+          : 0;
+        return { ...t, code, name, active, sort_order };
+      })
+      .filter((t) => t.code !== "" && t.name !== "")
+      .sort((a, b) => {
+        const so = Number(a.sort_order) - Number(b.sort_order);
+        if (so !== 0) return so;
+        return String(a.name).localeCompare(String(b.name));
+      });
+    if (normalized.length > 0) return normalized;
+    return [
+      { code: "casual", name: "Casual", active: 1 },
+      { code: "sick", name: "Sick", active: 1 },
+      { code: "annual", name: "Annual", active: 1 },
+      { code: "unpaid", name: "Unpaid", active: 1 },
+    ];
+  }, [leaveTypes]);
+
+  const leaveTypeNameByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of selectableLeaveTypes) {
+      const code = String(t.code || "")
+        .trim()
+        .toLowerCase();
+      const name = String(t.name || "").trim();
+      if (code && name) m.set(code, name);
+    }
+    return m;
+  }, [selectableLeaveTypes]);
+
+  const allocationRows = useMemo<LeaveAllocationRow[]>(() => {
+    if (allocations.length > 0) return allocations;
+    if (selectableLeaveTypes.length === 0) return [];
+    return selectableLeaveTypes
+      .map((t) => {
+        const code = String(t.code || "")
+          .trim()
+          .toLowerCase();
+        if (!code) return null;
+        return {
+          employee_id: Number(employee.id),
+          year: allocYear,
+          leave_type: code,
+          leave_type_name: String(t.name || code),
+          allocated_days: 0,
+          used_days: 0,
+          remaining_days: 0,
+        };
+      })
+      .filter((v): v is LeaveAllocationRow => v !== null);
+  }, [allocYear, allocations, employee.id, selectableLeaveTypes]);
+
+  const formatLeaveTypeLabel = useCallback(
+    (raw: unknown) => {
+      const code = String(raw ?? "").trim();
+      if (!code) return "leave";
+      return leaveTypeNameByCode.get(code.toLowerCase()) || code;
+    },
+    [leaveTypeNameByCode]
+  );
+
+  const fetchLeaveTypes = useCallback(async () => {
+    try {
+      const qs = new URLSearchParams();
+      if (canManageLeaveTypes) qs.set("include_inactive", "1");
+      const suffix = qs.toString();
+      const url = suffix ? `/api/leave_types?${suffix}` : "/api/leave_types";
+      const res = await api.get(url);
+      setLeaveTypes(
+        Array.isArray(res.data?.leave_types)
+          ? (res.data.leave_types as LeaveType[])
+          : []
+      );
+    } catch {
+      setLeaveTypes([]);
+    }
+  }, [canManageLeaveTypes]);
+
+  const fetchLeaveAllocations = useCallback(async () => {
+    if (!canManageLeaveAllocations) return;
+    setAllocLoading(true);
+    setAllocError("");
+    setAllocOk("");
+    try {
+      const res = await api.get(
+        `/api/leave_allocations?employee_id=${encodeURIComponent(
+          employee.id
+        )}&year=${encodeURIComponent(String(allocYear))}`
+      );
+      const rows = Array.isArray(res.data?.allocations)
+        ? (res.data.allocations as LeaveAllocationRow[])
+        : [];
+      setAllocations(rows);
+      setAllocDraftByType((prev) => {
+        const next = { ...prev };
+        for (const r of rows) {
+          const k = String(r.leave_type || "").toLowerCase();
+          if (!k) continue;
+          if (!(k in next)) next[k] = String(r.allocated_days ?? 0);
+        }
+        return next;
+      });
+    } catch (err: unknown) {
+      setAllocations([]);
+      setAllocError(getErrorMessage(err, "Failed to load allocations"));
+    } finally {
+      setAllocLoading(false);
+    }
+  }, [allocYear, canManageLeaveAllocations, employee.id]);
+
+  const saveAllocation = useCallback(
+    async (leaveType: string) => {
+      const code = String(leaveType || "")
+        .trim()
+        .toLowerCase();
+      if (!code) return;
+      setAllocBusyType(code);
+      setAllocError("");
+      setAllocOk("");
+      try {
+        const raw = allocDraftByType[code];
+        const n = raw === undefined || raw === null ? 0 : Number(raw);
+        const allocatedDays = Number.isFinite(n) ? n : 0;
+        await api.post("/api/leave_allocations", {
+          employee_id: employee.id,
+          year: allocYear,
+          leave_type: code,
+          allocated_days: allocatedDays,
+        });
+        setAllocOk("Allocation saved");
+        await fetchLeaveAllocations();
+      } catch (err: unknown) {
+        setAllocError(getErrorMessage(err, "Failed to save allocation"));
+      } finally {
+        setAllocBusyType(null);
+      }
+    },
+    [allocDraftByType, allocYear, employee.id, fetchLeaveAllocations]
+  );
+
+  const clearAllocation = useCallback(
+    async (leaveType: string) => {
+      const code = String(leaveType || "")
+        .trim()
+        .toLowerCase();
+      if (!code) return;
+      setAllocBusyType(code);
+      setAllocError("");
+      setAllocOk("");
+      try {
+        await api.post("/api/leave_allocations/delete", {
+          employee_id: employee.id,
+          year: allocYear,
+          leave_type: code,
+        });
+        setAllocDraftByType((p) => ({ ...p, [code]: "0" }));
+        setAllocOk("Allocation cleared");
+        await fetchLeaveAllocations();
+      } catch (err: unknown) {
+        setAllocError(getErrorMessage(err, "Failed to clear allocation"));
+      } finally {
+        setAllocBusyType(null);
+      }
+    },
+    [allocYear, employee.id, fetchLeaveAllocations]
+  );
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1817,6 +2362,16 @@ function AttendanceDialog({
   useEffect(() => {
     if (open) fetchData();
   }, [fetchData, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    void fetchLeaveTypes();
+  }, [fetchLeaveTypes, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    void fetchLeaveAllocations();
+  }, [fetchLeaveAllocations, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -1854,6 +2409,30 @@ function AttendanceDialog({
       window.clearInterval(pollId);
     };
   }, [fetchData, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (selectableLeaveTypes.length === 0) return;
+    const codes = new Set(
+      selectableLeaveTypes.map((t) => String(t.code || ""))
+    );
+    setLeaveForm((p) => {
+      const cur = String(p.leave_type || "").trim();
+      const next = codes.has(cur)
+        ? cur
+        : String(selectableLeaveTypes[0]?.code || "");
+      if (!next || cur === next) return p;
+      return { ...p, leave_type: next };
+    });
+    setApplyForm((p) => {
+      const cur = String(p.leave_type || "").trim();
+      const next = codes.has(cur)
+        ? cur
+        : String(selectableLeaveTypes[0]?.code || "");
+      if (!next || cur === next) return p;
+      return { ...p, leave_type: next };
+    });
+  }, [open, selectableLeaveTypes]);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -2056,12 +2635,14 @@ function AttendanceDialog({
     setLeaveForm({
       reason: (leave?.reason ?? "") || "",
       status: (leave?.status ?? "pending") || "pending",
-      leave_type: (leave?.leave_type ?? "casual") || "casual",
+      leave_type:
+        String(leave?.leave_type || "").trim() ||
+        String(selectableLeaveTypes[0]?.code || "casual"),
       day_part: (leave?.day_part ?? "full") || "full",
     });
     setLeaveError("");
     setLeaveOk("");
-  }, [records.leaves, selectedDate]);
+  }, [records.leaves, selectableLeaveTypes, selectedDate]);
 
   useEffect(() => {
     if (!selectedDate) return;
@@ -2409,6 +2990,156 @@ function AttendanceDialog({
             </Box>
           )}
 
+          {canManageLeaveAllocations ? (
+            <Paper
+              variant="outlined"
+              sx={{ mt: 3, p: 2, borderRadius: 3, bgcolor: "background.paper" }}
+            >
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1.5}
+                alignItems={{ xs: "stretch", sm: "center" }}
+                justifyContent="space-between"
+              >
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={900}>
+                    Leave Allocations
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Set yearly allocations per leave type.
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <TextField
+                    label="Year"
+                    type="number"
+                    value={allocYear}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const n = raw === "" ? NaN : Number(raw);
+                      if (Number.isFinite(n)) setAllocYear(Math.trunc(n));
+                    }}
+                    size="small"
+                    sx={{ width: 140 }}
+                    inputProps={{ min: 1970, max: 2200 }}
+                  />
+                  <Button
+                    variant="outlined"
+                    onClick={() => void fetchLeaveAllocations()}
+                    disabled={allocLoading}
+                  >
+                    {allocLoading ? "Loading..." : "Refresh"}
+                  </Button>
+                </Stack>
+              </Stack>
+              <Divider sx={{ my: 2 }} />
+
+              {allocError ? (
+                <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                  {allocError}
+                </Alert>
+              ) : null}
+              {allocOk ? (
+                <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+                  {allocOk}
+                </Alert>
+              ) : null}
+
+              {allocationRows.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No allocations found.
+                </Typography>
+              ) : (
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Leave Type</TableCell>
+                        <TableCell align="right">Allocated</TableCell>
+                        <TableCell align="right">Used</TableCell>
+                        <TableCell align="right">Remaining</TableCell>
+                        <TableCell align="right">Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {allocationRows
+                        .slice()
+                        .sort((a, b) =>
+                          String(
+                            a.leave_type_name || a.leave_type
+                          ).localeCompare(
+                            String(b.leave_type_name || b.leave_type)
+                          )
+                        )
+                        .map((row) => {
+                          const code = String(row.leave_type || "")
+                            .trim()
+                            .toLowerCase();
+                          const busy = allocBusyType === code;
+                          const draft =
+                            allocDraftByType[code] ??
+                            String(row.allocated_days ?? 0);
+                          return (
+                            <TableRow key={`${row.year}-${code}`}>
+                              <TableCell sx={{ fontWeight: 800 }}>
+                                {row.leave_type_name || row.leave_type}
+                              </TableCell>
+                              <TableCell align="right">
+                                <TextField
+                                  value={draft}
+                                  onChange={(e) =>
+                                    setAllocDraftByType((p) => ({
+                                      ...p,
+                                      [code]: e.target.value,
+                                    }))
+                                  }
+                                  size="small"
+                                  type="number"
+                                  inputProps={{ min: 0, step: 0.5 }}
+                                  sx={{ width: 120 }}
+                                />
+                              </TableCell>
+                              <TableCell align="right">
+                                {Number(row.used_days ?? 0).toFixed(1)}
+                              </TableCell>
+                              <TableCell align="right">
+                                {Number(row.remaining_days ?? 0).toFixed(1)}
+                              </TableCell>
+                              <TableCell align="right">
+                                <Stack
+                                  direction="row"
+                                  spacing={1}
+                                  justifyContent="flex-end"
+                                >
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    disabled={busy}
+                                    onClick={() => void saveAllocation(code)}
+                                  >
+                                    {busy ? "Saving..." : "Save"}
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="inherit"
+                                    disabled={busy}
+                                    onClick={() => void clearAllocation(code)}
+                                  >
+                                    Clear
+                                  </Button>
+                                </Stack>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Paper>
+          ) : null}
+
           {/* Legend */}
           <Stack direction="row" spacing={3} justifyContent="center" mt={4}>
             <Box display="flex" alignItems="center" gap={1}>
@@ -2504,7 +3235,7 @@ function AttendanceDialog({
             {selectedLeave ? (
               <Chip
                 label={`Leave: ${(
-                  selectedLeave.leave_type || "leave"
+                  formatLeaveTypeLabel(selectedLeave.leave_type) || "leave"
                 ).toString()} • ${(
                   selectedLeave.day_part || "full"
                 ).toString()}`}
@@ -2611,9 +3342,13 @@ function AttendanceDialog({
                 fullWidth
                 select
               >
-                {["casual", "sick", "annual", "unpaid"].map((t) => (
-                  <MenuItem key={t} value={t}>
-                    {t}
+                {selectableLeaveTypes.map((t) => (
+                  <MenuItem
+                    key={String(t.code)}
+                    value={String(t.code)}
+                    disabled={Number(t.active) === 0}
+                  >
+                    {String(t.name || t.code)}
                   </MenuItem>
                 ))}
               </TextField>
@@ -2770,9 +3505,13 @@ function AttendanceDialog({
               fullWidth
               select
             >
-              {["casual", "sick", "annual", "unpaid"].map((t) => (
-                <MenuItem key={t} value={t}>
-                  {t}
+              {selectableLeaveTypes.map((t) => (
+                <MenuItem
+                  key={String(t.code)}
+                  value={String(t.code)}
+                  disabled={Number(t.active) === 0}
+                >
+                  {String(t.name || t.code)}
                 </MenuItem>
               ))}
             </TextField>

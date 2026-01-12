@@ -51,6 +51,21 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+CREATE TABLE IF NOT EXISTS leave_types (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  code VARCHAR(16) NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  is_paid BOOLEAN NOT NULL DEFAULT 1,
+  requires_document BOOLEAN NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT 1,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_leave_types_tenant_code (tenant_id, code),
+  INDEX idx_leave_types_tenant_active (tenant_id, active, sort_order),
+  CONSTRAINT fk_leave_types_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS holidays (
   id INT AUTO_INCREMENT PRIMARY KEY,
   tenant_id INT NOT NULL,

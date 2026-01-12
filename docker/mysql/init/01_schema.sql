@@ -4,8 +4,34 @@ CREATE TABLE IF NOT EXISTS tenants (
   subdomain VARCHAR(64) NOT NULL UNIQUE,
   name VARCHAR(128) NOT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'active',
+  note TEXT NULL,
+  logo_path VARCHAR(255) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+SET @tenants_has_note := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'tenants'
+    AND column_name = 'note'
+);
+SET @sql := IF(@tenants_has_note = 0, 'ALTER TABLE tenants ADD COLUMN note TEXT NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @tenants_has_logo_path := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'tenants'
+    AND column_name = 'logo_path'
+);
+SET @sql := IF(@tenants_has_logo_path = 0, 'ALTER TABLE tenants ADD COLUMN logo_path VARCHAR(255) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 CREATE TABLE IF NOT EXISTS shifts (
   id INT AUTO_INCREMENT PRIMARY KEY,

@@ -37,13 +37,79 @@ class AttendanceController
         return 'pending';
     }
 
-    private function normalizeLeaveType(?string $raw): string
+    private function defaultLeaveTypes(): array
     {
-        if (!is_string($raw)) return 'casual';
-        $v = strtolower(trim($raw));
-        if ($v === '') return 'casual';
-        $allowed = ['casual' => true, 'sick' => true, 'annual' => true, 'unpaid' => true];
-        return isset($allowed[$v]) ? $v : 'casual';
+        return [
+            ['code' => 'casual', 'name' => 'Casual', 'is_paid' => 1, 'requires_document' => 0, 'active' => 1, 'sort_order' => 10],
+            ['code' => 'sick', 'name' => 'Sick', 'is_paid' => 1, 'requires_document' => 0, 'active' => 1, 'sort_order' => 20],
+            ['code' => 'annual', 'name' => 'Annual', 'is_paid' => 1, 'requires_document' => 0, 'active' => 1, 'sort_order' => 30],
+            ['code' => 'unpaid', 'name' => 'Unpaid', 'is_paid' => 0, 'requires_document' => 0, 'active' => 1, 'sort_order' => 40],
+        ];
+    }
+
+    private function getLeaveTypes($pdo, int $tenantId, bool $includeInactive = false): array
+    {
+        try {
+            $where = $includeInactive ? '' : ' AND active=1';
+            $stmt = $pdo->prepare("SELECT id, tenant_id, code, name, is_paid, requires_document, active, sort_order, created_at FROM leave_types WHERE tenant_id=?$where ORDER BY sort_order ASC, name ASC");
+            $stmt->execute([(int)$tenantId]);
+            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            if (is_array($rows) && count($rows) > 0) return $rows;
+        } catch (\Exception $e) {
+        }
+        $fallback = $this->defaultLeaveTypes();
+        if (!$includeInactive) {
+            $fallback = array_values(array_filter($fallback, fn($t) => (int)($t['active'] ?? 0) === 1));
+        }
+        return $fallback;
+    }
+
+    private function getTenantLeaveSettings($pdo, int $tenantId): array
+    {
+        try {
+            $stmt = $pdo->prepare('SELECT auto_approve FROM tenant_leave_settings WHERE tenant_id=? LIMIT 1');
+            $stmt->execute([(int)$tenantId]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if ($row) {
+                return [
+                    'auto_approve' => (int)($row['auto_approve'] ?? 0) ? 1 : 0,
+                ];
+            }
+        } catch (\Exception $e) {
+        }
+        return [
+            'auto_approve' => 0,
+        ];
+    }
+
+    private function resolveLeaveType($pdo, int $tenantId, $raw): ?string
+    {
+        $v = is_string($raw) ? strtolower(trim($raw)) : '';
+        if ($v === '') $v = 'casual';
+
+        $allowed = [];
+        foreach ($this->getLeaveTypes($pdo, $tenantId, false) as $t) {
+            $code = strtolower(trim((string)($t['code'] ?? '')));
+            if ($code !== '') $allowed[$code] = true;
+        }
+
+        if (isset($allowed[$v])) return $v;
+        return null;
+    }
+
+    private function resolveLeaveTypeAny($pdo, int $tenantId, $raw): ?string
+    {
+        $v = is_string($raw) ? strtolower(trim($raw)) : '';
+        if ($v === '') return null;
+
+        $allowed = [];
+        foreach ($this->getLeaveTypes($pdo, $tenantId, true) as $t) {
+            $code = strtolower(trim((string)($t['code'] ?? '')));
+            if ($code !== '') $allowed[$code] = true;
+        }
+
+        if (isset($allowed[$v])) return $v;
+        return null;
     }
 
     private function normalizeDayPart(?string $raw): string
@@ -166,7 +232,9 @@ class AttendanceController
         $v = strtolower(trim($raw));
         if ($v === '') return null;
         if (in_array($v, ['face', 'selfie', 'photo', 'camera'], true)) return 'face';
-        if (in_array($v, ['fingerprint', 'finger', 'thumb', 'thumbprint'], true)) return 'fingerprint';
+        if (in_array($v, ['fingerprint', 'finger', 'thumb', 'thumbprint'], true)) {
+            throw new \Exception('Fingerprint biometrics not supported');
+        }
         return null;
     }
 
@@ -252,8 +320,51 @@ class AttendanceController
         return hash('sha256', $imageBytes);
     }
 
+    private function faceApiUrl(): ?string
+    {
+        $raw = getenv('FACE_API_URL') ?: '';
+        $url = trim((string)$raw);
+        if ($url === '') return null;
+        return rtrim($url, '/');
+    }
+
+    private function callFaceApiJson(string $path, array $payload): array
+    {
+        $base = $this->faceApiUrl();
+        if (!$base) throw new \Exception('Face recognition unavailable');
+
+        $url = $base . $path;
+        $body = json_encode($payload);
+        if (!is_string($body)) throw new \Exception('Face recognition unavailable');
+
+        $ctx = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Content-Type: application/json\r\nAccept: application/json\r\n",
+                'content' => $body,
+                'ignore_errors' => true,
+                'timeout' => 12,
+            ],
+        ]);
+
+        $raw = @file_get_contents($url, false, $ctx);
+        if (!is_string($raw) || $raw === '') throw new \Exception('Face recognition unavailable');
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) throw new \Exception('Face recognition unavailable');
+        return $decoded;
+    }
+
     private function assertFaceDetected(string $imageBytes): void
     {
+        $apiUrl = $this->faceApiUrl();
+        if ($apiUrl) {
+            $res = $this->callFaceApiJson('/faces/count', ['image_b64' => base64_encode($imageBytes)]);
+            $faces = $res['faces'] ?? null;
+            if (!is_int($faces) && !is_numeric($faces)) throw new \Exception('Face recognition unavailable');
+            if ((int)$faces < 1) throw new \Exception('No face detected in image');
+            return;
+        }
+
         $tmp = tempnam(sys_get_temp_dir(), 'att_face_');
         if (!$tmp) throw new \Exception('Face recognition unavailable');
         $path = $tmp . '.jpg';
@@ -296,6 +407,18 @@ class AttendanceController
 
     private function computeFaceDistance(string $enrolledImageBytes, string $probeImageBytes): float
     {
+        $apiUrl = $this->faceApiUrl();
+        if ($apiUrl) {
+            $res = $this->callFaceApiJson('/faces/distance', [
+                'image1_b64' => base64_encode($enrolledImageBytes),
+                'image2_b64' => base64_encode($probeImageBytes),
+            ]);
+            if (isset($res['distance']) && is_numeric($res['distance'])) return (float)$res['distance'];
+            if (($res['error'] ?? null) === 'no_face_enrolled') throw new \Exception('No face detected in enrolled template');
+            if (($res['error'] ?? null) === 'no_face_probe') throw new \Exception('No face detected in image');
+            throw new \Exception('Face recognition unavailable');
+        }
+
         $tmp1 = tempnam(sys_get_temp_dir(), 'att_face_enr_');
         $tmp2 = tempnam(sys_get_temp_dir(), 'att_face_prb_');
         if (!$tmp1 || !$tmp2) throw new \Exception('Face recognition unavailable');
@@ -799,7 +922,7 @@ class AttendanceController
             $r = $this->store->clockIn($employeeId, $tenantId);
             $rid = isset($r['id']) ? (int)$r['id'] : null;
             if ($rid) {
-                $m = $modality === 'face' ? 'face' : 'thumb';
+                $m = 'face';
                 $upd = $pdo->prepare('UPDATE attendance_records SET clock_in_method=?, clock_in_lat=?, clock_in_lng=?, clock_in_accuracy_m=? WHERE id=?');
                 $upd->execute([$m, $lat, $lng, $acc, $rid]);
                 $r['clock_in_method'] = $m;
@@ -850,7 +973,7 @@ class AttendanceController
             $r = $this->store->clockOut($employeeId, $tenantId);
             $rid = isset($r['id']) ? (int)$r['id'] : null;
             if ($rid) {
-                $m = $modality === 'face' ? 'face' : 'thumb';
+                $m = 'face';
                 $upd = $pdo->prepare('UPDATE attendance_records SET clock_out_method=?, clock_out_lat=?, clock_out_lng=?, clock_out_accuracy_m=? WHERE id=?');
                 $upd->execute([$m, $lat, $lng, $acc, $rid]);
                 $r['clock_out_method'] = $m;
@@ -877,13 +1000,13 @@ class AttendanceController
                 echo json_encode(['error' => 'Unauthorized']);
                 return;
             }
-            if (($user['role'] ?? null) === 'employee') {
-                $mapped = (int)($user['employee_id'] ?? 0);
-                if ($mapped <= 0) throw new \Exception('Employee account not linked');
-                $in['employee_id'] = $mapped;
-            } else {
-                \App\Core\Auth::requireRole('perm:employees.write');
+            $role = (string)($user['role'] ?? '');
+            if ($role === 'employee' || $role === 'superadmin') {
+                http_response_code(403);
+                echo json_encode(['error' => 'Forbidden']);
+                return;
             }
+            \App\Core\Auth::requireRole('perm:employees.write');
 
             $pdo = \App\Core\Database::get();
             if (!$pdo) throw new \Exception('Database unavailable');
@@ -1610,7 +1733,12 @@ class AttendanceController
 
         $employeeId = (int)($in['employee_id'] ?? 0);
         $date = $this->normalizeDate($in['date'] ?? null);
-        $leaveType = $this->normalizeLeaveType($in['leave_type'] ?? null);
+        $leaveType = $this->resolveLeaveType($pdo, (int)$tenantId, $in['leave_type'] ?? null);
+        if (!$leaveType) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid leave_type']);
+            return;
+        }
         $dayPart = $this->normalizeDayPart($in['day_part'] ?? null);
         $reason = trim((string)($in['reason'] ?? ''));
         $status = $this->normalizeLeaveStatus($in['status'] ?? null);
@@ -1715,7 +1843,14 @@ class AttendanceController
             }
         }
 
-        $newType = $canManage && array_key_exists('leave_type', $in) ? $this->normalizeLeaveType($in['leave_type'] ?? null) : $this->normalizeLeaveType($cur['leave_type'] ?? null);
+        $newType = $canManage && array_key_exists('leave_type', $in)
+            ? $this->resolveLeaveType($pdo, (int)$tenantId, $in['leave_type'] ?? null)
+            : $this->resolveLeaveType($pdo, (int)$tenantId, $cur['leave_type'] ?? null);
+        if (!$newType) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid leave_type']);
+            return;
+        }
         $newDayPart = $canManage && array_key_exists('day_part', $in) ? $this->normalizeDayPart($in['day_part'] ?? null) : $this->normalizeDayPart($cur['day_part'] ?? null);
         $newReason = $canManage && array_key_exists('reason', $in) ? trim((string)($in['reason'] ?? '')) : (string)($cur['reason'] ?? '');
         $newStatus = array_key_exists('status', $in) ? $this->normalizeLeaveStatus($in['status'] ?? null) : (string)($cur['status'] ?? 'approved');
@@ -1787,11 +1922,20 @@ class AttendanceController
         }
         $start = $this->normalizeDate($in['start_date'] ?? null);
         $end = $this->normalizeDate($in['end_date'] ?? null);
-        $leaveType = $this->normalizeLeaveType($in['leave_type'] ?? null);
+        $leaveType = $this->resolveLeaveType($pdo, (int)$tenantId, $in['leave_type'] ?? null);
+        if (!$leaveType) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid leave_type']);
+            return;
+        }
         $dayPart = $this->normalizeDayPart($in['day_part'] ?? null);
         $reason = trim((string)($in['reason'] ?? ''));
         $status = $this->normalizeLeaveStatus($in['status'] ?? null);
         if (($user['role'] ?? null) === 'employee' && !$canManage) $status = 'pending';
+        if (($user['role'] ?? null) === 'employee' && !$canManage) {
+            $settings = $this->getTenantLeaveSettings($pdo, (int)$tenantId);
+            if ((int)($settings['auto_approve'] ?? 0) === 1) $status = 'approved';
+        }
 
         if ($employeeId <= 0 || !$start || !$end) {
             http_response_code(400);
@@ -1854,6 +1998,491 @@ class AttendanceController
         }
 
         echo json_encode(['created' => $created, 'skipped' => $skipped, 'dates' => $dates]);
+    }
+
+    public function leaveSettingsGet()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        if (!\App\Core\Auth::hasPermission($user, 'leaves.manage')) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        echo json_encode(['settings' => $this->getTenantLeaveSettings($pdo, (int)$tenantId)]);
+    }
+
+    public function leaveSettingsSet()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        if (!\App\Core\Auth::hasPermission($user, 'leaves.manage')) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+        $autoApprove = (int)($in['auto_approve'] ?? 0) ? 1 : 0;
+
+        try {
+            $stmt = $pdo->prepare('INSERT INTO tenant_leave_settings(tenant_id, auto_approve) VALUES(?, ?) ON DUPLICATE KEY UPDATE auto_approve=VALUES(auto_approve)');
+            $stmt->execute([(int)$tenantId, $autoApprove]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to save settings']);
+            return;
+        }
+
+        echo json_encode(['settings' => ['auto_approve' => $autoApprove]]);
+    }
+
+    public function leaveAllocationsList()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        if (!\App\Core\Auth::hasPermission($user, 'leaves.manage')) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $employeeId = (int)($_GET['employee_id'] ?? 0);
+        if ($employeeId <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'employee_id required']);
+            return;
+        }
+
+        $yearRaw = $_GET['year'] ?? date('Y');
+        $year = is_numeric($yearRaw) ? (int)$yearRaw : 0;
+        if ($year < 1970 || $year > 2200) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid year']);
+            return;
+        }
+
+        $empCheck = $pdo->prepare('SELECT 1 FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+        $empCheck->execute([(int)$tenantId, (int)$employeeId]);
+        if (!$empCheck->fetchColumn()) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Employee not found']);
+            return;
+        }
+
+        $start = sprintf('%04d-01-01', $year);
+        $end = sprintf('%04d-12-31', $year);
+
+        $workingDays = $this->getEmployeeWorkingDays($pdo, (int)$tenantId, (int)$employeeId);
+        $workingDaysSet = [];
+        foreach ($workingDays as $d) $workingDaysSet[strtolower($d)] = true;
+
+        $hStmt = $pdo->prepare('SELECT date FROM holidays WHERE tenant_id=? AND date BETWEEN ? AND ?');
+        $hStmt->execute([(int)$tenantId, $start, $end]);
+        $holidaySet = [];
+        foreach ($hStmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+            $d = (string)($r['date'] ?? '');
+            if ($d !== '') $holidaySet[$d] = true;
+        }
+
+        $usedByType = [];
+        $lStmt = $pdo->prepare("SELECT date, leave_type, day_part FROM leaves WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? AND status='approved'");
+        $lStmt->execute([(int)$tenantId, (int)$employeeId, $start, $end]);
+        $leaves = $lStmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        foreach ($leaves as $l) {
+            $dateStr = (string)($l['date'] ?? '');
+            if ($dateStr === '') continue;
+            if (isset($holidaySet[$dateStr])) continue;
+            $dowKey = strtolower((new \DateTimeImmutable($dateStr, new \DateTimeZone('Asia/Dhaka')))->format('D'));
+            if (!isset($workingDaysSet[$dowKey])) continue;
+
+            $type = strtolower(trim((string)($l['leave_type'] ?? '')));
+            if ($type === '') continue;
+            $dayPart = strtolower((string)($l['day_part'] ?? 'full'));
+            $amount = $dayPart === 'full' ? 1.0 : 0.5;
+            if (!isset($usedByType[$type])) $usedByType[$type] = 0.0;
+            $usedByType[$type] += $amount;
+        }
+
+        $allocStmt = $pdo->prepare('SELECT leave_type, allocated_days FROM leave_allocations WHERE tenant_id=? AND employee_id=? AND year=?');
+        $allocStmt->execute([(int)$tenantId, (int)$employeeId, (int)$year]);
+        $allocMap = [];
+        foreach ($allocStmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+            $t = strtolower(trim((string)($r['leave_type'] ?? '')));
+            if ($t === '') continue;
+            $allocMap[$t] = (float)($r['allocated_days'] ?? 0);
+        }
+
+        $types = $this->getLeaveTypes($pdo, (int)$tenantId, true);
+        $typeNameByCode = [];
+        $codes = [];
+        foreach ($types as $t) {
+            $code = strtolower(trim((string)($t['code'] ?? '')));
+            if ($code === '') continue;
+            $codes[$code] = true;
+            $typeNameByCode[$code] = (string)($t['name'] ?? $code);
+        }
+        foreach (array_keys($allocMap) as $code) $codes[$code] = true;
+        foreach (array_keys($usedByType) as $code) $codes[$code] = true;
+
+        $out = [];
+        foreach (array_keys($codes) as $code) {
+            $allocated = (float)($allocMap[$code] ?? 0);
+            $used = (float)($usedByType[$code] ?? 0);
+            $remaining = $allocated - $used;
+            $out[] = [
+                'employee_id' => (int)$employeeId,
+                'year' => (int)$year,
+                'leave_type' => $code,
+                'leave_type_name' => (string)($typeNameByCode[$code] ?? $code),
+                'allocated_days' => $allocated,
+                'used_days' => $used,
+                'remaining_days' => $remaining,
+            ];
+        }
+
+        usort($out, fn($a, $b) => strcmp((string)$a['leave_type'], (string)$b['leave_type']));
+        echo json_encode(['allocations' => $out]);
+    }
+
+    public function leaveAllocationsUpsert()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        if (!\App\Core\Auth::hasPermission($user, 'leaves.manage')) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+
+        $employeeId = (int)($in['employee_id'] ?? 0);
+        $year = is_numeric($in['year'] ?? null) ? (int)$in['year'] : 0;
+        $leaveType = $this->resolveLeaveTypeAny($pdo, (int)$tenantId, $in['leave_type'] ?? null);
+        $allocatedDays = is_numeric($in['allocated_days'] ?? null) ? (float)$in['allocated_days'] : null;
+
+        if ($employeeId <= 0 || $year < 1970 || $year > 2200 || !$leaveType || $allocatedDays === null) {
+            http_response_code(400);
+            echo json_encode(['error' => 'employee_id, year, leave_type, allocated_days required']);
+            return;
+        }
+        if ($allocatedDays < 0) $allocatedDays = 0.0;
+
+        $empCheck = $pdo->prepare('SELECT 1 FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+        $empCheck->execute([(int)$tenantId, (int)$employeeId]);
+        if (!$empCheck->fetchColumn()) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Employee not found']);
+            return;
+        }
+
+        try {
+            $stmt = $pdo->prepare('INSERT INTO leave_allocations(tenant_id, employee_id, leave_type, year, allocated_days) VALUES(?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE allocated_days=VALUES(allocated_days)');
+            $stmt->execute([(int)$tenantId, (int)$employeeId, $leaveType, (int)$year, $allocatedDays]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to save allocation']);
+            return;
+        }
+
+        echo json_encode([
+            'allocation' => [
+                'employee_id' => (int)$employeeId,
+                'year' => (int)$year,
+                'leave_type' => $leaveType,
+                'allocated_days' => $allocatedDays,
+            ],
+        ]);
+    }
+
+    public function leaveAllocationsDelete()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        if (!\App\Core\Auth::hasPermission($user, 'leaves.manage')) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+
+        $employeeId = (int)($in['employee_id'] ?? 0);
+        $year = is_numeric($in['year'] ?? null) ? (int)$in['year'] : 0;
+        $leaveType = $this->resolveLeaveTypeAny($pdo, (int)$tenantId, $in['leave_type'] ?? null);
+
+        if ($employeeId <= 0 || $year < 1970 || $year > 2200 || !$leaveType) {
+            http_response_code(400);
+            echo json_encode(['error' => 'employee_id, year, leave_type required']);
+            return;
+        }
+
+        $stmt = $pdo->prepare('DELETE FROM leave_allocations WHERE tenant_id=? AND employee_id=? AND leave_type=? AND year=?');
+        $stmt->execute([(int)$tenantId, (int)$employeeId, $leaveType, (int)$year]);
+        echo json_encode(['ok' => true]);
+    }
+
+    public function leaveTypesList()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $canManage = \App\Core\Auth::hasPermission($user, 'leaves.manage');
+        $includeInactive = $canManage && (($_GET['include_inactive'] ?? null) === '1');
+        if ($canManage && $includeInactive) {
+            try {
+                $cntStmt = $pdo->prepare('SELECT COUNT(*) FROM leave_types WHERE tenant_id=?');
+                $cntStmt->execute([(int)$tenantId]);
+                $count = (int)$cntStmt->fetchColumn();
+                if ($count <= 0) {
+                    $ins = $pdo->prepare('INSERT INTO leave_types(tenant_id, code, name, is_paid, requires_document, active, sort_order) VALUES(?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), is_paid=VALUES(is_paid), requires_document=VALUES(requires_document), active=VALUES(active), sort_order=VALUES(sort_order)');
+                    foreach ($this->defaultLeaveTypes() as $t) {
+                        $code = strtolower(trim((string)($t['code'] ?? '')));
+                        $name = trim((string)($t['name'] ?? ''));
+                        if ($code === '' || $name === '') continue;
+                        $ins->execute([
+                            (int)$tenantId,
+                            $code,
+                            $name,
+                            (int)($t['is_paid'] ?? 1) ? 1 : 0,
+                            (int)($t['requires_document'] ?? 0) ? 1 : 0,
+                            (int)($t['active'] ?? 1) ? 1 : 0,
+                            is_numeric($t['sort_order'] ?? null) ? (int)$t['sort_order'] : 0,
+                        ]);
+                    }
+                }
+            } catch (\Exception $e) {
+            }
+        }
+        $types = $this->getLeaveTypes($pdo, (int)$tenantId, (bool)$includeInactive);
+        echo json_encode(['leave_types' => array_values($types)]);
+    }
+
+    public function leaveTypesUpsert()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        if (!\App\Core\Auth::hasPermission($user, 'leaves.manage')) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+
+        $codeRaw = is_string($in['code'] ?? null) ? strtolower(trim((string)$in['code'])) : '';
+        $name = trim((string)($in['name'] ?? ''));
+        $isPaid = (int)($in['is_paid'] ?? 1) ? 1 : 0;
+        $requiresDocument = (int)($in['requires_document'] ?? 0) ? 1 : 0;
+        $active = (int)($in['active'] ?? 1) ? 1 : 0;
+        $sortOrder = is_numeric($in['sort_order'] ?? null) ? (int)$in['sort_order'] : 0;
+
+        if ($codeRaw === '' || !preg_match('/^[a-z0-9_]{1,16}$/', $codeRaw) || $name === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'code and name required']);
+            return;
+        }
+
+        try {
+            $stmt = $pdo->prepare('INSERT INTO leave_types(tenant_id, code, name, is_paid, requires_document, active, sort_order) VALUES(?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), is_paid=VALUES(is_paid), requires_document=VALUES(requires_document), active=VALUES(active), sort_order=VALUES(sort_order)');
+            $stmt->execute([(int)$tenantId, $codeRaw, $name, $isPaid, $requiresDocument, $active, $sortOrder]);
+
+            $out = $pdo->prepare('SELECT id, tenant_id, code, name, is_paid, requires_document, active, sort_order, created_at FROM leave_types WHERE tenant_id=? AND code=? LIMIT 1');
+            $out->execute([(int)$tenantId, $codeRaw]);
+            echo json_encode(['leave_type' => $out->fetch(\PDO::FETCH_ASSOC)]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to save leave type']);
+        }
+    }
+
+    public function leaveTypesDeactivate()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        if (!\App\Core\Auth::hasPermission($user, 'leaves.manage')) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+        $codeRaw = is_string($in['code'] ?? null) ? strtolower(trim((string)$in['code'])) : '';
+        if ($codeRaw === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'code required']);
+            return;
+        }
+
+        $stmt = $pdo->prepare('UPDATE leave_types SET active=0 WHERE tenant_id=? AND code=?');
+        $stmt->execute([(int)$tenantId, $codeRaw]);
+        echo json_encode(['ok' => true]);
     }
 
     public function holidaysList()

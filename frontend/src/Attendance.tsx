@@ -17,7 +17,6 @@ import {
   Drawer,
   IconButton,
   InputAdornment,
-  MenuItem,
   Paper,
   Stack,
   Table,
@@ -102,6 +101,17 @@ interface HolidayRecord {
   created_at?: string;
 }
 
+interface LeaveType {
+  id?: string | number;
+  code: string;
+  name: string;
+  is_paid?: number | boolean;
+  requires_document?: number | boolean;
+  active?: number | boolean;
+  sort_order?: number;
+  created_at?: string;
+}
+
 type DayKey = `${string}-${string}-${string}`;
 
 type DaySummary = {
@@ -130,8 +140,6 @@ type EmployeeSummary = {
   openShift: boolean;
   lastSeen: string | null;
 };
-
-type BiometricModality = "face" | "fingerprint";
 
 const formatTime = (value: string | null | undefined): string => {
   if (!value) return "—";
@@ -244,14 +252,80 @@ const isEarlyLeave = (r: AttendanceRow): boolean => {
 export default function Attendance() {
   const theme = useTheme();
   const role = getUser()?.role || "";
+  const canManageLeaveTypes = role === "hr_admin" || role === "tenant_owner";
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [days, setDays] = useState<Day[]>([]);
   const [leaves, setLeaves] = useState<LeaveRecord[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [holidays, setHolidays] = useState<HolidayRecord[]>([]);
   const [leaveTotals, setLeaveTotals] = useState<
     Record<string, { paid: number; unpaid: number; total: number }>
   >({});
+
+  const selectableLeaveTypes = useMemo<LeaveType[]>(() => {
+    const normalized = leaveTypes
+      .map((t) => {
+        const code = String(t.code || "").trim();
+        const name = String(t.name || "").trim();
+        const active = t.active === 0 || t.active === false ? 0 : 1;
+        const sort_order = Number.isFinite(Number(t.sort_order))
+          ? Number(t.sort_order)
+          : 0;
+        return { ...t, code, name, active, sort_order };
+      })
+      .filter((t) => t.code !== "" && t.name !== "")
+      .sort((a, b) => {
+        const so = Number(a.sort_order) - Number(b.sort_order);
+        if (so !== 0) return so;
+        return String(a.name).localeCompare(String(b.name));
+      });
+    if (normalized.length > 0) return normalized;
+    return [
+      { code: "casual", name: "Casual", active: 1 },
+      { code: "sick", name: "Sick", active: 1 },
+      { code: "annual", name: "Annual", active: 1 },
+      { code: "unpaid", name: "Unpaid", active: 1 },
+    ];
+  }, [leaveTypes]);
+
+  const leaveTypeNameByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of selectableLeaveTypes) {
+      const code = String(t.code || "")
+        .trim()
+        .toLowerCase();
+      const name = String(t.name || "").trim();
+      if (code && name) m.set(code, name);
+    }
+    return m;
+  }, [selectableLeaveTypes]);
+
+  const formatLeaveTypeLabel = useCallback(
+    (raw: unknown) => {
+      const code = String(raw ?? "").trim();
+      if (!code) return "leave";
+      return leaveTypeNameByCode.get(code.toLowerCase()) || code;
+    },
+    [leaveTypeNameByCode]
+  );
+
+  const fetchLeaveTypes = useCallback(async () => {
+    try {
+      const qs = new URLSearchParams();
+      if (canManageLeaveTypes) qs.set("include_inactive", "1");
+      const suffix = qs.toString();
+      const url = suffix ? `/api/leave_types?${suffix}` : "/api/leave_types";
+      const res = await api.get(url);
+      setLeaveTypes(
+        Array.isArray(res.data?.leave_types)
+          ? (res.data.leave_types as LeaveType[])
+          : []
+      );
+    } catch {
+      setLeaveTypes([]);
+    }
+  }, [canManageLeaveTypes]);
 
   const chipSx = useMemo(() => {
     const base = {
@@ -297,6 +371,10 @@ export default function Attendance() {
       },
     };
   }, [theme]);
+
+  useEffect(() => {
+    void fetchLeaveTypes();
+  }, [fetchLeaveTypes]);
 
   const getDayStatusChipSx = useCallback(
     (status: string) => {
@@ -362,8 +440,6 @@ export default function Attendance() {
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [enrollEmployeeId, setEnrollEmployeeId] = useState<string>("");
   const [enrollEmployeeLabel, setEnrollEmployeeLabel] = useState<string>("");
-  const [enrollModality, setEnrollModality] =
-    useState<BiometricModality>("face");
   const [enrollImage, setEnrollImage] = useState("");
   const [enrollBusy, setEnrollBusy] = useState(false);
   const [enrollError, setEnrollError] = useState("");
@@ -481,7 +557,6 @@ export default function Attendance() {
     setEnrollImage("");
     setEnrollEmployeeId("");
     setEnrollEmployeeLabel("");
-    setEnrollModality("face");
   }, [stopEnrollCamera]);
 
   const startEnrollCamera = useCallback(async () => {
@@ -544,14 +619,10 @@ export default function Attendance() {
     try {
       await api.post("/api/biometrics/enroll", {
         employee_id: enrollEmployeeId,
-        biometric_modality: enrollModality,
+        biometric_modality: "face",
         biometric_image: enrollImage,
       });
-      setEnrollOk(
-        `Enrolled ${
-          enrollModality === "face" ? "face" : "fingerprint"
-        } template`
-      );
+      setEnrollOk("Enrolled face template");
       setEnrollImage("");
       stopEnrollCamera();
     } catch (err: unknown) {
@@ -559,7 +630,7 @@ export default function Attendance() {
     } finally {
       setEnrollBusy(false);
     }
-  }, [enrollEmployeeId, enrollImage, enrollModality, stopEnrollCamera]);
+  }, [enrollEmployeeId, enrollImage, stopEnrollCamera]);
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
     null
@@ -666,7 +737,6 @@ export default function Attendance() {
             }`
           : ""
       );
-      setEnrollModality("face");
       setEnrollImage("");
       setEnrollError("");
       setEnrollOk("");
@@ -1748,9 +1818,9 @@ export default function Attendance() {
                           In/Out: {d.checkins}/{d.checkouts} • Stay:{" "}
                           {formatMinutes(d.stayMinutes)}
                           {d.leave
-                            ? ` • Leave: ${(
-                                d.leave.leave_type || "leave"
-                              ).toString()}`
+                            ? ` • Leave: ${formatLeaveTypeLabel(
+                                d.leave.leave_type
+                              )}`
                             : ""}
                         </Typography>
                         <Stack direction="row" spacing={0.75} sx={{ mt: 0.5 }}>
@@ -1869,11 +1939,9 @@ export default function Attendance() {
             />
             {selectedDayLeave && (
               <Chip
-                label={`Leave: ${(
-                  selectedDayLeave.leave_type || "leave"
-                ).toString()} • ${(
-                  selectedDayLeave.day_part || "full"
-                ).toString()} • ${(
+                label={`Leave: ${formatLeaveTypeLabel(
+                  selectedDayLeave.leave_type
+                )} • ${(selectedDayLeave.day_part || "full").toString()} • ${(
                   selectedDayLeave.status || "pending"
                 ).toString()}`}
                 sx={getLeaveStatusChipSx(selectedDayLeave.status)}
@@ -2497,101 +2565,69 @@ export default function Attendance() {
               </Alert>
             ) : null}
 
-            <TextField
-              select
-              label="Modality"
-              value={enrollModality}
-              onChange={(e) =>
-                setEnrollModality(e.target.value as BiometricModality)
-              }
-              disabled={enrollBusy}
-            >
-              <MenuItem value="face">Face (Selfie)</MenuItem>
-              <MenuItem value="fingerprint">Fingerprint (Image)</MenuItem>
-            </TextField>
-
-            {enrollModality === "face" ? (
-              <Stack spacing={1.25}>
-                <Box
-                  sx={{
-                    width: "100%",
-                    bgcolor: "background.default",
-                    borderRadius: 2,
-                    overflow: "hidden",
-                    border: "1px solid",
-                    borderColor: alpha(theme.palette.text.primary, 0.12),
-                  }}
-                >
-                  <Box
-                    component="video"
-                    ref={enrollVideoRef}
-                    muted
-                    playsInline
-                    autoPlay
-                    sx={{ width: "100%", display: "block" }}
-                  />
-                </Box>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  <Button
-                    variant="outlined"
-                    onClick={() => void startEnrollCamera()}
-                    disabled={enrollBusy}
-                    sx={{ borderRadius: 2, fontWeight: 900 }}
-                  >
-                    Start Camera
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={stopEnrollCamera}
-                    disabled={enrollBusy}
-                    sx={{ borderRadius: 2, fontWeight: 900 }}
-                  >
-                    Stop Camera
-                  </Button>
-                  <Button
-                    variant="contained"
-                    onClick={captureEnrollSelfie}
-                    disabled={enrollBusy}
-                    sx={{ borderRadius: 2, fontWeight: 900 }}
-                  >
-                    Take Selfie
-                  </Button>
-                  <Button
-                    component="label"
-                    variant="outlined"
-                    disabled={enrollBusy}
-                    sx={{ borderRadius: 2, fontWeight: 900 }}
-                  >
-                    Upload Image
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      onChange={(e) =>
-                        onPickEnrollFile(e.target.files?.[0] || null)
-                      }
-                    />
-                  </Button>
-                </Stack>
-              </Stack>
-            ) : (
-              <Button
-                component="label"
-                variant="outlined"
-                disabled={enrollBusy}
-                sx={{ borderRadius: 2, fontWeight: 900 }}
+            <Stack spacing={1.25}>
+              <Box
+                sx={{
+                  width: "100%",
+                  bgcolor: "background.default",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                  border: "1px solid",
+                  borderColor: alpha(theme.palette.text.primary, 0.12),
+                }}
               >
-                Upload Fingerprint Image
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) =>
-                    onPickEnrollFile(e.target.files?.[0] || null)
-                  }
+                <Box
+                  component="video"
+                  ref={enrollVideoRef}
+                  muted
+                  playsInline
+                  autoPlay
+                  sx={{ width: "100%", display: "block" }}
                 />
-              </Button>
-            )}
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant="outlined"
+                  onClick={() => void startEnrollCamera()}
+                  disabled={enrollBusy}
+                  sx={{ borderRadius: 2, fontWeight: 900 }}
+                >
+                  Start Camera
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={stopEnrollCamera}
+                  disabled={enrollBusy}
+                  sx={{ borderRadius: 2, fontWeight: 900 }}
+                >
+                  Stop Camera
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={captureEnrollSelfie}
+                  disabled={enrollBusy}
+                  sx={{ borderRadius: 2, fontWeight: 900 }}
+                >
+                  Take Selfie
+                </Button>
+                <Button
+                  component="label"
+                  variant="outlined"
+                  disabled={enrollBusy}
+                  sx={{ borderRadius: 2, fontWeight: 900 }}
+                >
+                  Upload Image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) =>
+                      onPickEnrollFile(e.target.files?.[0] || null)
+                    }
+                  />
+                </Button>
+              </Stack>
+            </Stack>
 
             {enrollImage ? (
               <Box

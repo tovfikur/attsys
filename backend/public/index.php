@@ -112,6 +112,7 @@ $router->postAuth('/api/sites', ['App\Controller\SiteController', 'create'], 'pe
 // Tenant Management Routes (Superadmin Only - mocked protection)
 $router->getAuth('/api/tenants', ['App\Controller\TenantController', 'index'], 'superadmin');
 $router->postAuth('/api/tenants', ['App\Controller\TenantController', 'create'], 'superadmin');
+$router->postAuth('/api/tenants/status', ['App\Controller\TenantController', 'setStatus'], 'superadmin');
 
 // Employees
 $router->getAuth('/api/employees', ['App\Controller\EmployeeController', 'list'], 'perm:employees.read');
@@ -119,6 +120,8 @@ $router->getAuth('/api/employees/device_sync_ids', ['App\Controller\EmployeeCont
 $router->postAuth('/api/employees', ['App\Controller\EmployeeController', 'create'], 'perm:employees.write');
 $router->postAuth('/api/employees/update', ['App\Controller\EmployeeController', 'update'], 'perm:employees.write');
 $router->postAuth('/api/employees/delete', ['App\Controller\EmployeeController', 'delete'], 'perm:employees.write');
+$router->getAuth('/api/employees/profile_photo', ['App\Controller\EmployeeController', 'profilePhoto'], 'perm:employees.read');
+$router->postAuth('/api/employees/profile_photo/upload', ['App\Controller\EmployeeController', 'uploadProfilePhoto'], 'perm:employees.write');
 $router->getAuth('/api/employees/attachments', ['App\Controller\EmployeeController', 'attachments'], 'perm:employees.read');
 $router->getAuth('/api/employees/attachments/download', ['App\Controller\EmployeeController', 'downloadAttachment'], 'perm:employees.read');
 $router->postAuth('/api/employees/attachments/upload', ['App\Controller\EmployeeController', 'uploadAttachment'], 'perm:employees.write');
@@ -130,6 +133,20 @@ $router->postAuth('/api/leaves', ['App\Controller\AttendanceController', 'leaves
 $router->postAuth('/api/leaves/apply', ['App\Controller\AttendanceController', 'leavesApply'], 'perm:leaves.apply');
 $router->postAuth('/api/leaves/update', ['App\Controller\AttendanceController', 'leavesUpdate'], 'perm:leaves.approve');
 $router->postAuth('/api/leaves/delete', ['App\Controller\AttendanceController', 'leavesDelete'], 'perm:leaves.manage');
+
+// Leave Settings
+$router->getAuth('/api/leave_settings', ['App\Controller\AttendanceController', 'leaveSettingsGet'], 'perm:leaves.manage');
+$router->postAuth('/api/leave_settings', ['App\Controller\AttendanceController', 'leaveSettingsSet'], 'perm:leaves.manage');
+
+// Leave Allocations
+$router->getAuth('/api/leave_allocations', ['App\Controller\AttendanceController', 'leaveAllocationsList'], 'perm:leaves.manage');
+$router->postAuth('/api/leave_allocations', ['App\Controller\AttendanceController', 'leaveAllocationsUpsert'], 'perm:leaves.manage');
+$router->postAuth('/api/leave_allocations/delete', ['App\Controller\AttendanceController', 'leaveAllocationsDelete'], 'perm:leaves.manage');
+
+// Leave Types
+$router->getAuth('/api/leave_types', ['App\Controller\AttendanceController', 'leaveTypesList'], 'perm:leaves.read');
+$router->postAuth('/api/leave_types', ['App\Controller\AttendanceController', 'leaveTypesUpsert'], 'perm:leaves.manage');
+$router->postAuth('/api/leave_types/deactivate', ['App\Controller\AttendanceController', 'leaveTypesDeactivate'], 'perm:leaves.manage');
 
 // Holidays
 $router->getAuth('/api/holidays', ['App\Controller\AttendanceController', 'holidaysList'], 'perm:attendance.read');
@@ -160,9 +177,12 @@ $router->postAuth('/api/shifts/delete', ['App\Controller\ShiftController', 'dele
 $router->postAuth('/api/shifts/assign', ['App\Controller\ShiftController', 'assign'], 'perm:attendance.write');
 
 $router->getAuth('/api/me', ['App\Controller\ProfileController', 'me'], 'any');
+$router->postAuth('/api/me/update', ['App\Controller\ProfileController', 'updateMe'], 'any');
 $router->postAuth('/api/change_password', ['App\Controller\ProfileController', 'changePassword'], 'any');
 $router->getAuth('/api/me/profile_photo', ['App\Controller\ProfileController', 'profilePhoto'], 'any');
 $router->postAuth('/api/me/profile_photo/upload', ['App\Controller\ProfileController', 'uploadProfilePhoto'], 'any');
+$router->getAuth('/api/tenant/logo', ['App\Controller\ProfileController', 'tenantLogo'], 'tenant');
+$router->postAuth('/api/tenant/logo/upload', ['App\Controller\ProfileController', 'uploadTenantLogo'], 'perm:employees.write');
 
 // Dispatch
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);

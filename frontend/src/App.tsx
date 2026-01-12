@@ -32,8 +32,11 @@ function DenyRoleRoute({
   const token = getToken();
   const user = getUser();
   if (!token || !user) return <Navigate to="/login" />;
-  if (user.role && deny.includes(user.role))
-    return <Navigate to="/employee-portal" />;
+  if (user.role && deny.includes(user.role)) {
+    if (user.role === "superadmin") return <Navigate to="/dashboard" />;
+    if (user.role === "employee") return <Navigate to="/employee-portal" />;
+    return <Navigate to="/employees" />;
+  }
   return <AppShell>{children}</AppShell>;
 }
 
@@ -91,7 +94,7 @@ function App() {
         <Route
           path="/employees"
           element={
-            <DenyRoleRoute deny={["employee"]}>
+            <DenyRoleRoute deny={["employee", "superadmin"]}>
               <Employees />
             </DenyRoleRoute>
           }
@@ -99,7 +102,7 @@ function App() {
         <Route
           path="/clock"
           element={
-            <DenyRoleRoute deny={["employee"]}>
+            <DenyRoleRoute deny={["employee", "superadmin"]}>
               <Clock />
             </DenyRoleRoute>
           }
@@ -107,7 +110,7 @@ function App() {
         <Route
           path="/attendance"
           element={
-            <DenyRoleRoute deny={["employee"]}>
+            <DenyRoleRoute deny={["employee", "superadmin"]}>
               <Attendance />
             </DenyRoleRoute>
           }
@@ -115,7 +118,7 @@ function App() {
         <Route
           path="/leaves"
           element={
-            <DenyRoleRoute deny={["employee"]}>
+            <DenyRoleRoute deny={["employee", "superadmin"]}>
               <Leaves />
             </DenyRoleRoute>
           }
@@ -123,41 +126,41 @@ function App() {
         <Route
           path="/devices"
           element={
-            <PrivateRoute>
+            <DenyRoleRoute deny={["superadmin"]}>
               <Devices />
-            </PrivateRoute>
+            </DenyRoleRoute>
           }
         />
         <Route
           path="/devices/events"
           element={
-            <PrivateRoute>
+            <DenyRoleRoute deny={["superadmin"]}>
               <DeviceEvents />
-            </PrivateRoute>
+            </DenyRoleRoute>
           }
         />
         <Route
           path="/devices/ingest"
           element={
-            <PrivateRoute>
+            <DenyRoleRoute deny={["superadmin"]}>
               <DeviceIngestTest />
-            </PrivateRoute>
+            </DenyRoleRoute>
           }
         />
         <Route
           path="/sites"
           element={
-            <PrivateRoute>
+            <DenyRoleRoute deny={["superadmin"]}>
               <Sites />
-            </PrivateRoute>
+            </DenyRoleRoute>
           }
         />
         <Route
           path="/shifts"
           element={
-            <PrivateRoute>
+            <DenyRoleRoute deny={["superadmin"]}>
               <Shifts />
-            </PrivateRoute>
+            </DenyRoleRoute>
           }
         />
         <Route path="/" element={<HomeRedirect />} />

@@ -2,6 +2,8 @@
 
 namespace App\Controller;
 
+use App\Core\Auth;
+use App\Core\Database;
 use App\Core\EmployeesStore;
 
 class EmployeeController
@@ -41,6 +43,217 @@ class EmployeeController
             http_response_code(400);
             echo json_encode(['error' => $e->getMessage()]);
         }
+    }
+
+    public function uploadProfilePhoto()
+    {
+        header('Content-Type: application/json');
+        $user = Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        if (($user['role'] ?? null) === 'employee') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $employeeId = (int)($_POST['employee_id'] ?? 0);
+        if ($employeeId <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Missing employee_id']);
+            return;
+        }
+
+        $pdo = Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Database error']);
+            return;
+        }
+
+        EmployeesStore::ensureEmployeeProfileColumns($pdo);
+        $tenantId = (int)($user['tenant_id'] ?? 0);
+        if ($tenantId <= 0) {
+            $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
+            if ($hint) {
+                $t = $pdo->prepare('SELECT id FROM tenants WHERE subdomain=?');
+                $t->execute([$hint]);
+                $row = $t->fetch();
+                if ($row) $tenantId = (int)$row['id'];
+            }
+        }
+        if ($tenantId <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Tenant context missing']);
+            return;
+        }
+
+        $empCheck = $pdo->prepare('SELECT 1 FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+        $empCheck->execute([$tenantId, $employeeId]);
+        if (!$empCheck->fetchColumn()) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Employee not found']);
+            return;
+        }
+
+        $file = $_FILES['file'] ?? null;
+        if (!is_array($file)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Missing file']);
+            return;
+        }
+
+        $err = (int)($file['error'] ?? 0);
+        $tmpName = (string)($file['tmp_name'] ?? '');
+        $originalName = (string)($file['name'] ?? '');
+        $sizeBytes = (int)($file['size'] ?? 0);
+
+        if ($err !== UPLOAD_ERR_OK) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Upload failed']);
+            return;
+        }
+        if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Upload failed']);
+            return;
+        }
+        if ($sizeBytes <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'File empty']);
+            return;
+        }
+        if ($sizeBytes > 5 * 1024 * 1024) {
+            http_response_code(400);
+            echo json_encode(['error' => 'File too large']);
+            return;
+        }
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mime = (string)($finfo->file($tmpName) ?: '');
+        if ($mime === '' || strpos($mime, 'image/') !== 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Only image files allowed']);
+            return;
+        }
+
+        $ext = strtolower((string)pathinfo($originalName, PATHINFO_EXTENSION));
+        if ($ext === '' || !preg_match('/^[a-z0-9]{1,8}$/', $ext)) {
+            $map = [
+                'image/jpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/gif' => 'gif',
+                'image/webp' => 'webp',
+            ];
+            $ext = $map[$mime] ?? 'jpg';
+        }
+
+        $token = bin2hex(random_bytes(16));
+        $storedFileName = $token . '.' . $ext;
+        $relativeDir = 'uploads/tenant_' . $tenantId . '/employees/' . $employeeId . '/profile_photo';
+        $baseDir = __DIR__ . '/../../data/' . $relativeDir;
+        if (!is_dir($baseDir)) mkdir($baseDir, 0775, true);
+
+        $storedPath = $relativeDir . '/' . $storedFileName;
+        $dest = __DIR__ . '/../../data/' . $storedPath;
+        if (!move_uploaded_file($tmpName, $dest)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to store file']);
+            return;
+        }
+
+        $stmt = $pdo->prepare('SELECT profile_photo_path FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+        $stmt->execute([$tenantId, $employeeId]);
+        $oldPath = (string)($stmt->fetchColumn() ?: '');
+
+        $upd = $pdo->prepare('UPDATE employees SET profile_photo_path=? WHERE tenant_id=? AND id=?');
+        $upd->execute([$storedPath, $tenantId, $employeeId]);
+
+        if ($oldPath !== '' && str_starts_with($oldPath, $relativeDir . '/')) {
+            $oldAbs = __DIR__ . '/../../data/' . $oldPath;
+            if (is_file($oldAbs)) @unlink($oldAbs);
+        }
+
+        echo json_encode(['profile_photo_path' => $storedPath]);
+    }
+
+    public function profilePhoto()
+    {
+        $user = Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        if (($user['role'] ?? null) === 'employee') {
+            http_response_code(403);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $employeeId = (int)($_GET['employee_id'] ?? 0);
+        if ($employeeId <= 0) {
+            http_response_code(400);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Missing employee_id']);
+            return;
+        }
+
+        $pdo = Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Database error']);
+            return;
+        }
+
+        EmployeesStore::ensureEmployeeProfileColumns($pdo);
+        $tenantId = (int)($user['tenant_id'] ?? 0);
+        if ($tenantId <= 0) {
+            $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
+            if ($hint) {
+                $t = $pdo->prepare('SELECT id FROM tenants WHERE subdomain=?');
+                $t->execute([$hint]);
+                $row = $t->fetch();
+                if ($row) $tenantId = (int)$row['id'];
+            }
+        }
+        if ($tenantId <= 0) {
+            http_response_code(400);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Tenant context missing']);
+            return;
+        }
+
+        $stmt = $pdo->prepare('SELECT profile_photo_path FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+        $stmt->execute([$tenantId, $employeeId]);
+        $storedPath = (string)($stmt->fetchColumn() ?: '');
+        if ($storedPath === '') {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        $abs = __DIR__ . '/../../data/' . $storedPath;
+        if (!is_file($abs)) {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mime = (string)($finfo->file($abs) ?: 'application/octet-stream');
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . (string)filesize($abs));
+        header('Cache-Control: no-store');
+        readfile($abs);
     }
 
     public function attachments()

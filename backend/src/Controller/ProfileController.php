@@ -8,6 +8,32 @@ use App\Core\EmployeesStore;
 
 class ProfileController
 {
+    private function resolveTenantIdFromUser(array $user, \PDO $pdo): ?int
+    {
+        $tenantId = (int)($user['tenant_id'] ?? 0);
+        if ($tenantId > 0) return $tenantId;
+        $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
+        if (!$hint) return null;
+        $t = $pdo->prepare('SELECT id FROM tenants WHERE subdomain=? LIMIT 1');
+        $t->execute([strtolower((string)$hint)]);
+        $id = (int)($t->fetchColumn() ?: 0);
+        return $id > 0 ? $id : null;
+    }
+
+    private function ensureTenantLogoColumn(\PDO $pdo): bool
+    {
+        try {
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'tenants' AND column_name = 'logo_path'");
+            $stmt->execute();
+            $has = (int)$stmt->fetchColumn() > 0;
+            if ($has) return true;
+            $pdo->exec("ALTER TABLE tenants ADD COLUMN logo_path VARCHAR(255) NULL");
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
     public function me()
     {
         header('Content-Type: application/json');
@@ -58,6 +84,115 @@ class ProfileController
         }
 
         echo json_encode(['user' => $user, 'employee' => $employee]);
+    }
+
+    public function updateMe()
+    {
+        header('Content-Type: application/json');
+        $user = Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        if (($user['role'] ?? null) !== 'employee') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $pdo = Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Database error']);
+            return;
+        }
+
+        EmployeesStore::ensureEmployeeProfileColumns($pdo);
+        $tenantId = (int)($user['tenant_id'] ?? 0);
+        $employeeId = (int)($user['employee_id'] ?? 0);
+        if ($tenantId <= 0 || $employeeId <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Employee profile missing']);
+            return;
+        }
+
+        $in = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($in)) $in = [];
+
+        $allowed = [
+            'email' => 255,
+            'personal_phone' => 64,
+            'present_address' => 1000,
+            'permanent_address' => 1000,
+        ];
+
+        $fields = [];
+        $params = [];
+        foreach ($allowed as $k => $maxLen) {
+            if (!array_key_exists($k, $in)) continue;
+            $v = $in[$k];
+            $s = is_string($v) ? trim($v) : '';
+            if (strlen($s) > $maxLen) {
+                http_response_code(400);
+                echo json_encode(['error' => $k . ' too long']);
+                return;
+            }
+            if ($k === 'email' && $s !== '' && !filter_var($s, FILTER_VALIDATE_EMAIL)) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Invalid email']);
+                return;
+            }
+            $fields[] = $k . '=?';
+            $params[] = $s;
+        }
+
+        if (count($fields) === 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'No fields to update']);
+            return;
+        }
+
+        $params[] = $tenantId;
+        $params[] = $employeeId;
+        $upd = $pdo->prepare('UPDATE employees SET ' . implode(', ', $fields) . ' WHERE tenant_id=? AND id=?');
+        $upd->execute($params);
+
+        $stmt = $pdo->prepare('SELECT e.id, e.tenant_id, e.shift_id, s.name AS shift_name, s.working_days, e.name, e.code, e.profile_photo_path, e.gender, e.date_of_birth, e.personal_phone, e.email, e.present_address, e.permanent_address, e.department, e.designation, e.employee_type, e.date_of_joining, e.supervisor_name, e.work_location, e.status, e.created_at FROM employees e JOIN shifts s ON s.id = e.shift_id WHERE e.tenant_id=? AND e.id=? LIMIT 1');
+        $stmt->execute([$tenantId, $employeeId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        $employee = [
+            'id' => (string)$row['id'],
+            'tenant_id' => (string)$row['tenant_id'],
+            'shift_id' => (string)($row['shift_id'] ?? ''),
+            'shift_name' => (string)($row['shift_name'] ?? ''),
+            'working_days' => (string)($row['working_days'] ?? ''),
+            'name' => $row['name'],
+            'code' => $row['code'],
+            'profile_photo_path' => (string)($row['profile_photo_path'] ?? ''),
+            'gender' => (string)($row['gender'] ?? ''),
+            'date_of_birth' => $row['date_of_birth'],
+            'personal_phone' => (string)($row['personal_phone'] ?? ''),
+            'email' => (string)($row['email'] ?? ''),
+            'present_address' => (string)($row['present_address'] ?? ''),
+            'permanent_address' => (string)($row['permanent_address'] ?? ''),
+            'department' => (string)($row['department'] ?? ''),
+            'designation' => (string)($row['designation'] ?? ''),
+            'employee_type' => (string)($row['employee_type'] ?? ''),
+            'date_of_joining' => $row['date_of_joining'],
+            'supervisor_name' => (string)($row['supervisor_name'] ?? ''),
+            'work_location' => (string)($row['work_location'] ?? ''),
+            'status' => $row['status'],
+            'created_at' => $row['created_at'],
+        ];
+
+        echo json_encode(['employee' => $employee]);
     }
 
     public function changePassword()
@@ -153,6 +288,11 @@ class ProfileController
         if (!$user) {
             http_response_code(401);
             echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        if (($user['role'] ?? null) === 'employee') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
             return;
         }
 
@@ -283,6 +423,183 @@ class ProfileController
 
         $stmt = $pdo->prepare('SELECT profile_photo_path FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
         $stmt->execute([$tenantId, $employeeId]);
+        $storedPath = (string)($stmt->fetchColumn() ?: '');
+        if ($storedPath === '') {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        $abs = __DIR__ . '/../../data/' . $storedPath;
+        if (!is_file($abs)) {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mime = (string)($finfo->file($abs) ?: 'application/octet-stream');
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . (string)filesize($abs));
+        header('Cache-Control: no-store');
+        readfile($abs);
+    }
+
+    public function uploadTenantLogo()
+    {
+        header('Content-Type: application/json');
+        $user = Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        if (($user['role'] ?? null) === 'superadmin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+
+        $pdo = Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Database error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantIdFromUser($user, $pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Tenant context missing']);
+            return;
+        }
+
+        $this->ensureTenantLogoColumn($pdo);
+
+        $file = $_FILES['file'] ?? null;
+        if (!is_array($file)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Missing file']);
+            return;
+        }
+
+        $err = (int)($file['error'] ?? 0);
+        $tmpName = (string)($file['tmp_name'] ?? '');
+        $originalName = (string)($file['name'] ?? '');
+        $sizeBytes = (int)($file['size'] ?? 0);
+
+        if ($err !== UPLOAD_ERR_OK) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Upload failed']);
+            return;
+        }
+        if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Upload failed']);
+            return;
+        }
+        if ($sizeBytes <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'File empty']);
+            return;
+        }
+        if ($sizeBytes > 5 * 1024 * 1024) {
+            http_response_code(400);
+            echo json_encode(['error' => 'File too large']);
+            return;
+        }
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mime = (string)($finfo->file($tmpName) ?: '');
+        if ($mime === '' || strpos($mime, 'image/') !== 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Only image files allowed']);
+            return;
+        }
+
+        $ext = strtolower((string)pathinfo($originalName, PATHINFO_EXTENSION));
+        if ($ext === '' || !preg_match('/^[a-z0-9]{1,8}$/', $ext)) {
+            $map = [
+                'image/jpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/gif' => 'gif',
+                'image/webp' => 'webp',
+            ];
+            $ext = $map[$mime] ?? 'jpg';
+        }
+
+        $token = bin2hex(random_bytes(16));
+        $storedFileName = $token . '.' . $ext;
+        $relativeDir = 'uploads/tenant_' . $tenantId . '/tenant_logo';
+        $baseDir = __DIR__ . '/../../data/' . $relativeDir;
+        if (!is_dir($baseDir)) mkdir($baseDir, 0775, true);
+
+        $storedPath = $relativeDir . '/' . $storedFileName;
+        $dest = __DIR__ . '/../../data/' . $storedPath;
+        if (!move_uploaded_file($tmpName, $dest)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Failed to store file']);
+            return;
+        }
+
+        $stmt = $pdo->prepare('SELECT logo_path FROM tenants WHERE id=? LIMIT 1');
+        $stmt->execute([(int)$tenantId]);
+        $oldPath = (string)($stmt->fetchColumn() ?: '');
+
+        $upd = $pdo->prepare('UPDATE tenants SET logo_path=? WHERE id=?');
+        $upd->execute([$storedPath, (int)$tenantId]);
+
+        if ($oldPath !== '' && str_starts_with($oldPath, $relativeDir . '/')) {
+            $oldAbs = __DIR__ . '/../../data/' . $oldPath;
+            if (is_file($oldAbs)) @unlink($oldAbs);
+        }
+
+        echo json_encode(['logo_path' => $storedPath]);
+    }
+
+    public function tenantLogo()
+    {
+        $user = Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+        if (($user['role'] ?? null) === 'superadmin') {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        $pdo = Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Database error']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantIdFromUser($user, $pdo);
+        if (!$tenantId) {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        if (!$this->ensureTenantLogoColumn($pdo)) {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Not found']);
+            return;
+        }
+
+        $stmt = $pdo->prepare('SELECT logo_path FROM tenants WHERE id=? LIMIT 1');
+        $stmt->execute([(int)$tenantId]);
         $storedPath = (string)($stmt->fetchColumn() ?: '');
         if ($storedPath === '') {
             http_response_code(404);
