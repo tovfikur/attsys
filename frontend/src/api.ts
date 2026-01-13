@@ -1,5 +1,6 @@
 import axios from "axios";
 import { clearSession } from "./utils/session";
+import { getErrorMessage } from "./utils/errors";
 
 function getToken(): string | null {
   return localStorage.getItem("token") || sessionStorage.getItem("token");
@@ -185,6 +186,35 @@ function getTenantFromHost(host: string): string | null {
 
 const api = axios.create();
 
+function emitToast(detail: {
+  message: string;
+  severity?: "success" | "error" | "info" | "warning";
+}) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("app:toast", { detail }));
+}
+
+function isMutationMethod(method: unknown): boolean {
+  const m = String(method || "").toLowerCase();
+  return m === "post" || m === "put" || m === "patch" || m === "delete";
+}
+
+function defaultSuccessMessage(method: unknown): string {
+  const m = String(method || "").toLowerCase();
+  if (m === "delete") return "Deleted successfully.";
+  if (m === "post") return "Saved successfully.";
+  if (m === "put" || m === "patch") return "Updated successfully.";
+  return "Done.";
+}
+
+function defaultErrorMessage(method: unknown): string {
+  const m = String(method || "").toLowerCase();
+  if (m === "delete") return "Failed to delete.";
+  if (m === "post") return "Failed to save.";
+  if (m === "put" || m === "patch") return "Failed to update.";
+  return "Request failed.";
+}
+
 api.interceptors.request.use((config) => {
   if (!config.baseURL) config.baseURL = getRequestBaseUrl();
 
@@ -213,13 +243,45 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = response.config?.method;
+    if (isMutationMethod(method)) {
+      const url = String(response.config?.url || "");
+      const skip = Boolean(
+        response.config?.headers &&
+          (response.config.headers as Record<string, unknown>)["X-Toast-Skip"]
+      );
+      if (!skip && !url.includes("/login")) {
+        const message =
+          typeof response.data?.message === "string" && response.data.message
+            ? response.data.message
+            : defaultSuccessMessage(method);
+        emitToast({ severity: "success", message });
+      }
+    }
+    return response;
+  },
   (error) => {
     if (error.response && error.response.status === 401) {
       // Auto logout on 401
       clearSession();
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";
+      }
+      return Promise.reject(error);
+    }
+    const method = error.config?.method;
+    if (isMutationMethod(method)) {
+      const url = String(error.config?.url || "");
+      const skip = Boolean(
+        error.config?.headers &&
+          (error.config.headers as Record<string, unknown>)["X-Toast-Skip"]
+      );
+      if (!skip && !url.includes("/login")) {
+        emitToast({
+          severity: "error",
+          message: getErrorMessage(error, defaultErrorMessage(method)),
+        });
       }
     }
     return Promise.reject(error);

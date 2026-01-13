@@ -16,6 +16,7 @@ import {
   Menu,
   MenuItem,
   Snackbar,
+  Slide,
   Stack,
   Toolbar,
   Typography,
@@ -153,13 +154,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<{
     open: boolean;
     message: string;
-    severity: "success" | "error";
+    severity: "success" | "error" | "info" | "warning";
   }>({ open: false, message: "", severity: "success" });
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const handleLogout = () => {
+    setLogoutConfirmOpen(true);
+  };
+
+  const confirmLogout = () => {
+    setLogoutConfirmOpen(false);
     clearSession();
+    setToast({ open: true, message: "Logged out", severity: "info" });
     navigate("/login");
   };
+
+  useEffect(() => {
+    const onToast = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as
+        | { message?: unknown; severity?: unknown }
+        | undefined;
+      const message = String(detail?.message || "").trim();
+      if (!message) return;
+      const severityRaw = String(detail?.severity || "success").toLowerCase();
+      const severity =
+        severityRaw === "error" ||
+        severityRaw === "info" ||
+        severityRaw === "warning" ||
+        severityRaw === "success"
+          ? (severityRaw as "success" | "error" | "info" | "warning")
+          : "success";
+      setToast({ open: true, message, severity });
+    };
+    window.addEventListener("app:toast", onToast);
+    return () => window.removeEventListener("app:toast", onToast);
+  }, []);
 
   useEffect(() => {
     if (role !== "employee") {
@@ -227,12 +256,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [pwdForm, setPwdForm] = useState({ current: "", new: "", confirm: "" });
   const [pwdError, setPwdError] = useState("");
-  const [pwdSuccess, setPwdSuccess] = useState("");
   const [pwdBusy, setPwdBusy] = useState(false);
 
   const handleChangePassword = async () => {
     setPwdError("");
-    setPwdSuccess("");
     if (pwdForm.new !== pwdForm.confirm) {
       setPwdError("New passwords do not match");
       return;
@@ -243,11 +270,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
     setPwdBusy(true);
     try {
-      await api.post("/api/change_password", {
-        current_password: pwdForm.current,
-        new_password: pwdForm.new,
+      await api.post(
+        "/api/change_password",
+        {
+          current_password: pwdForm.current,
+          new_password: pwdForm.new,
+        },
+        { headers: { "X-Toast-Skip": "1" } }
+      );
+      setToast({
+        open: true,
+        message: "Password updated successfully",
+        severity: "success",
       });
-      setPwdSuccess("Password updated successfully");
       setPwdForm({ current: "", new: "", confirm: "" });
       setTimeout(() => setShowPwdModal(false), 1500);
     } catch (err: unknown) {
@@ -386,7 +421,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const fd = new FormData();
       fd.append("file", file);
       await api.post("/api/me/profile_photo/upload", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: { "Content-Type": "multipart/form-data", "X-Toast-Skip": "1" },
       });
       await refreshProfilePhoto();
       setToast({
@@ -416,7 +451,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const fd = new FormData();
       fd.append("file", file);
       await api.post("/api/tenant/logo/upload", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: { "Content-Type": "multipart/form-data", "X-Toast-Skip": "1" },
       });
       await refreshTenantLogo();
       setToast({
@@ -641,6 +676,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         color="default"
         elevation={0}
         sx={{
+          top: 0,
+          pt: "env(safe-area-inset-top)",
           bgcolor: "background.default",
           borderBottom: "1px solid",
           borderColor: "divider",
@@ -794,17 +831,67 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         open={toast.open}
         autoHideDuration={3500}
         onClose={() => setToast((t) => ({ ...t, open: false }))}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+        TransitionComponent={(props) => <Slide {...props} direction="down" />}
+        sx={{
+          mt: `calc(env(safe-area-inset-top) + ${theme.spacing(9)})`,
+        }}
       >
         <Alert
           severity={toast.severity}
           variant="filled"
           onClose={() => setToast((t) => ({ ...t, open: false }))}
-          sx={{ borderRadius: 2 }}
+          sx={{
+            borderRadius: 999,
+            px: 2,
+            py: 1,
+            boxShadow: "0 18px 55px rgba(0,0,0,0.18)",
+            alignItems: "center",
+          }}
         >
           {toast.message}
         </Alert>
       </Snackbar>
+
+      <Dialog
+        open={logoutConfirmOpen}
+        onClose={() => setLogoutConfirmOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        fullScreen={false}
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            mx: { xs: 2, sm: "auto" },
+            width: { xs: "calc(100% - 32px)", sm: "auto" },
+            bgcolor: alpha(theme.palette.background.paper, 0.92),
+            backdropFilter: "blur(16px)",
+            backgroundImage: "none",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.26)",
+            overflow: "hidden",
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 900, pb: 0.75 }}>
+          Confirm logout
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1.25 }}>
+          <Typography color="text.secondary">
+            Are you sure you want to logout?
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setLogoutConfirmOpen(false)}>Cancel</Button>
+          <Button
+            onClick={confirmLogout}
+            variant="contained"
+            color="error"
+            sx={{ fontWeight: 800 }}
+          >
+            Logout
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Password Change Modal */}
       <Dialog
@@ -825,11 +912,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {pwdError && (
               <Alert severity="error" sx={{ borderRadius: 2 }}>
                 {pwdError}
-              </Alert>
-            )}
-            {pwdSuccess && (
-              <Alert severity="success" sx={{ borderRadius: 2 }}>
-                {pwdSuccess}
               </Alert>
             )}
             <TextField

@@ -2031,106 +2031,231 @@ export default function Attendance() {
           {selectedEmployeeDays.length === 0 ? (
             <Typography color="text.secondary">No records in range.</Typography>
           ) : (
-            <TableContainer component={Paper} elevation={0} sx={{ ...cardSx }}>
-              <Table size="small">
-                <TableHead sx={{ bgcolor: "background.default" }}>
-                  <TableRow>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      DATE
-                    </TableCell>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      FIRST/LAST
-                    </TableCell>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      WORKED
-                    </TableCell>
-                    <TableCell align="right" />
-                  </TableRow>
-                </TableHead>
-                <TableBody>
+            <>
+              <Box sx={{ display: { xs: "block", sm: "none" } }}>
+                <Stack spacing={1.25}>
                   {selectedEmployeeDays.slice(0, 31).map((d) => (
-                    <TableRow key={d.date} hover>
-                      <TableCell sx={{ fontWeight: 800 }}>{d.date}</TableCell>
-                      <TableCell>
-                        <Typography variant="caption" sx={{ fontWeight: 800 }}>
-                          {formatTime(d.firstIn)} → {formatTime(d.lastOut)}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          display="block"
-                        >
-                          In/Out: {d.checkins}/{d.checkouts} • Stay:{" "}
-                          {formatMinutes(d.stayMinutes)}
-                          {d.leave
-                            ? ` • Leave: ${formatLeaveTypeLabel(
-                                d.leave.leave_type
-                              )}`
-                            : ""}
-                        </Typography>
-                        <Stack direction="row" spacing={0.75} sx={{ mt: 0.5 }}>
-                          {d.leave && (
-                            <Chip
-                              size="small"
-                              label={`${(
-                                d.leave.status || "pending"
-                              ).toString()} • ${(
-                                d.leave.day_part || "full"
-                              ).toString()}`}
-                              sx={getLeaveStatusChipSx(d.leave.status)}
-                            />
-                          )}
-                          {d.openShift && (
-                            <Chip
-                              size="small"
-                              label="Open"
-                              sx={chipSx.openShift}
-                            />
-                          )}
-                          {d.lateCount > 0 && (
-                            <Chip
-                              size="small"
-                              label={`Late ${d.lateCount}`}
-                              sx={chipSx.warning}
-                            />
-                          )}
-                          {d.earlyLeaveCount > 0 && (
-                            <Chip
-                              size="small"
-                              label={`Early ${d.earlyLeaveCount}`}
-                              sx={chipSx.warning}
-                            />
-                          )}
-                        </Stack>
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 900 }}>
-                        {formatMinutes(d.workedMinutes)}
-                      </TableCell>
-                      <TableCell align="right">
-                        <Button
-                          size="small"
-                          variant="text"
-                          onClick={() =>
-                            setSelectedDay({
-                              employee_id: selectedEmployeeId!,
-                              date: d.date,
-                            })
-                          }
-                        >
-                          View
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                    <Paper
+                      key={d.date}
+                      variant="outlined"
+                      sx={{ p: 1.5, borderRadius: 2.5 }}
+                    >
+                      <Stack
+                        direction="row"
+                        spacing={1.5}
+                        alignItems="flex-start"
+                      >
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography sx={{ fontWeight: 900 }} noWrap>
+                            {d.date}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{ fontWeight: 800 }}
+                            display="block"
+                          >
+                            {formatTime(d.firstIn)} → {formatTime(d.lastOut)}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            display="block"
+                          >
+                            In/Out: {d.checkins}/{d.checkouts} • Stay:{" "}
+                            {formatMinutes(d.stayMinutes)}
+                            {d.leave
+                              ? ` • Leave: ${formatLeaveTypeLabel(
+                                  d.leave.leave_type
+                                )}`
+                              : ""}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: "right" }}>
+                          <Typography sx={{ fontWeight: 900 }}>
+                            {formatMinutes(d.workedMinutes)}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Worked
+                          </Typography>
+                        </Box>
+                      </Stack>
+
+                      <Stack
+                        direction="row"
+                        spacing={0.75}
+                        flexWrap="wrap"
+                        useFlexGap
+                        sx={{ mt: 1 }}
+                      >
+                        {d.leave && (
+                          <Chip
+                            size="small"
+                            label={`${(
+                              d.leave.status || "pending"
+                            ).toString()} • ${(
+                              d.leave.day_part || "full"
+                            ).toString()}`}
+                            sx={getLeaveStatusChipSx(d.leave.status)}
+                          />
+                        )}
+                        {d.openShift && (
+                          <Chip
+                            size="small"
+                            label="Open"
+                            sx={chipSx.openShift}
+                          />
+                        )}
+                        {d.lateCount > 0 && (
+                          <Chip
+                            size="small"
+                            label={`Late ${d.lateCount}`}
+                            sx={chipSx.warning}
+                          />
+                        )}
+                        {d.earlyLeaveCount > 0 && (
+                          <Chip
+                            size="small"
+                            label={`Early ${d.earlyLeaveCount}`}
+                            sx={chipSx.warning}
+                          />
+                        )}
+                      </Stack>
+
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() =>
+                          setSelectedDay({
+                            employee_id: selectedEmployeeId!,
+                            date: d.date,
+                          })
+                        }
+                        sx={{ mt: 1 }}
+                        fullWidth
+                      >
+                        View Day
+                      </Button>
+                    </Paper>
                   ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                </Stack>
+              </Box>
+
+              <Box sx={{ display: { xs: "none", sm: "block" } }}>
+                <TableContainer
+                  component={Paper}
+                  elevation={0}
+                  sx={{ ...cardSx }}
+                >
+                  <Table size="small">
+                    <TableHead sx={{ bgcolor: "background.default" }}>
+                      <TableRow>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          DATE
+                        </TableCell>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          FIRST/LAST
+                        </TableCell>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          WORKED
+                        </TableCell>
+                        <TableCell align="right" />
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {selectedEmployeeDays.slice(0, 31).map((d) => (
+                        <TableRow key={d.date} hover>
+                          <TableCell sx={{ fontWeight: 800 }}>
+                            {d.date}
+                          </TableCell>
+                          <TableCell>
+                            <Typography
+                              variant="caption"
+                              sx={{ fontWeight: 800 }}
+                            >
+                              {formatTime(d.firstIn)} → {formatTime(d.lastOut)}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              display="block"
+                            >
+                              In/Out: {d.checkins}/{d.checkouts} • Stay:{" "}
+                              {formatMinutes(d.stayMinutes)}
+                              {d.leave
+                                ? ` • Leave: ${formatLeaveTypeLabel(
+                                    d.leave.leave_type
+                                  )}`
+                                : ""}
+                            </Typography>
+                            <Stack
+                              direction="row"
+                              spacing={0.75}
+                              sx={{ mt: 0.5 }}
+                            >
+                              {d.leave && (
+                                <Chip
+                                  size="small"
+                                  label={`${(
+                                    d.leave.status || "pending"
+                                  ).toString()} • ${(
+                                    d.leave.day_part || "full"
+                                  ).toString()}`}
+                                  sx={getLeaveStatusChipSx(d.leave.status)}
+                                />
+                              )}
+                              {d.openShift && (
+                                <Chip
+                                  size="small"
+                                  label="Open"
+                                  sx={chipSx.openShift}
+                                />
+                              )}
+                              {d.lateCount > 0 && (
+                                <Chip
+                                  size="small"
+                                  label={`Late ${d.lateCount}`}
+                                  sx={chipSx.warning}
+                                />
+                              )}
+                              {d.earlyLeaveCount > 0 && (
+                                <Chip
+                                  size="small"
+                                  label={`Early ${d.earlyLeaveCount}`}
+                                  sx={chipSx.warning}
+                                />
+                              )}
+                            </Stack>
+                          </TableCell>
+                          <TableCell sx={{ fontWeight: 900 }}>
+                            {formatMinutes(d.workedMinutes)}
+                          </TableCell>
+                          <TableCell align="right">
+                            <Button
+                              size="small"
+                              variant="text"
+                              onClick={() =>
+                                setSelectedDay({
+                                  employee_id: selectedEmployeeId!,
+                                  date: d.date,
+                                })
+                              }
+                            >
+                              View
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            </>
           )}
         </Box>
       </Drawer>
@@ -2253,308 +2378,523 @@ export default function Attendance() {
                 : "No records for this day."}
             </Typography>
           ) : (
-            <TableContainer component={Paper} elevation={0} sx={{ ...cardSx }}>
-              <Table size="small">
-                <TableHead sx={{ bgcolor: "background.default" }}>
-                  <TableRow>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      #
-                    </TableCell>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      IN
-                    </TableCell>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      OUT
-                    </TableCell>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      METHOD
-                    </TableCell>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      LOCATION
-                    </TableCell>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      WORKED
-                    </TableCell>
-                    <TableCell
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      STATUS
-                    </TableCell>
-                    <TableCell
-                      align="right"
-                      sx={{ fontWeight: 800, color: "text.secondary" }}
-                    >
-                      EVIDENCE
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {selectedDayRows.map((r, idx) => (
-                    <TableRow key={r.id} hover>
-                      {(() => {
-                        const inMethod = normalizeMethod(r.clock_in_method);
-                        const outMethod = normalizeMethod(r.clock_out_method);
-                        const inHasGeo =
-                          typeof r.clock_in_lat === "number" &&
-                          typeof r.clock_in_lng === "number" &&
-                          inMethod !== "machine";
-                        const outHasGeo =
-                          typeof r.clock_out_lat === "number" &&
-                          typeof r.clock_out_lng === "number" &&
-                          outMethod !== "machine";
-                        const rid = Number(r.id);
-                        const hasRecordId = Number.isFinite(rid) && rid > 0;
-                        const showEvidence =
-                          hasRecordId &&
-                          !(inMethod === "machine" && outMethod === "machine");
+            <>
+              <Box sx={{ display: { xs: "block", sm: "none" } }}>
+                <Stack spacing={1.25}>
+                  {selectedDayRows.map((r, idx) => {
+                    const inMethod = normalizeMethod(r.clock_in_method);
+                    const outMethod = normalizeMethod(r.clock_out_method);
+                    const inHasGeo =
+                      typeof r.clock_in_lat === "number" &&
+                      typeof r.clock_in_lng === "number" &&
+                      inMethod !== "machine";
+                    const outHasGeo =
+                      typeof r.clock_out_lat === "number" &&
+                      typeof r.clock_out_lng === "number" &&
+                      outMethod !== "machine";
+                    const rid = Number(r.id);
+                    const hasRecordId = Number.isFinite(rid) && rid > 0;
+                    const showEvidence =
+                      hasRecordId &&
+                      !(inMethod === "machine" && outMethod === "machine");
 
-                        return (
-                          <>
-                            <TableCell sx={{ fontWeight: 800 }}>
-                              {idx + 1}
-                            </TableCell>
-                            <TableCell>{formatTime(r.clock_in)}</TableCell>
-                            <TableCell>
-                              {r.clock_out ? formatTime(r.clock_out) : "—"}
-                            </TableCell>
-                            <TableCell>
-                              <Stack
-                                direction="row"
-                                spacing={0.75}
-                                flexWrap="wrap"
-                              >
-                                <Chip
-                                  size="small"
-                                  label={`IN: ${methodLabel(inMethod)}`}
-                                  sx={{
-                                    fontWeight: 900,
-                                    bgcolor: "background.default",
-                                  }}
-                                />
-                                <Chip
-                                  size="small"
-                                  label={`OUT: ${
-                                    r.clock_out ? methodLabel(outMethod) : "—"
-                                  }`}
-                                  sx={{
-                                    fontWeight: 900,
-                                    bgcolor: "background.default",
-                                  }}
-                                />
-                                {inMethod === "machine" &&
-                                r.clock_in_device_id ? (
-                                  <Chip
-                                    size="small"
-                                    label={String(r.clock_in_device_id)}
-                                    sx={{
-                                      fontWeight: 900,
-                                      bgcolor: "background.default",
-                                    }}
-                                  />
-                                ) : null}
-                                {outMethod === "machine" &&
-                                r.clock_out_device_id ? (
-                                  <Chip
-                                    size="small"
-                                    label={String(r.clock_out_device_id)}
-                                    sx={{
-                                      fontWeight: 900,
-                                      bgcolor: "background.default",
-                                    }}
-                                  />
-                                ) : null}
-                              </Stack>
-                            </TableCell>
-                            <TableCell>
-                              <Stack spacing={0.25}>
-                                {inHasGeo ? (
-                                  <Typography
-                                    variant="body2"
-                                    component="a"
-                                    href={mapsUrl(
-                                      r.clock_in_lat as number,
-                                      r.clock_in_lng as number
-                                    )}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    sx={{
-                                      color: "primary.main",
-                                      textDecoration: "none",
-                                      fontWeight: 800,
-                                    }}
-                                  >
-                                    IN:{" "}
-                                    {formatLatLng(
-                                      r.clock_in_lat,
-                                      r.clock_in_lng
-                                    )}
-                                  </Typography>
-                                ) : (
-                                  <Typography
-                                    variant="body2"
-                                    color="text.secondary"
-                                  >
-                                    IN: —
-                                  </Typography>
-                                )}
-                                {r.clock_out ? (
-                                  outHasGeo ? (
-                                    <Typography
-                                      variant="body2"
-                                      component="a"
-                                      href={mapsUrl(
-                                        r.clock_out_lat as number,
-                                        r.clock_out_lng as number
-                                      )}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      sx={{
-                                        color: "primary.main",
-                                        textDecoration: "none",
-                                        fontWeight: 800,
-                                      }}
-                                    >
-                                      OUT:{" "}
-                                      {formatLatLng(
-                                        r.clock_out_lat,
-                                        r.clock_out_lng
-                                      )}
-                                    </Typography>
-                                  ) : (
-                                    <Typography
-                                      variant="body2"
-                                      color="text.secondary"
-                                    >
-                                      OUT: —
-                                    </Typography>
-                                  )
-                                ) : (
-                                  <Typography
-                                    variant="body2"
-                                    color="text.secondary"
-                                  >
-                                    OUT: —
-                                  </Typography>
-                                )}
-                              </Stack>
-                            </TableCell>
-                            <TableCell sx={{ fontWeight: 900 }}>
+                    const inDeviceId =
+                      inMethod === "machine" ? r.clock_in_device_id : null;
+                    const outDeviceId =
+                      r.clock_out && outMethod === "machine"
+                        ? r.clock_out_device_id
+                        : null;
+                    const showLocations =
+                      inHasGeo || (Boolean(r.clock_out) && outHasGeo);
+
+                    return (
+                      <Paper
+                        key={r.id}
+                        variant="outlined"
+                        sx={{ p: 1.5, borderRadius: 2.5 }}
+                      >
+                        <Stack
+                          direction="row"
+                          spacing={1.5}
+                          alignItems="flex-start"
+                        >
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Typography sx={{ fontWeight: 900 }} noWrap>
+                              Event #{idx + 1}
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              display="block"
+                            >
+                              In: {formatTime(r.clock_in)}
+                              {r.clock_out ? (
+                                <> • Out: {formatTime(r.clock_out)}</>
+                              ) : null}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ textAlign: "right" }}>
+                            <Typography sx={{ fontWeight: 900 }}>
                               {formatMinutes(r.duration_minutes || 0)}
-                            </TableCell>
-                            <TableCell>
-                              <Stack
-                                direction="row"
-                                spacing={0.75}
-                                flexWrap="wrap"
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              Worked
+                            </Typography>
+                          </Box>
+                        </Stack>
+
+                        <Stack
+                          direction="row"
+                          spacing={0.75}
+                          flexWrap="wrap"
+                          useFlexGap
+                          sx={{ mt: 1 }}
+                        >
+                          <Chip
+                            size="small"
+                            label={`IN: ${methodLabel(inMethod)}`}
+                            sx={{
+                              fontWeight: 900,
+                              bgcolor: "background.default",
+                            }}
+                          />
+                          {r.clock_out ? (
+                            <Chip
+                              size="small"
+                              label={`OUT: ${methodLabel(outMethod)}`}
+                              sx={{
+                                fontWeight: 900,
+                                bgcolor: "background.default",
+                              }}
+                            />
+                          ) : null}
+                          {inDeviceId ? (
+                            <Chip
+                              size="small"
+                              label={String(inDeviceId)}
+                              sx={{
+                                fontWeight: 900,
+                                bgcolor: "background.default",
+                              }}
+                            />
+                          ) : null}
+                          {outDeviceId ? (
+                            <Chip
+                              size="small"
+                              label={String(outDeviceId)}
+                              sx={{
+                                fontWeight: 900,
+                                bgcolor: "background.default",
+                              }}
+                            />
+                          ) : null}
+                          {!r.clock_out && (
+                            <Chip
+                              size="small"
+                              label="Open shift"
+                              sx={chipSx.openShift}
+                            />
+                          )}
+                          {isLate(r) && (
+                            <Chip
+                              size="small"
+                              label="Late"
+                              sx={chipSx.warning}
+                            />
+                          )}
+                          {isEarlyLeave(r) && (
+                            <Chip
+                              size="small"
+                              label="Early Leave"
+                              sx={chipSx.warning}
+                            />
+                          )}
+                          {!isLate(r) && !isEarlyLeave(r) && r.status ? (
+                            <Chip
+                              size="small"
+                              label={r.status}
+                              sx={getDayStatusChipSx(r.status)}
+                            />
+                          ) : null}
+                        </Stack>
+
+                        {showLocations ? (
+                          <Stack spacing={0.5} sx={{ mt: 1 }}>
+                            {inHasGeo ? (
+                              <Typography
+                                variant="body2"
+                                component="a"
+                                href={mapsUrl(
+                                  r.clock_in_lat as number,
+                                  r.clock_in_lng as number
+                                )}
+                                target="_blank"
+                                rel="noreferrer"
+                                sx={{
+                                  color: "primary.main",
+                                  textDecoration: "none",
+                                  fontWeight: 800,
+                                }}
                               >
-                                {!r.clock_out && (
-                                  <Chip
-                                    size="small"
-                                    label="Open shift"
-                                    sx={chipSx.openShift}
-                                  />
+                                IN: View location
+                              </Typography>
+                            ) : null}
+
+                            {r.clock_out && outHasGeo ? (
+                              <Typography
+                                variant="body2"
+                                component="a"
+                                href={mapsUrl(
+                                  r.clock_out_lat as number,
+                                  r.clock_out_lng as number
                                 )}
-                                {isLate(r) && (
-                                  <Chip
-                                    size="small"
-                                    label="Late"
-                                    sx={chipSx.warning}
-                                  />
-                                )}
-                                {isEarlyLeave(r) && (
-                                  <Chip
-                                    size="small"
-                                    label="Early Leave"
-                                    sx={chipSx.warning}
-                                  />
-                                )}
-                                {!isLate(r) && !isEarlyLeave(r) && r.status && (
-                                  <Chip
-                                    size="small"
-                                    label={r.status}
-                                    sx={getDayStatusChipSx(r.status)}
-                                  />
-                                )}
-                                {!isLate(r) &&
-                                  !isEarlyLeave(r) &&
-                                  !r.status && (
-                                    <Typography
-                                      variant="body2"
-                                      color="text.secondary"
+                                target="_blank"
+                                rel="noreferrer"
+                                sx={{
+                                  color: "primary.main",
+                                  textDecoration: "none",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                OUT: View location
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                        ) : null}
+
+                        <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => void openDevice(r)}
+                            disabled={
+                              deviceBusy &&
+                              deviceFor?.employee_id === r.employee_id &&
+                              deviceFor?.date === r.date &&
+                              deviceFor?.clock_in === r.clock_in
+                            }
+                            fullWidth
+                          >
+                            {deviceBusy &&
+                            deviceFor?.employee_id === r.employee_id &&
+                            deviceFor?.date === r.date &&
+                            deviceFor?.clock_in === r.clock_in
+                              ? "Loading…"
+                              : "Device"}
+                          </Button>
+
+                          <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => void openEvidence(r)}
+                            disabled={
+                              !showEvidence ||
+                              (evidenceBusy && evidenceFor?.id === r.id)
+                            }
+                            fullWidth
+                          >
+                            {evidenceBusy && evidenceFor?.id === r.id
+                              ? "Loading…"
+                              : "Biometric"}
+                          </Button>
+                        </Stack>
+                      </Paper>
+                    );
+                  })}
+                </Stack>
+              </Box>
+
+              <Box sx={{ display: { xs: "none", sm: "block" } }}>
+                <TableContainer
+                  component={Paper}
+                  elevation={0}
+                  sx={{ ...cardSx }}
+                >
+                  <Table size="small">
+                    <TableHead sx={{ bgcolor: "background.default" }}>
+                      <TableRow>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          #
+                        </TableCell>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          IN
+                        </TableCell>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          OUT
+                        </TableCell>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          METHOD
+                        </TableCell>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          LOCATION
+                        </TableCell>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          WORKED
+                        </TableCell>
+                        <TableCell
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          STATUS
+                        </TableCell>
+                        <TableCell
+                          align="right"
+                          sx={{ fontWeight: 800, color: "text.secondary" }}
+                        >
+                          EVIDENCE
+                        </TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {selectedDayRows.map((r, idx) => (
+                        <TableRow key={r.id} hover>
+                          {(() => {
+                            const inMethod = normalizeMethod(r.clock_in_method);
+                            const outMethod = normalizeMethod(
+                              r.clock_out_method
+                            );
+                            const inHasGeo =
+                              typeof r.clock_in_lat === "number" &&
+                              typeof r.clock_in_lng === "number" &&
+                              inMethod !== "machine";
+                            const outHasGeo =
+                              typeof r.clock_out_lat === "number" &&
+                              typeof r.clock_out_lng === "number" &&
+                              outMethod !== "machine";
+                            const rid = Number(r.id);
+                            const hasRecordId = Number.isFinite(rid) && rid > 0;
+                            const showEvidence =
+                              hasRecordId &&
+                              !(
+                                inMethod === "machine" &&
+                                outMethod === "machine"
+                              );
+
+                            return (
+                              <>
+                                <TableCell sx={{ fontWeight: 800 }}>
+                                  {idx + 1}
+                                </TableCell>
+                                <TableCell>{formatTime(r.clock_in)}</TableCell>
+                                <TableCell>
+                                  {r.clock_out ? formatTime(r.clock_out) : null}
+                                </TableCell>
+                                <TableCell>
+                                  <Stack
+                                    direction="row"
+                                    spacing={0.75}
+                                    flexWrap="wrap"
+                                  >
+                                    <Chip
+                                      size="small"
+                                      label={`IN: ${methodLabel(inMethod)}`}
+                                      sx={{
+                                        fontWeight: 900,
+                                        bgcolor: "background.default",
+                                      }}
+                                    />
+                                    {r.clock_out ? (
+                                      <Chip
+                                        size="small"
+                                        label={`OUT: ${methodLabel(outMethod)}`}
+                                        sx={{
+                                          fontWeight: 900,
+                                          bgcolor: "background.default",
+                                        }}
+                                      />
+                                    ) : null}
+                                    {inMethod === "machine" &&
+                                    r.clock_in_device_id ? (
+                                      <Chip
+                                        size="small"
+                                        label={String(r.clock_in_device_id)}
+                                        sx={{
+                                          fontWeight: 900,
+                                          bgcolor: "background.default",
+                                        }}
+                                      />
+                                    ) : null}
+                                    {outMethod === "machine" &&
+                                    r.clock_out &&
+                                    r.clock_out_device_id ? (
+                                      <Chip
+                                        size="small"
+                                        label={String(r.clock_out_device_id)}
+                                        sx={{
+                                          fontWeight: 900,
+                                          bgcolor: "background.default",
+                                        }}
+                                      />
+                                    ) : null}
+                                  </Stack>
+                                </TableCell>
+                                <TableCell>
+                                  {inHasGeo ||
+                                  (Boolean(r.clock_out) && outHasGeo) ? (
+                                    <Stack spacing={0.25}>
+                                      {inHasGeo ? (
+                                        <Typography
+                                          variant="body2"
+                                          component="a"
+                                          href={mapsUrl(
+                                            r.clock_in_lat as number,
+                                            r.clock_in_lng as number
+                                          )}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          sx={{
+                                            color: "primary.main",
+                                            textDecoration: "none",
+                                            fontWeight: 800,
+                                          }}
+                                        >
+                                          IN:{" "}
+                                          {formatLatLng(
+                                            r.clock_in_lat,
+                                            r.clock_in_lng
+                                          )}
+                                        </Typography>
+                                      ) : null}
+                                      {r.clock_out && outHasGeo ? (
+                                        <Typography
+                                          variant="body2"
+                                          component="a"
+                                          href={mapsUrl(
+                                            r.clock_out_lat as number,
+                                            r.clock_out_lng as number
+                                          )}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          sx={{
+                                            color: "primary.main",
+                                            textDecoration: "none",
+                                            fontWeight: 800,
+                                          }}
+                                        >
+                                          OUT:{" "}
+                                          {formatLatLng(
+                                            r.clock_out_lat,
+                                            r.clock_out_lng
+                                          )}
+                                        </Typography>
+                                      ) : null}
+                                    </Stack>
+                                  ) : null}
+                                </TableCell>
+                                <TableCell sx={{ fontWeight: 900 }}>
+                                  {formatMinutes(r.duration_minutes || 0)}
+                                </TableCell>
+                                <TableCell>
+                                  <Stack
+                                    direction="row"
+                                    spacing={0.75}
+                                    flexWrap="wrap"
+                                  >
+                                    {!r.clock_out && (
+                                      <Chip
+                                        size="small"
+                                        label="Open shift"
+                                        sx={chipSx.openShift}
+                                      />
+                                    )}
+                                    {isLate(r) && (
+                                      <Chip
+                                        size="small"
+                                        label="Late"
+                                        sx={chipSx.warning}
+                                      />
+                                    )}
+                                    {isEarlyLeave(r) && (
+                                      <Chip
+                                        size="small"
+                                        label="Early Leave"
+                                        sx={chipSx.warning}
+                                      />
+                                    )}
+                                    {!isLate(r) &&
+                                      !isEarlyLeave(r) &&
+                                      r.status && (
+                                        <Chip
+                                          size="small"
+                                          label={r.status}
+                                          sx={getDayStatusChipSx(r.status)}
+                                        />
+                                      )}
+                                    {!isLate(r) &&
+                                      !isEarlyLeave(r) &&
+                                      !r.status &&
+                                      null}
+                                  </Stack>
+                                </TableCell>
+                                <TableCell align="right">
+                                  <Stack
+                                    direction="row"
+                                    spacing={1}
+                                    justifyContent="flex-end"
+                                    alignItems="center"
+                                  >
+                                    {showEvidence ? (
+                                      <Button
+                                        size="small"
+                                        variant="text"
+                                        onClick={() => void openEvidence(r)}
+                                        disabled={
+                                          evidenceBusy &&
+                                          evidenceFor?.id === r.id
+                                        }
+                                      >
+                                        {evidenceBusy &&
+                                        evidenceFor?.id === r.id
+                                          ? "Loading…"
+                                          : "Biometric"}
+                                      </Button>
+                                    ) : null}
+                                    <Button
+                                      size="small"
+                                      variant="text"
+                                      onClick={() => void openDevice(r)}
+                                      disabled={
+                                        deviceBusy &&
+                                        deviceFor?.employee_id ===
+                                          r.employee_id &&
+                                        deviceFor?.date === r.date &&
+                                        deviceFor?.clock_in === r.clock_in
+                                      }
                                     >
-                                      —
-                                    </Typography>
-                                  )}
-                              </Stack>
-                            </TableCell>
-                            <TableCell align="right">
-                              <Stack
-                                direction="row"
-                                spacing={1}
-                                justifyContent="flex-end"
-                                alignItems="center"
-                              >
-                                {showEvidence ? (
-                                  <Button
-                                    size="small"
-                                    variant="text"
-                                    onClick={() => void openEvidence(r)}
-                                    disabled={
-                                      evidenceBusy && evidenceFor?.id === r.id
-                                    }
-                                  >
-                                    {evidenceBusy && evidenceFor?.id === r.id
-                                      ? "Loading…"
-                                      : "Biometric"}
-                                  </Button>
-                                ) : (
-                                  <Typography
-                                    variant="body2"
-                                    color="text.secondary"
-                                  >
-                                    —
-                                  </Typography>
-                                )}
-                                <Button
-                                  size="small"
-                                  variant="text"
-                                  onClick={() => void openDevice(r)}
-                                  disabled={
-                                    deviceBusy &&
-                                    deviceFor?.employee_id === r.employee_id &&
-                                    deviceFor?.date === r.date &&
-                                    deviceFor?.clock_in === r.clock_in
-                                  }
-                                >
-                                  {deviceBusy &&
-                                  deviceFor?.employee_id === r.employee_id &&
-                                  deviceFor?.date === r.date &&
-                                  deviceFor?.clock_in === r.clock_in
-                                    ? "Loading…"
-                                    : "Device"}
-                                </Button>
-                              </Stack>
-                            </TableCell>
-                          </>
-                        );
-                      })()}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                                      {deviceBusy &&
+                                      deviceFor?.employee_id ===
+                                        r.employee_id &&
+                                      deviceFor?.date === r.date &&
+                                      deviceFor?.clock_in === r.clock_in
+                                        ? "Loading…"
+                                        : "Device"}
+                                    </Button>
+                                  </Stack>
+                                </TableCell>
+                              </>
+                            );
+                          })()}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            </>
           )}
         </DialogContent>
       </Dialog>
