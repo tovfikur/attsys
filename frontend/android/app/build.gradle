@@ -1,15 +1,31 @@
 apply plugin: 'com.android.application'
 
+def releaseSigningProps = new Properties()
+def releaseSigningPropsFile = rootProject.file("keystore.properties")
+if (releaseSigningPropsFile.exists()) {
+    releaseSigningPropsFile.withInputStream { stream -> releaseSigningProps.load(stream) }
+}
+
 android {
     namespace "com.attsystem.tenant"
     compileSdk rootProject.ext.compileSdkVersion
     signingConfigs {
         release {
-            def keystorePath = System.getenv("ATT_KEYSTORE_PATH") ?: "${rootProject.projectDir}/app/att-tenant-release.keystore"
-            storeFile file(keystorePath)
-            storePassword System.getenv("ATT_KEYSTORE_PASSWORD")
-            keyAlias System.getenv("ATT_KEY_ALIAS") ?: "att-tenant"
-            keyPassword System.getenv("ATT_KEY_PASSWORD") ?: System.getenv("ATT_KEYSTORE_PASSWORD")
+            def envKeystorePath = System.getenv("ATT_KEYSTORE_PATH")
+            def propsKeystorePath = releaseSigningProps.getProperty("storeFile")
+            def signingKeystorePath = envKeystorePath ?: propsKeystorePath
+            def defaultKeystore = file("${rootProject.projectDir}/app/att-tenant-release.keystore")
+            def bakKeystore = fileTree(dir: "${rootProject.projectDir}/app", include: ["att-tenant-release.keystore.bak-*"]).files?.toList()?.sort { a, b -> a.name <=> b.name }?.last()
+            def keystoreFile = signingKeystorePath ? file(signingKeystorePath) : (defaultKeystore.exists() ? defaultKeystore : (bakKeystore ?: defaultKeystore))
+
+            def storePasswordValue = System.getenv("ATT_KEYSTORE_PASSWORD") ?: releaseSigningProps.getProperty("storePassword")
+            def keyAliasValue = System.getenv("ATT_KEY_ALIAS") ?: releaseSigningProps.getProperty("keyAlias") ?: "att-tenant"
+            def keyPasswordValue = System.getenv("ATT_KEY_PASSWORD") ?: releaseSigningProps.getProperty("keyPassword") ?: storePasswordValue
+
+            storeFile keystoreFile
+            storePassword storePasswordValue ?: ""
+            keyAlias keyAliasValue
+            keyPassword keyPasswordValue ?: ""
         }
     }
     defaultConfig {
@@ -27,11 +43,39 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
         }
+        staging {
+            initWith release
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+        }
     }
+}
+
+def validateReleaseSigning = {
+    def signing = android.signingConfigs.release
+    def missing = []
+
+    if (!signing.storeFile || !signing.storeFile.exists()) missing << "keystore file (ATT_KEYSTORE_PATH or keystore.properties storeFile)"
+    if (!signing.storePassword) missing << "store password (ATT_KEYSTORE_PASSWORD or keystore.properties storePassword)"
+    if (!signing.keyAlias) missing << "key alias (ATT_KEY_ALIAS or keystore.properties keyAlias)"
+    if (!signing.keyPassword) missing << "key password (ATT_KEY_PASSWORD or keystore.properties keyPassword)"
+
+    if (!missing.isEmpty()) {
+        throw new GradleException("Release signing is not configured: missing " + missing.join(", ") + ".")
+    }
+}
+
+gradle.taskGraph.whenReady {
+    def isExplicitReleaseTask = gradle.startParameter.taskNames.any { t ->
+        def name = (t ?: "").toString()
+        return name ==~ /(?i)(.*:)?(assemble|bundle|package)Release/
+    }
+    if (isExplicitReleaseTask) validateReleaseSigning()
 }
 
 repositories {
