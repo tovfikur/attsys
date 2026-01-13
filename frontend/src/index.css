@@ -13,4 +13,9 @@ body {
   min-height: 100vh;
   /* Reset the "flex center" that Vite default adds, causing layout issues */
   display: block; 
+  overflow-x: hidden;
+}
+
+html {
+  overflow-x: hidden;
 }

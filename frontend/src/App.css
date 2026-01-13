@@ -37,12 +37,19 @@ html,
 body {
   background-color: var(--bg) !important;
   color: var(--text) !important;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  overflow-x: clip;
 }
 
 .app-container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: clamp(12px, 3vw, 32px);
 }
 
 .dashboard-header {
@@ -194,7 +201,7 @@ body {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 1.5rem;
 }
 
@@ -282,7 +289,7 @@ body {
 
 .tenant-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: 1.5rem;
 }
 

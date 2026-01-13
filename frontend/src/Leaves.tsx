@@ -1021,7 +1021,8 @@ export default function Leaves() {
         }}
         maxWidth="md"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isSmDown}
+        PaperProps={{ sx: { borderRadius: isSmDown ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 900 }}>
           {selectedDate ? `Leaves on ${selectedDate}` : "Leaves"}
@@ -1131,7 +1132,8 @@ export default function Leaves() {
         }}
         maxWidth="md"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isSmDown}
+        PaperProps={{ sx: { borderRadius: isSmDown ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 900 }}>Leave Types</DialogTitle>
         <DialogContent dividers sx={{ p: 2.5 }}>
@@ -1399,7 +1401,8 @@ export default function Leaves() {
         }}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isSmDown}
+        PaperProps={{ sx: { borderRadius: isSmDown ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 900 }}>Leave Settings</DialogTitle>
         <DialogContent dividers sx={{ p: 2.5 }}>

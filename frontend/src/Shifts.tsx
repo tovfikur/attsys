@@ -346,6 +346,8 @@ export default function Shifts() {
         onClose={() => setOpenForm(false)}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle>
           {currentShift.id ? "Edit Shift" : "Create Shift"}
@@ -476,6 +478,8 @@ export default function Shifts() {
         onClose={() => setOpenAssign(false)}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle>Assign Shift to Employees</DialogTitle>
         <DialogContent dividers>

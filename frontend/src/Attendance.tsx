@@ -27,6 +27,7 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
   useTheme,
 } from "@mui/material";
 import {
@@ -251,6 +252,7 @@ const isEarlyLeave = (r: AttendanceRow): boolean => {
 
 export default function Attendance() {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const role = getUser()?.role || "";
   const canManageLeaveTypes = role === "hr_admin" || role === "tenant_owner";
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -2120,6 +2122,7 @@ export default function Attendance() {
         onClose={() => setSelectedDay(null)}
         maxWidth="md"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -2543,6 +2546,7 @@ export default function Attendance() {
         onClose={evidenceBusy ? undefined : closeEvidence}
         maxWidth="md"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -2681,6 +2685,7 @@ export default function Attendance() {
         onClose={deviceBusy ? undefined : closeDevice}
         maxWidth="md"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -2767,6 +2772,7 @@ export default function Attendance() {
         onClose={enrollBusy ? undefined : closeEnroll}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
         PaperProps={{ sx: { borderRadius: 3 } }}
       >
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 2 }}>

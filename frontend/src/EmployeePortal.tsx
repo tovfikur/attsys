@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "./api";
 import { getErrorMessage } from "./utils/errors";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Alert,
   alpha,
@@ -16,6 +17,9 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  IconButton,
+  ListItemIcon,
+  Menu,
   MenuItem,
   Paper,
   Stack,
@@ -23,14 +27,18 @@ import {
   Tabs,
   TextField,
   Typography,
+  useMediaQuery,
   useTheme,
 } from "@mui/material";
 import {
   AccessTimeRounded,
   ChevronLeft,
   ChevronRight,
+  CloseRounded,
+  EditRounded,
   ExitToAppRounded,
   LoginRounded,
+  MoreVertRounded,
   RefreshRounded,
   VisibilityRounded,
 } from "@mui/icons-material";
@@ -197,6 +205,9 @@ const formatLatLng = (
 
 export default function EmployeePortal() {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const location = useLocation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -216,6 +227,31 @@ export default function EmployeePortal() {
   const [leaveStatusFilter, setLeaveStatusFilter] = useState<
     "all" | "pending" | "approved" | "rejected"
   >("all");
+
+  const workingDayIndexSet = useMemo(() => {
+    const raw = String(workingDays || "").trim();
+    if (!raw) return null;
+    const map: Record<string, number> = {
+      sun: 0,
+      mon: 1,
+      tue: 2,
+      wed: 3,
+      thu: 4,
+      fri: 5,
+      sat: 6,
+    };
+    const set = new Set<number>();
+    for (const part of raw.split(/[,/|\s]+/g)) {
+      const token = String(part || "")
+        .trim()
+        .toLowerCase();
+      if (!token) continue;
+      const key = token.slice(0, 3);
+      const idx = map[key];
+      if (typeof idx === "number") set.add(idx);
+    }
+    return set.size ? set : null;
+  }, [workingDays]);
 
   const [openShift, setOpenShift] = useState<boolean | null>(null);
   const [clockBusy, setClockBusy] = useState(false);
@@ -320,6 +356,8 @@ export default function EmployeePortal() {
   const [editProfileBusy, setEditProfileBusy] = useState(false);
   const [editProfileError, setEditProfileError] = useState("");
   const [editProfileOk, setEditProfileOk] = useState("");
+  const [viewProfileOpen, setViewProfileOpen] = useState(false);
+  const [profileMenuEl, setProfileMenuEl] = useState<HTMLElement | null>(null);
   const [editProfileForm, setEditProfileForm] = useState<{
     email: string;
     personal_phone: string;
@@ -726,7 +764,7 @@ export default function EmployeePortal() {
           geo: biometric.geo || null,
         });
         const record = res.data?.record;
-        let msg = `${type === "in" ? "Clock In" : "Clock Out"} successful`;
+        let msg = `${type === "in" ? "Check In" : "Check Out"} successful`;
         if (record?.status && record.status !== "Present")
           msg += ` (${record.status})`;
         if (record?.late_minutes > 0) msg += ` • Late ${record.late_minutes}m`;
@@ -1071,6 +1109,56 @@ export default function EmployeePortal() {
     return s || "E";
   }, [displayName]);
 
+  const isProfileRoute = location.pathname.endsWith("/employee-portal/profile");
+
+  useEffect(() => {
+    if (!employeeId) return;
+    if (isProfileRoute) setViewProfileOpen(true);
+  }, [employeeId, isProfileRoute]);
+
+  useEffect(() => {
+    if (!employeeId) return;
+    const p = new URLSearchParams(location.search || "");
+    if (!p.get("applyLeave")) return;
+    setApplyError("");
+    setApplyOk("");
+    setApplyOpen(true);
+    navigate("/employee-portal", { replace: true });
+  }, [employeeId, location.search, navigate]);
+
+  useEffect(() => {
+    if (!employeeId) return;
+    const p = new URLSearchParams(location.search || "");
+    const raw = String(p.get("quickCheck") || "")
+      .toLowerCase()
+      .trim();
+    if (!raw) return;
+    const nextType =
+      raw === "in" || raw === "checkin"
+        ? "in"
+        : raw === "out" || raw === "checkout"
+        ? "out"
+        : null;
+    if (!nextType) {
+      if (openShift === null) {
+        void refreshOpenShift();
+        return;
+      }
+      openClockBiometric(openShift === true ? "out" : "in");
+      navigate("/employee-portal", { replace: true });
+      return;
+    }
+    openClockBiometric(nextType);
+    navigate("/employee-portal", { replace: true });
+  }, [
+    employeeId,
+    location.search,
+    navigate,
+    openClockBiometric,
+    openShift,
+    refreshOpenShift,
+  ]);
+
   if (loading) {
     return (
       <Box
@@ -1130,6 +1218,8 @@ export default function EmployeePortal() {
 
   const showClockIn = openShift === null ? true : openShift === false;
   const showClockOut = openShift === null ? true : openShift === true;
+  const profileMenuOpen = Boolean(profileMenuEl);
+  const closeProfileMenu = () => setProfileMenuEl(null);
 
   return (
     <Box
@@ -1197,7 +1287,7 @@ export default function EmployeePortal() {
                     <Typography
                       variant="body2"
                       color="text.secondary"
-                      noWrap
+                      noWrap={!isMobile}
                       sx={{ fontWeight: 500 }}
                     >
                       {me?.employee?.designation
@@ -1211,7 +1301,7 @@ export default function EmployeePortal() {
                     <Typography
                       variant="body2"
                       color="text.secondary"
-                      noWrap
+                      noWrap={!isMobile}
                       sx={{ fontWeight: 500 }}
                     >
                       {me?.employee?.shift_name
@@ -1224,7 +1314,8 @@ export default function EmployeePortal() {
 
                 <Stack
                   spacing={1}
-                  alignItems={{ xs: "flex-start", md: "flex-end" }}
+                  alignItems={{ xs: "stretch", md: "flex-end" }}
+                  sx={{ minWidth: 0 }}
                 >
                   <Chip
                     size="small"
@@ -1244,14 +1335,18 @@ export default function EmployeePortal() {
                         : "warning"
                     }
                     variant="outlined"
-                    sx={{ fontWeight: 700 }}
+                    sx={{
+                      fontWeight: 700,
+                      width: { xs: "100%", sm: "auto" },
+                      justifyContent: "center",
+                    }}
                   />
                   <Stack
-                    direction="row"
+                    direction={{ xs: "column", sm: "row" }}
                     spacing={1}
-                    flexWrap="wrap"
-                    useFlexGap
-                    justifyContent={{ xs: "flex-start", md: "flex-end" }}
+                    alignItems={{ xs: "stretch", sm: "center" }}
+                    sx={{ width: { xs: "100%", md: "auto" } }}
+                    justifyContent={{ sm: "flex-start", md: "flex-end" }}
                   >
                     <Button
                       size="small"
@@ -1263,27 +1358,39 @@ export default function EmployeePortal() {
                         void refreshProfilePhoto();
                       }}
                       disabled={statsLoading || clockBusy}
-                      sx={{ borderRadius: 2, fontWeight: 700 }}
+                      sx={{
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        width: { xs: "100%", sm: "auto" },
+                      }}
                     >
                       Refresh
                     </Button>
-                    {canEditOwnProfile ? (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        onClick={openEditProfile}
-                        disabled={editProfileBusy || statsLoading}
-                        sx={{ borderRadius: 2, fontWeight: 700 }}
-                      >
-                        Edit Profile
-                      </Button>
-                    ) : null}
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={(e) => setProfileMenuEl(e.currentTarget)}
+                      disabled={statsLoading || clockBusy}
+                      endIcon={<MoreVertRounded />}
+                      sx={{
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        width: { xs: "100%", sm: "auto" },
+                        justifyContent: { xs: "space-between", sm: "center" },
+                      }}
+                    >
+                      Profile
+                    </Button>
                     <Button
                       size="small"
                       variant="contained"
                       onClick={() => setApplyOpen(true)}
                       disabled={applyBusy || statsLoading}
-                      sx={{ borderRadius: 2, fontWeight: 700 }}
+                      sx={{
+                        borderRadius: 2,
+                        fontWeight: 700,
+                        width: { xs: "100%", sm: "auto" },
+                      }}
                     >
                       Apply Leave
                     </Button>
@@ -1328,7 +1435,7 @@ export default function EmployeePortal() {
                       disabled={clockBusy || biometricBusy}
                       sx={{ borderRadius: 2, fontWeight: 700 }}
                     >
-                      Clock In
+                      Check In
                     </Button>
                   )}
                   {showClockOut && (
@@ -1341,7 +1448,7 @@ export default function EmployeePortal() {
                       disabled={clockBusy || biometricBusy}
                       sx={{ borderRadius: 2, fontWeight: 700 }}
                     >
-                      Clock Out
+                      Check Out
                     </Button>
                   )}
                 </Stack>
@@ -1375,18 +1482,19 @@ export default function EmployeePortal() {
               <Box
                 sx={{
                   width: "100%",
-                  display: "flex",
-                  flexWrap: "nowrap",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: { xs: 1, sm: 1.25 },
-                  overflowX: { xs: "auto", lg: "hidden" },
+                  display: "grid",
+                  gridTemplateColumns: {
+                    xs: "repeat(2, minmax(0, 1fr))",
+                    sm: "repeat(4, minmax(0, 1fr))",
+                  },
+                  gap: { xs: 1.5, sm: 1.25 },
+                  justifyItems: "center",
                 }}
               >
                 <Stack
                   spacing={0.75}
                   alignItems="center"
-                  sx={{ flex: "1 1 0", minWidth: 100 }}
+                  sx={{ width: "100%", minWidth: 0 }}
                 >
                   <Box
                     sx={{
@@ -1425,7 +1533,7 @@ export default function EmployeePortal() {
                 <Stack
                   spacing={0.75}
                   alignItems="center"
-                  sx={{ flex: "1 1 0", minWidth: 100 }}
+                  sx={{ width: "100%", minWidth: 0 }}
                 >
                   <Box
                     sx={{
@@ -1464,7 +1572,7 @@ export default function EmployeePortal() {
                 <Stack
                   spacing={0.75}
                   alignItems="center"
-                  sx={{ flex: "1 1 0", minWidth: 100 }}
+                  sx={{ width: "100%", minWidth: 0 }}
                 >
                   <Box
                     sx={{
@@ -1503,7 +1611,7 @@ export default function EmployeePortal() {
                 <Stack
                   spacing={0.75}
                   alignItems="center"
-                  sx={{ flex: "1 1 0", minWidth: 120 }}
+                  sx={{ width: "100%", minWidth: 0 }}
                 >
                   <Box
                     sx={{
@@ -1909,21 +2017,22 @@ export default function EmployeePortal() {
                         ].map((it) => (
                           <Stack
                             key={it.k}
-                            direction="row"
+                            direction={{ xs: "column", sm: "row" }}
                             spacing={1.5}
-                            alignItems="baseline"
+                            alignItems={{ xs: "flex-start", sm: "baseline" }}
+                            sx={{ minWidth: 0 }}
                           >
                             <Typography
                               variant="body2"
                               color="text.secondary"
-                              sx={{ fontWeight: 700, minWidth: 130 }}
+                              sx={{ fontWeight: 700 }}
                             >
                               {it.k}
                             </Typography>
                             <Typography
                               variant="body2"
                               sx={{ fontWeight: 700, minWidth: 0 }}
-                              noWrap
+                              noWrap={!isMobile}
                             >
                               {String(it.v || "—")}
                             </Typography>
@@ -1938,50 +2047,75 @@ export default function EmployeePortal() {
               {tab === 0 && (
                 <Stack spacing={2}>
                   <Paper elevation={0} sx={{ ...panelCardSx, p: 1.5 }}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<ChevronLeft />}
-                        onClick={() =>
-                          setMonth(
-                            (d) =>
-                              new Date(d.getFullYear(), d.getMonth() - 1, 1)
-                          )
-                        }
-                        sx={{ borderRadius: 2, fontWeight: 700 }}
+                    <Stack spacing={1}>
+                      <Stack
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        sx={{ minWidth: 0 }}
                       >
-                        Prev
-                      </Button>
-                      <Box sx={{ flex: 1, textAlign: "center" }}>
-                        <Typography sx={{ fontWeight: 800, lineHeight: 1.1 }}>
-                          {monthLabel}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {monthStr}
-                        </Typography>
-                      </Box>
+                        <IconButton
+                          size="small"
+                          onClick={() =>
+                            setMonth(
+                              (d) =>
+                                new Date(d.getFullYear(), d.getMonth() - 1, 1)
+                            )
+                          }
+                          aria-label="Previous month"
+                          sx={{
+                            borderRadius: 2,
+                            border: "1px solid",
+                            borderColor: "divider",
+                          }}
+                        >
+                          <ChevronLeft fontSize="small" />
+                        </IconButton>
+                        <Box sx={{ flex: 1, textAlign: "center", minWidth: 0 }}>
+                          <Typography
+                            sx={{ fontWeight: 900, lineHeight: 1.1 }}
+                            noWrap
+                          >
+                            {monthLabel}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            noWrap
+                          >
+                            {monthStr}
+                          </Typography>
+                        </Box>
+                        <IconButton
+                          size="small"
+                          onClick={() =>
+                            setMonth(
+                              (d) =>
+                                new Date(d.getFullYear(), d.getMonth() + 1, 1)
+                            )
+                          }
+                          aria-label="Next month"
+                          sx={{
+                            borderRadius: 2,
+                            border: "1px solid",
+                            borderColor: "divider",
+                          }}
+                        >
+                          <ChevronRight fontSize="small" />
+                        </IconButton>
+                      </Stack>
                       <Button
                         size="small"
                         variant="outlined"
                         onClick={() => setMonth(new Date())}
-                        sx={{ borderRadius: 2, fontWeight: 700 }}
+                        sx={{
+                          borderRadius: 2,
+                          fontWeight: 800,
+                          width: { xs: "100%", sm: "auto" },
+                          alignSelf: { sm: "center" },
+                        }}
                       >
                         Today
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        endIcon={<ChevronRight />}
-                        onClick={() =>
-                          setMonth(
-                            (d) =>
-                              new Date(d.getFullYear(), d.getMonth() + 1, 1)
-                          )
-                        }
-                        sx={{ borderRadius: 2, fontWeight: 700 }}
-                      >
-                        Next
                       </Button>
                     </Stack>
                   </Paper>
@@ -1991,7 +2125,7 @@ export default function EmployeePortal() {
                       sx={{
                         display: "grid",
                         gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                        gap: { xs: 0.5, sm: 1 },
+                        gap: { xs: 0.75, sm: 1 },
                         px: { xs: 0, sm: 0.5 },
                         pb: { xs: 0.5, sm: 1 },
                       }}
@@ -2011,11 +2145,11 @@ export default function EmployeePortal() {
                             <Typography
                               variant="caption"
                               sx={{
-                                fontWeight: 700,
+                                fontWeight: 900,
                                 fontSize: { xs: 10, sm: 12 },
                               }}
                             >
-                              {w}
+                              {isMobile ? w.slice(0, 1) : w}
                             </Typography>
                           </Box>
                         )
@@ -2026,7 +2160,7 @@ export default function EmployeePortal() {
                       sx={{
                         display: "grid",
                         gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-                        gap: { xs: 0.5, sm: 1 },
+                        gap: { xs: 0.75, sm: 1 },
                         p: { xs: 0.25, sm: 0.5 },
                       }}
                     >
@@ -2036,7 +2170,12 @@ export default function EmployeePortal() {
                             <Box
                               key={`empty-${idx}`}
                               sx={{
-                                minHeight: { xs: 58, sm: 84, md: 98 },
+                                width: "100%",
+                                aspectRatio: {
+                                  xs: "1 / 1",
+                                  sm: "1 / 0.9",
+                                  md: "1 / 0.82",
+                                },
                                 borderRadius: { xs: 2.5, sm: 3 },
                                 bgcolor: alpha(
                                   theme.palette.text.primary,
@@ -2050,6 +2189,9 @@ export default function EmployeePortal() {
                         const d = cell.date;
                         const dayOfWeek = new Date(`${d}T00:00:00`).getDay();
                         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                        const isOffByShift = workingDayIndexSet
+                          ? !workingDayIndexSet.has(dayOfWeek)
+                          : isWeekend;
                         const punch = attendanceByDate.get(d) || null;
                         const punchRows = attendanceRowsByDate.get(d) || [];
                         const holiday = holidaysByDate.get(d) || null;
@@ -2067,16 +2209,18 @@ export default function EmployeePortal() {
                             String(l.status || "").toLowerCase() === "rejected"
                         );
 
-                        const badge = holiday
-                          ? { label: "Holiday", sx: chipSx.neutral }
+                        const badge = punch
+                          ? { label: "Present", sx: chipSx.ok }
                           : approvedLeave
                           ? { label: "Leave", sx: chipSx.ok }
                           : pendingLeave
                           ? { label: "Pending", sx: chipSx.warn }
                           : rejectedLeave
                           ? { label: "Rejected", sx: chipSx.error }
-                          : punch
-                          ? { label: "Present", sx: chipSx.ok }
+                          : holiday
+                          ? { label: "Holiday", sx: chipSx.neutral }
+                          : isOffByShift
+                          ? { label: "Off", sx: chipSx.neutral }
                           : d < todayStr
                           ? { label: "Absent", sx: chipSx.error }
                           : { label: "—", sx: chipSx.neutral };
@@ -2084,6 +2228,8 @@ export default function EmployeePortal() {
                         const isToday = d === todayStr;
                         const subtitle = holiday
                           ? holiday.name
+                          : badge.label === "Off"
+                          ? "Off"
                           : punch
                           ? minutesToHM(punch.minutes)
                           : leaveList.length > 0
@@ -2096,25 +2242,45 @@ export default function EmployeePortal() {
                           !holiday &&
                           !punch &&
                           leaveList.length === 0;
-                        const isEmptyDay =
-                          !holiday &&
-                          !punch &&
-                          leaveList.length === 0 &&
-                          !isAbsent;
                         const isPresent = badge.label === "Present";
                         const isLeave =
                           badge.label === "Leave" ||
                           badge.label === "Pending" ||
                           badge.label === "Rejected";
-                        const isHoliday = badge.label === "Holiday";
-                        const showCenteredStatus =
-                          isPresent || isLeave || isAbsent || isHoliday;
+                        const isHoliday =
+                          badge.label === "Holiday" || badge.label === "Off";
+                        const status:
+                          | "present"
+                          | "absent"
+                          | "holiday"
+                          | "leave"
+                          | "pending"
+                          | "rejected"
+                          | "none" = isHoliday
+                          ? "holiday"
+                          : isPresent
+                          ? "present"
+                          : badge.label === "Leave"
+                          ? "leave"
+                          : badge.label === "Pending"
+                          ? "pending"
+                          : badge.label === "Rejected"
+                          ? "rejected"
+                          : isAbsent
+                          ? "absent"
+                          : "none";
+
+                        const showCenteredStatus = isMobile
+                          ? status === "present" || status === "holiday"
+                          : isPresent || isLeave || isAbsent || isHoliday;
                         const centeredPrimary = isPresent
                           ? subtitle
                           : isLeave
                           ? badge.label
                           : isHoliday
-                          ? "Holiday"
+                          ? badge.label === "Off"
+                            ? "Off"
+                            : "Holiday"
                           : isAbsent
                           ? "Absent"
                           : "";
@@ -2125,6 +2291,61 @@ export default function EmployeePortal() {
                           : isLeave
                           ? subtitle
                           : "";
+                        const dayNumberColor =
+                          status === "present"
+                            ? theme.palette.success.main
+                            : status === "absent"
+                            ? theme.palette.error.main
+                            : status === "holiday"
+                            ? alpha(theme.palette.text.primary, 0.45)
+                            : status === "leave"
+                            ? theme.palette.warning.dark
+                            : theme.palette.text.primary;
+
+                        const primaryTextColor =
+                          status === "present"
+                            ? theme.palette.success.dark
+                            : status === "absent"
+                            ? theme.palette.error.dark
+                            : status === "holiday"
+                            ? theme.palette.text.secondary
+                            : status === "leave" || status === "pending"
+                            ? theme.palette.warning.dark
+                            : status === "rejected"
+                            ? theme.palette.error.dark
+                            : theme.palette.text.primary;
+
+                        const dayBg =
+                          status === "present"
+                            ? alpha(theme.palette.success.main, 0.08)
+                            : status === "absent"
+                            ? alpha(theme.palette.error.main, 0.06)
+                            : status === "holiday"
+                            ? alpha(theme.palette.text.primary, 0.03)
+                            : status === "leave"
+                            ? alpha(theme.palette.warning.main, 0.08)
+                            : status === "pending"
+                            ? "transparent"
+                            : status === "rejected"
+                            ? alpha(theme.palette.error.main, 0.06)
+                            : isWeekend
+                            ? alpha(theme.palette.text.primary, 0.02)
+                            : "transparent";
+
+                        const statusBorderColor =
+                          status === "present"
+                            ? alpha(theme.palette.success.main, 0.35)
+                            : status === "absent"
+                            ? alpha(theme.palette.error.main, 0.35)
+                            : status === "holiday"
+                            ? alpha(theme.palette.text.primary, 0.2)
+                            : status === "leave"
+                            ? alpha(theme.palette.warning.main, 0.35)
+                            : status === "pending"
+                            ? alpha(theme.palette.warning.main, 0.6)
+                            : status === "rejected"
+                            ? alpha(theme.palette.error.main, 0.55)
+                            : "divider";
 
                         const methodSummary = (() => {
                           const methods = new Set<
@@ -2166,7 +2387,9 @@ export default function EmployeePortal() {
                               borderRadius: { xs: 2.5, sm: 3 },
                               overflow: "hidden",
                               border: "1px solid",
-                              borderColor: "divider",
+                              borderColor: isToday
+                                ? alpha(theme.palette.primary.main, 0.7)
+                                : statusBorderColor,
                               bgcolor: alpha(
                                 theme.palette.background.paper,
                                 0.92
@@ -2182,209 +2405,86 @@ export default function EmployeePortal() {
                           >
                             <Box
                               sx={{
-                                minHeight: { xs: 58, sm: 84, md: 98 },
-                                p: { xs: 0.75, sm: 1.25 },
+                                width: "100%",
+                                aspectRatio: {
+                                  xs: "1 / 1",
+                                  sm: "1 / 0.9",
+                                  md: "1 / 0.82",
+                                },
+                                p: { xs: 0.75, sm: 1 },
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 0.75,
                                 bgcolor: isToday
-                                  ? alpha(theme.palette.primary.main, 0.07)
-                                  : isWeekend
-                                  ? alpha(theme.palette.text.primary, 0.02)
-                                  : "transparent",
+                                  ? alpha(theme.palette.primary.main, 0.08)
+                                  : dayBg,
                               }}
                             >
-                              {isEmptyDay ? (
-                                <Box
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "flex-start",
+                                  minWidth: 0,
+                                }}
+                              >
+                                <Typography
                                   sx={{
-                                    height: "100%",
-                                    minHeight: { xs: 58, sm: 84, md: 98 },
-                                    display: "grid",
-                                    placeItems: "center",
+                                    fontWeight: 900,
+                                    fontSize: { xs: 12, sm: 14 },
+                                    letterSpacing: -0.3,
+                                    color:
+                                      isToday && status === "none"
+                                        ? theme.palette.primary.main
+                                        : dayNumberColor,
                                   }}
                                 >
-                                  <Typography
-                                    sx={{
-                                      fontWeight: 800,
-                                      fontSize: { xs: 18, sm: 24 },
-                                      letterSpacing: -0.3,
-                                      color: isToday
-                                        ? theme.palette.primary.main
-                                        : theme.palette.text.primary,
-                                    }}
-                                  >
-                                    {cell.day}
-                                  </Typography>
-                                </Box>
-                              ) : showCenteredStatus ? (
-                                <Box
-                                  sx={{
-                                    position: "relative",
-                                    height: "100%",
-                                    minHeight: { xs: 58, sm: 84, md: 98 },
-                                  }}
-                                >
-                                  <Box
-                                    sx={{
-                                      position: "absolute",
-                                      top: { xs: 6, sm: 10 },
-                                      left: { xs: 6, sm: 10 },
-                                      width: { xs: 22, sm: 26 },
-                                      height: { xs: 22, sm: 26 },
-                                      borderRadius: 999,
-                                      display: "grid",
-                                      placeItems: "center",
-                                      bgcolor: isToday
-                                        ? theme.palette.primary.main
-                                        : alpha(
-                                            theme.palette.text.primary,
-                                            0.06
-                                          ),
-                                      color: isToday
-                                        ? theme.palette.primary.contrastText
-                                        : theme.palette.text.primary,
-                                    }}
-                                  >
+                                  {cell.day}
+                                </Typography>
+                              </Box>
+
+                              <Box
+                                sx={{
+                                  flex: 1,
+                                  minHeight: 0,
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  justifyContent: {
+                                    xs: "center",
+                                    sm: "flex-start",
+                                  },
+                                  alignItems: {
+                                    xs: "center",
+                                    sm: "flex-start",
+                                  },
+                                  textAlign: { xs: "center", sm: "left" },
+                                  px: 0.25,
+                                }}
+                              >
+                                {isMobile && showCenteredStatus ? (
+                                  <>
                                     <Typography
-                                      variant="caption"
-                                      sx={{ fontWeight: 700, lineHeight: 1 }}
+                                      sx={{
+                                        fontWeight: 900,
+                                        fontSize: { xs: 11, sm: 13 },
+                                        lineHeight: 1.15,
+                                        color: primaryTextColor,
+                                        maxWidth: "100%",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
                                     >
-                                      {cell.day}
+                                      {centeredPrimary}
                                     </Typography>
-                                  </Box>
-
-                                  {isPresent ? (
-                                    <Box
-                                      sx={{
-                                        position: "absolute",
-                                        top: { xs: 6, sm: 10 },
-                                        right: { xs: 6, sm: 10 },
-                                        px: 0.9,
-                                        py: 0.2,
-                                        borderRadius: 999,
-                                        ...badge.sx,
-                                      }}
-                                    >
-                                      <Typography
-                                        variant="caption"
-                                        sx={{
-                                          fontWeight: 700,
-                                          fontSize: { xs: 10, sm: 12 },
-                                        }}
-                                      >
-                                        {badge.label}
-                                      </Typography>
-                                    </Box>
-                                  ) : null}
-
-                                  {isPresent &&
-                                  (methodSummary.methods.length > 0 ||
-                                    methodSummary.hasGeo) ? (
-                                    <Stack
-                                      direction="row"
-                                      spacing={0.75}
-                                      sx={{
-                                        position: "absolute",
-                                        bottom: 10,
-                                        left: 10,
-                                        right: 10,
-                                        justifyContent: "center",
-                                        flexWrap: "wrap",
-                                        display: { xs: "none", sm: "flex" },
-                                      }}
-                                    >
-                                      {methodSummary.methods
-                                        .slice(0, 2)
-                                        .map((m) => (
-                                          <Chip
-                                            key={m}
-                                            size="small"
-                                            label={methodLabel(m)}
-                                            sx={{
-                                              fontWeight: 700,
-                                              bgcolor: alpha(
-                                                theme.palette.text.primary,
-                                                0.06
-                                              ),
-                                            }}
-                                          />
-                                        ))}
-                                      {methodSummary.methods.length > 2 ? (
-                                        <Chip
-                                          size="small"
-                                          label="Mixed"
-                                          sx={{
-                                            fontWeight: 700,
-                                            bgcolor: alpha(
-                                              theme.palette.text.primary,
-                                              0.06
-                                            ),
-                                          }}
-                                        />
-                                      ) : null}
-                                      {methodSummary.hasGeo ? (
-                                        <Chip
-                                          size="small"
-                                          label="GPS"
-                                          sx={{
-                                            fontWeight: 700,
-                                            bgcolor: alpha(
-                                              theme.palette.primary.main,
-                                              0.12
-                                            ),
-                                            color: theme.palette.primary.dark,
-                                          }}
-                                        />
-                                      ) : null}
-                                    </Stack>
-                                  ) : null}
-
-                                  <Box
-                                    sx={{
-                                      height: "100%",
-                                      textAlign: "center",
-                                      px: 1,
-                                    }}
-                                  >
-                                    <Box
-                                      sx={{
-                                        position: "absolute",
-                                        inset: 0,
-                                        display: "grid",
-                                        placeItems: "center",
-                                        px: 1,
-                                      }}
-                                    >
-                                      <Typography
-                                        sx={{
-                                          fontWeight: 800,
-                                          fontSize: isPresent
-                                            ? { xs: 14, sm: 18 }
-                                            : { xs: 13, sm: 16 },
-                                          letterSpacing: -0.3,
-                                          color: isPresent
-                                            ? theme.palette.text.primary
-                                            : isAbsent
-                                            ? theme.palette.error.main
-                                            : isLeave
-                                            ? theme.palette.warning.dark
-                                            : theme.palette.text.primary,
-                                        }}
-                                      >
-                                        {centeredPrimary}
-                                      </Typography>
-                                    </Box>
-
                                     {centeredSecondary ? (
                                       <Typography
                                         variant="caption"
                                         sx={{
-                                          position: "absolute",
-                                          top: "calc(50% + 16px)",
-                                          left: "50%",
-                                          transform: "translateX(-50%)",
+                                          mt: 0.25,
                                           fontWeight: 700,
-                                          color: isPresent
-                                            ? theme.palette.success.dark
-                                            : "text.secondary",
-                                          maxWidth: "calc(100% - 16px)",
+                                          color: "text.secondary",
+                                          maxWidth: "100%",
                                           overflow: "hidden",
                                           textOverflow: "ellipsis",
                                           whiteSpace: "nowrap",
@@ -2393,77 +2493,135 @@ export default function EmployeePortal() {
                                         {centeredSecondary}
                                       </Typography>
                                     ) : null}
-                                  </Box>
-                                </Box>
-                              ) : (
-                                <Stack spacing={0.75} sx={{ height: "100%" }}>
-                                  <Stack
-                                    direction="row"
-                                    spacing={1}
-                                    alignItems="center"
-                                    justifyContent="space-between"
-                                  >
-                                    <Box
-                                      sx={{
-                                        width: 26,
-                                        height: 26,
-                                        borderRadius: 999,
-                                        display: "grid",
-                                        placeItems: "center",
-                                        bgcolor: isToday
-                                          ? theme.palette.primary.main
-                                          : alpha(
-                                              theme.palette.text.primary,
-                                              0.06
-                                            ),
-                                        color: isToday
-                                          ? theme.palette.primary.contrastText
-                                          : theme.palette.text.primary,
-                                        fontWeight: 700,
-                                      }}
-                                    >
-                                      <Typography
-                                        variant="caption"
-                                        sx={{ fontWeight: 700, lineHeight: 1 }}
-                                      >
-                                        {cell.day}
-                                      </Typography>
-                                    </Box>
-                                    <Box
-                                      sx={{
-                                        px: 0.9,
-                                        py: 0.2,
-                                        borderRadius: 999,
-                                        ...badge.sx,
-                                      }}
-                                    >
-                                      <Typography
-                                        variant="caption"
-                                        sx={{ fontWeight: 700 }}
-                                      >
-                                        {badge.label}
-                                      </Typography>
-                                    </Box>
-                                  </Stack>
-                                  {subtitle ? (
+                                  </>
+                                ) : !isMobile && status !== "none" ? (
+                                  <>
                                     <Typography
-                                      variant="caption"
-                                      color="text.secondary"
                                       sx={{
+                                        fontWeight: 900,
+                                        fontSize: { xs: 11, sm: 12, md: 13 },
+                                        lineHeight: 1.15,
+                                        color: primaryTextColor,
+                                        maxWidth: "100%",
                                         overflow: "hidden",
                                         textOverflow: "ellipsis",
-                                        display: "-webkit-box",
-                                        WebkitLineClamp: 2,
-                                        WebkitBoxOrient: "vertical",
+                                        whiteSpace: "nowrap",
                                       }}
                                     >
-                                      {subtitle}
+                                      {isPresent ? subtitle : badge.label}
                                     </Typography>
-                                  ) : (
-                                    <Box sx={{ flex: 1 }} />
-                                  )}
+                                    {isPresent ? (
+                                      <Typography
+                                        variant="caption"
+                                        sx={{
+                                          mt: 0.25,
+                                          fontWeight: 800,
+                                          color: alpha(
+                                            theme.palette.text.primary,
+                                            0.55
+                                          ),
+                                          textTransform: "uppercase",
+                                          letterSpacing: 0.6,
+                                        }}
+                                      >
+                                        Present
+                                      </Typography>
+                                    ) : isHoliday && holiday?.name ? (
+                                      <Typography
+                                        variant="caption"
+                                        sx={{
+                                          mt: 0.25,
+                                          fontWeight: 700,
+                                          color: "text.secondary",
+                                          maxWidth: "100%",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {holiday.name}
+                                      </Typography>
+                                    ) : isLeave && subtitle ? (
+                                      <Typography
+                                        variant="caption"
+                                        sx={{
+                                          mt: 0.25,
+                                          fontWeight: 700,
+                                          color: "text.secondary",
+                                          maxWidth: "100%",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {subtitle}
+                                      </Typography>
+                                    ) : null}
+                                  </>
+                                ) : null}
+                              </Box>
+
+                              {isPresent &&
+                              (methodSummary.methods.length > 0 ||
+                                methodSummary.hasGeo) ? (
+                                <Stack
+                                  direction="row"
+                                  spacing={0.75}
+                                  sx={{
+                                    justifyContent: "center",
+                                    flexWrap: "wrap",
+                                    display: {
+                                      xs: "none",
+                                      sm: "none",
+                                      md: "flex",
+                                    },
+                                  }}
+                                >
+                                  {methodSummary.methods
+                                    .slice(0, 2)
+                                    .map((m) => (
+                                      <Chip
+                                        key={m}
+                                        size="small"
+                                        label={methodLabel(m)}
+                                        sx={{
+                                          fontWeight: 700,
+                                          bgcolor: alpha(
+                                            theme.palette.text.primary,
+                                            0.06
+                                          ),
+                                        }}
+                                      />
+                                    ))}
+                                  {methodSummary.methods.length > 2 ? (
+                                    <Chip
+                                      size="small"
+                                      label="Mixed"
+                                      sx={{
+                                        fontWeight: 700,
+                                        bgcolor: alpha(
+                                          theme.palette.text.primary,
+                                          0.06
+                                        ),
+                                      }}
+                                    />
+                                  ) : null}
+                                  {methodSummary.hasGeo ? (
+                                    <Chip
+                                      size="small"
+                                      label="GPS"
+                                      sx={{
+                                        fontWeight: 700,
+                                        bgcolor: alpha(
+                                          theme.palette.primary.main,
+                                          0.12
+                                        ),
+                                        color: theme.palette.primary.dark,
+                                      }}
+                                    />
+                                  ) : null}
                                 </Stack>
-                              )}
+                              ) : null}
                             </Box>
                           </ButtonBase>
                         );
@@ -2817,7 +2975,8 @@ export default function EmployeePortal() {
         onClose={() => setDayOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>{dayDate || "Day"}</DialogTitle>
         <DialogContent>
@@ -3074,7 +3233,8 @@ export default function EmployeePortal() {
         onClose={evidenceBusy ? undefined : closeEvidence}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>
           Evidence{evidenceFor?.id ? ` • #${String(evidenceFor.id)}` : ""}
@@ -3182,7 +3342,8 @@ export default function EmployeePortal() {
         onClose={editProfileBusy ? undefined : closeEditProfile}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>Edit Profile</DialogTitle>
         <DialogContent>
@@ -3267,7 +3428,8 @@ export default function EmployeePortal() {
         onClose={() => setApplyOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>Apply Leave</DialogTitle>
         <DialogContent>
@@ -3365,14 +3527,15 @@ export default function EmployeePortal() {
         onClose={biometricBusy ? undefined : closeBiometric}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>
           {biometricAction === "enroll"
             ? "Enroll Biometrics"
             : biometricAction === "clock_in"
-            ? "Clock In (Biometric)"
-            : "Clock Out (Biometric)"}
+            ? "Check In (Biometric)"
+            : "Check Out (Biometric)"}
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -3474,8 +3637,287 @@ export default function EmployeePortal() {
               : biometricAction === "enroll"
               ? "Enroll"
               : biometricAction === "clock_in"
-              ? "Clock In"
-              : "Clock Out"}
+              ? "Check In"
+              : "Check Out"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Menu
+        anchorEl={profileMenuEl}
+        open={profileMenuOpen}
+        onClose={closeProfileMenu}
+        transformOrigin={{ horizontal: "right", vertical: "top" }}
+        anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
+        PaperProps={{ sx: { mt: 1, borderRadius: 2 } }}
+      >
+        <MenuItem
+          onClick={() => {
+            closeProfileMenu();
+            navigate("/employee-portal/profile");
+          }}
+        >
+          <ListItemIcon>
+            <VisibilityRounded fontSize="small" />
+          </ListItemIcon>
+          View Profile
+        </MenuItem>
+        {canEditOwnProfile ? (
+          <MenuItem
+            onClick={() => {
+              closeProfileMenu();
+              openEditProfile();
+            }}
+          >
+            <ListItemIcon>
+              <EditRounded fontSize="small" />
+            </ListItemIcon>
+            Edit Profile
+          </MenuItem>
+        ) : null}
+      </Menu>
+
+      <Dialog
+        open={viewProfileOpen}
+        onClose={() => {
+          setViewProfileOpen(false);
+          if (isProfileRoute) navigate("/employee-portal", { replace: true });
+        }}
+        maxWidth="md"
+        fullWidth
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
+      >
+        <DialogTitle
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 2,
+          }}
+        >
+          <Typography sx={{ fontWeight: 900 }} noWrap>
+            My Profile
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            {canEditOwnProfile ? (
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => {
+                  setViewProfileOpen(false);
+                  openEditProfile();
+                }}
+                sx={{ borderRadius: 2, fontWeight: 800 }}
+              >
+                Edit
+              </Button>
+            ) : null}
+            <IconButton
+              onClick={() => {
+                setViewProfileOpen(false);
+                if (isProfileRoute)
+                  navigate("/employee-portal", { replace: true });
+              }}
+            >
+              <CloseRounded />
+            </IconButton>
+          </Stack>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: { xs: 2, sm: 2.5 } }}>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: { xs: 2, sm: 2.5 },
+              borderRadius: 3,
+              bgcolor: alpha(theme.palette.primary.main, 0.06),
+              borderColor: alpha(theme.palette.primary.main, 0.16),
+            }}
+          >
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              alignItems={{ sm: "center" }}
+            >
+              <Avatar
+                src={profilePhotoUrl || undefined}
+                sx={{
+                  width: 72,
+                  height: 72,
+                  bgcolor: "primary.main",
+                  border: "1px solid",
+                  borderColor: alpha(theme.palette.primary.main, 0.3),
+                  fontWeight: 900,
+                }}
+              >
+                {initials}
+              </Avatar>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography
+                  variant="h5"
+                  sx={{ fontWeight: 950, letterSpacing: "-0.02em" }}
+                  noWrap
+                >
+                  {displayName}
+                </Typography>
+                <Typography
+                  color="text.secondary"
+                  sx={{ fontWeight: 700 }}
+                  noWrap
+                >
+                  {me?.employee?.designation
+                    ? `${me.employee.designation} • `
+                    : ""}
+                  {me?.employee?.department ? `${me.employee.department}` : "—"}
+                </Typography>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  flexWrap="wrap"
+                  useFlexGap
+                  sx={{ mt: 1 }}
+                >
+                  {me?.employee?.code ? (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={`Code: ${me.employee.code}`}
+                      sx={{ fontWeight: 800 }}
+                    />
+                  ) : null}
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={`Shift: ${me?.employee?.shift_name || "—"}`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                  {workingDays ? (
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={workingDays}
+                      sx={{ fontWeight: 800 }}
+                    />
+                  ) : null}
+                  <Chip
+                    size="small"
+                    label={String(me?.employee?.status || "—")}
+                    color={
+                      String(me?.employee?.status || "")
+                        .toLowerCase()
+                        .includes("active")
+                        ? "success"
+                        : "default"
+                    }
+                    variant="outlined"
+                    sx={{ fontWeight: 800 }}
+                  />
+                </Stack>
+              </Box>
+            </Stack>
+          </Paper>
+
+          <Box
+            sx={{
+              mt: 2,
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+              gap: 2,
+            }}
+          >
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+              <Typography sx={{ fontWeight: 900, mb: 1 }}>Contact</Typography>
+              <Stack spacing={1.25}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Email
+                  </Typography>
+                  <Typography sx={{ fontWeight: 800 }}>
+                    {me?.employee?.email || me?.user?.email || "—"}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Phone
+                  </Typography>
+                  <Typography sx={{ fontWeight: 800 }}>
+                    {me?.employee?.personal_phone || "—"}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+              <Typography sx={{ fontWeight: 900, mb: 1 }}>Work</Typography>
+              <Stack spacing={1.25}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Employee Type
+                  </Typography>
+                  <Typography sx={{ fontWeight: 800 }}>
+                    {me?.employee?.employee_type || "—"}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Work Location
+                  </Typography>
+                  <Typography sx={{ fontWeight: 800 }}>
+                    {me?.employee?.work_location || "—"}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Supervisor
+                  </Typography>
+                  <Typography sx={{ fontWeight: 800 }}>
+                    {me?.employee?.supervisor_name || "—"}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Paper>
+
+            <Paper
+              variant="outlined"
+              sx={{ p: 2, borderRadius: 3, gridColumn: { md: "1 / -1" } }}
+            >
+              <Typography sx={{ fontWeight: 900, mb: 1 }}>Addresses</Typography>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                  gap: 2,
+                }}
+              >
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Present Address
+                  </Typography>
+                  <Typography sx={{ fontWeight: 800, whiteSpace: "pre-wrap" }}>
+                    {me?.employee?.present_address || "—"}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Permanent Address
+                  </Typography>
+                  <Typography sx={{ fontWeight: 800, whiteSpace: "pre-wrap" }}>
+                    {me?.employee?.permanent_address || "—"}
+                  </Typography>
+                </Box>
+              </Box>
+            </Paper>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => {
+              setViewProfileOpen(false);
+              if (isProfileRoute)
+                navigate("/employee-portal", { replace: true });
+            }}
+          >
+            Close
           </Button>
         </DialogActions>
       </Dialog>

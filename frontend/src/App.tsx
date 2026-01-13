@@ -118,6 +118,14 @@ function App() {
           }
         />
         <Route
+          path="/employee-portal/profile"
+          element={
+            <PrivateRoute>
+              <EmployeePortal />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/employees"
           element={
             <DenyRoleRoute deny={["employee", "superadmin"]}>

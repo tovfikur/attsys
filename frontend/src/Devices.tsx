@@ -27,6 +27,8 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import {
   EditRounded,
@@ -63,6 +65,8 @@ type HikConfigState = {
 
 export default function Devices() {
   const user = getUser();
+  const theme = useTheme();
+  const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
   const [devices, setDevices] = useState<Device[]>([]);
   const [siteName, setSiteName] = useState("HQ");
   const [type, setType] = useState("terminal");
@@ -715,6 +719,8 @@ export default function Devices() {
         }}
         fullWidth
         maxWidth="sm"
+        fullScreen={isSmDown}
+        PaperProps={{ sx: { borderRadius: isSmDown ? 0 : 3 } }}
       >
         <DialogTitle>Edit Device</DialogTitle>
         <MuiDialogContent>
@@ -774,6 +780,8 @@ export default function Devices() {
         }}
         fullWidth
         maxWidth="sm"
+        fullScreen={isSmDown}
+        PaperProps={{ sx: { borderRadius: isSmDown ? 0 : 3 } }}
       >
         <DialogTitle>Hik-Connect</DialogTitle>
         <MuiDialogContent>

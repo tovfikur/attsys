@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -33,10 +33,13 @@ import {
 } from "@mui/material";
 import {
   AccessTimeRounded,
+  AccountCircleRounded,
   ApartmentRounded,
   DashboardRounded,
   DevicesRounded,
+  ExitToAppRounded,
   EventNoteRounded,
+  LoginRounded,
   LogoutRounded,
   MenuRounded,
   PeopleAltRounded,
@@ -64,6 +67,18 @@ const navItems: NavItem[] = [
     roles: ["employee"],
   },
   {
+    label: "Profile",
+    to: "/employee-portal/profile",
+    icon: <AccountCircleRounded />,
+    roles: ["employee"],
+  },
+  {
+    label: "Apply Leave",
+    to: "/employee-portal?applyLeave=1",
+    icon: <EventNoteRounded />,
+    roles: ["employee"],
+  },
+  {
     label: "Dashboard",
     to: "/dashboard",
     icon: <DashboardRounded />,
@@ -76,7 +91,7 @@ const navItems: NavItem[] = [
     roles: ["tenant_owner", "hr_admin", "manager"],
   },
   {
-    label: "Clock",
+    label: "Check In/Out",
     to: "/clock",
     icon: <AccessTimeRounded />,
     roles: ["tenant_owner", "hr_admin", "manager"],
@@ -116,6 +131,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const user = getUser();
   const role = user?.role || "";
+  const [employeeId, setEmployeeId] = useState("");
+  const [employeeOpenShift, setEmployeeOpenShift] = useState<boolean | null>(
+    null
+  );
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
   const profilePhotoUrlRef = useRef<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -134,6 +153,68 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     clearSession();
     navigate("/login");
   };
+
+  useEffect(() => {
+    if (role !== "employee") {
+      setEmployeeId("");
+      setEmployeeOpenShift(null);
+      return;
+    }
+    let alive = true;
+    const run = async () => {
+      try {
+        const res = await api.get("/api/me", { timeout: 8000 });
+        const id = res.data?.user?.employee_id ?? res.data?.employee?.id ?? "";
+        if (!alive) return;
+        setEmployeeId(String(id || ""));
+      } catch {
+        if (!alive) return;
+        setEmployeeId("");
+      }
+    };
+    void run();
+    return () => {
+      alive = false;
+    };
+  }, [role]);
+
+  const refreshEmployeeOpenShift = useCallback(async () => {
+    if (role !== "employee" || !employeeId) {
+      setEmployeeOpenShift(null);
+      return;
+    }
+    try {
+      const res = await api.get(
+        `/api/attendance/open?employee_id=${encodeURIComponent(employeeId)}`,
+        { timeout: 8000 }
+      );
+      setEmployeeOpenShift(Boolean(res.data?.open));
+    } catch {
+      setEmployeeOpenShift(null);
+    }
+  }, [employeeId, role]);
+
+  useEffect(() => {
+    if (role !== "employee") return;
+    void refreshEmployeeOpenShift();
+
+    const triggerRefresh = () => {
+      void refreshEmployeeOpenShift();
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) triggerRefresh();
+    };
+
+    window.addEventListener("attendance:updated", triggerRefresh);
+    window.addEventListener("focus", triggerRefresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("attendance:updated", triggerRefresh);
+      window.removeEventListener("focus", triggerRefresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refreshEmployeeOpenShift, role]);
 
   // Password Change State
   const [showPwdModal, setShowPwdModal] = useState(false);
@@ -351,14 +432,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return navItems.filter((i) => !i.roles || i.roles.includes(role));
   }, [role]);
 
-  const activeIndex = useMemo(() => {
-    const path = location.pathname || "";
-    return items.findIndex((i) => path === i.to || path.startsWith(`${i.to}/`));
-  }, [items, location.pathname]);
-
   const title = useMemo(() => {
     if (location.pathname.startsWith("/employees")) return "Employees";
-    if (location.pathname.startsWith("/clock")) return "Clock";
+    if (location.pathname.startsWith("/clock")) return "Check In/Out";
     if (location.pathname.startsWith("/attendance")) return "Attendance";
     if (location.pathname.startsWith("/leaves")) return "Leaves";
     if (location.pathname.startsWith("/employee-portal"))
@@ -367,6 +443,71 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (location.pathname.startsWith("/sites")) return "Sites";
     return role === "superadmin" ? "Super Admin" : "Workspace";
   }, [location.pathname, role]);
+
+  const showCenterCheck = useMemo(() => {
+    if (isDesktop) return false;
+    if (role === "employee") return true;
+    return role === "tenant_owner" || role === "hr_admin" || role === "manager";
+  }, [isDesktop, role]);
+
+  const centerCheck = useMemo(() => {
+    if (!showCenterCheck) return null;
+    if (role !== "employee") {
+      return {
+        ariaLabel: "Check In/Out",
+        to: "/clock",
+        bg: theme.palette.primary.main,
+        fg: theme.palette.primary.contrastText,
+        icon: <AccessTimeRounded />,
+      };
+    }
+
+    const stage =
+      employeeOpenShift === true
+        ? "out"
+        : employeeOpenShift === false
+        ? "in"
+        : "unknown";
+    const to =
+      stage === "out"
+        ? "/employee-portal?quickCheck=out"
+        : stage === "in"
+        ? "/employee-portal?quickCheck=in"
+        : "/employee-portal?quickCheck=auto";
+
+    return {
+      ariaLabel:
+        stage === "out" ? "Check Out" : stage === "in" ? "Check In" : "Check",
+      to,
+      bg:
+        stage === "out"
+          ? theme.palette.warning.main
+          : stage === "in"
+          ? theme.palette.success.main
+          : theme.palette.primary.main,
+      fg:
+        stage === "out"
+          ? theme.palette.warning.contrastText
+          : stage === "in"
+          ? theme.palette.success.contrastText
+          : theme.palette.primary.contrastText,
+      icon:
+        stage === "out" ? (
+          <ExitToAppRounded />
+        ) : stage === "in" ? (
+          <LoginRounded />
+        ) : (
+          <AccessTimeRounded />
+        ),
+    };
+  }, [
+    employeeOpenShift,
+    role,
+    showCenterCheck,
+    theme.palette.primary,
+    theme.palette.success,
+    theme.palette.warning,
+  ]);
 
   const brandLogoSrc = useMemo(() => {
     if (role === "superadmin") return "/icon.svg";
@@ -439,7 +580,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Avatar
               src={profilePhotoUrl || undefined}
-              sx={{ width: 36, height: 36, bgcolor: "action.hover" }}
+              sx={{
+                width: 36,
+                height: 36,
+                bgcolor: alpha(theme.palette.primary.main, 0.12),
+                color: theme.palette.primary.main,
+                border: "1px solid",
+                borderColor: alpha(theme.palette.primary.main, 0.18),
+              }}
             >
               {(user?.name || "U").slice(0, 1).toUpperCase()}
             </Avatar>
@@ -478,10 +626,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         minHeight: "100dvh",
         bgcolor: "background.default",
         backgroundImage: contentBg,
+        overflowX: "hidden",
       }}
     >
       <AppBar
         position="sticky"
+        color="default"
         elevation={0}
         sx={{
           bgcolor: "background.default",
@@ -489,9 +639,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           borderColor: "divider",
           backdropFilter: "blur(10px)",
           backgroundImage: "none",
+          color: "text.primary",
         }}
       >
-        <Toolbar sx={{ minHeight: 64 }}>
+        <Toolbar sx={{ minHeight: 64, px: { xs: 1.5, sm: 2.5 } }}>
           {!isDesktop && (
             <IconButton
               aria-label="Open navigation"
@@ -501,10 +652,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <MenuRounded />
             </IconButton>
           )}
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            sx={{ minWidth: 0 }}
+          >
             <Typography
               variant="h6"
-              sx={{ fontWeight: 900, letterSpacing: "-0.02em" }}
+              noWrap
+              sx={{
+                fontWeight: 900,
+                letterSpacing: "-0.02em",
+                maxWidth: { xs: "58vw", sm: "none" },
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
             >
               {title}
             </Typography>
@@ -519,7 +682,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Stack direction="row" spacing={1.25} alignItems="center">
               <Avatar
                 src={profilePhotoUrl || undefined}
-                sx={{ width: 32, height: 32, bgcolor: "action.hover" }}
+                sx={{
+                  width: 32,
+                  height: 32,
+                  bgcolor: alpha(theme.palette.primary.main, 0.12),
+                  color: theme.palette.primary.main,
+                  border: "1px solid",
+                  borderColor: alpha(theme.palette.primary.main, 0.18),
+                }}
               >
                 {(user?.name || "U").slice(0, 1).toUpperCase()}
               </Avatar>
@@ -635,8 +805,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         onClose={() => setShowPwdModal(false)}
         maxWidth="xs"
         fullWidth
+        fullScreen={!isDesktop}
         PaperProps={{
-          sx: { borderRadius: 3, p: 1 },
+          sx: { borderRadius: !isDesktop ? 0 : 3, p: 1 },
         }}
       >
         <DialogTitle sx={{ fontWeight: 800, pb: 1 }}>
@@ -732,7 +903,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             ModalProps={{ keepMounted: true }}
             sx={{
               "& .MuiDrawer-paper": {
-                width: drawerWidth,
+                width: { xs: `min(88vw, ${drawerWidth}px)`, sm: drawerWidth },
                 boxSizing: "border-box",
                 bgcolor: "background.default",
                 backgroundImage: "none",
@@ -747,6 +918,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           component="main"
           sx={{
             flex: 1,
+            minWidth: 0,
+            overflowX: "hidden",
             px: { xs: 2, sm: 3, md: 4 },
             py: { xs: 2, sm: 3 },
             pb: {
@@ -759,6 +932,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             sx={{
               maxWidth: 1200,
               mx: "auto",
+              width: "100%",
+              minWidth: 0,
             }}
           >
             {children}
@@ -793,66 +968,193 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               backdropFilter: "blur(16px)",
               backgroundImage: "none",
               boxShadow: "0 18px 60px rgba(0,0,0,0.14)",
-              overflow: "hidden",
+              overflow: "visible",
+              position: "relative",
             }}
           >
             <BottomNavigation
               showLabels={false}
-              value={activeIndex}
-              onChange={(_, idx) => {
-                const item = items[idx];
-                if (item) navigate(item.to);
-              }}
               sx={{
                 height: 68,
                 px: 0.5,
                 bgcolor: "transparent",
+                "& .MuiBottomNavigationAction-label": {
+                  display: "none !important",
+                },
               }}
             >
-              {items.slice(0, 5).map((item, idx) => {
-                const selected = idx === activeIndex;
+              {(() => {
+                const visible: NavItem[] = showCenterCheck
+                  ? role === "employee"
+                    ? [
+                        items.find((i) => i.to === "/employee-portal"),
+                        items.find((i) => i.to.includes("applyLeave=1")),
+                        items.find((i) => i.to === "/employee-portal/profile"),
+                      ].filter((i): i is NavItem => Boolean(i))
+                    : items.slice(0, 4)
+                  : items.slice(0, 5);
+                const left = showCenterCheck ? visible.slice(0, 2) : visible;
+                const right = showCenterCheck ? visible.slice(2, 4) : [];
+
+                const renderItem = (item: NavItem) => {
+                  const selected =
+                    location.pathname === item.to ||
+                    location.pathname.startsWith(`${item.to}/`);
+                  return (
+                    <BottomNavigationAction
+                      key={item.to}
+                      label=""
+                      showLabel={false}
+                      aria-label={item.label}
+                      onClick={() => navigate(item.to)}
+                      icon={
+                        <Box
+                          sx={{
+                            width: 44,
+                            height: 36,
+                            borderRadius: 999,
+                            display: "grid",
+                            placeItems: "center",
+                            bgcolor: selected
+                              ? alpha(theme.palette.primary.main, 0.14)
+                              : "transparent",
+                            border: "1px solid",
+                            borderColor: selected
+                              ? alpha(theme.palette.primary.main, 0.2)
+                              : "transparent",
+                            transition:
+                              "background-color 140ms ease, border-color 140ms ease",
+                            "& svg": {
+                              fontSize: 22,
+                            },
+                          }}
+                        >
+                          {item.icon}
+                        </Box>
+                      }
+                      sx={{
+                        minWidth: 0,
+                        flex: 1,
+                        py: 0.75,
+                        color: selected
+                          ? theme.palette.primary.main
+                          : theme.palette.text.secondary,
+                        "& .MuiBottomNavigationAction-label": {
+                          display: "none !important",
+                        },
+                      }}
+                    />
+                  );
+                };
+
                 return (
-                  <BottomNavigationAction
-                    key={item.to}
-                    label={item.label}
-                    icon={
-                      <Box
+                  <>
+                    {showCenterCheck
+                      ? Array.from({ length: 2 }).map((_, idx) => {
+                          const item = left[idx] as NavItem | undefined;
+                          return item ? (
+                            renderItem(item)
+                          ) : (
+                            <BottomNavigationAction
+                              key={`left-pad-${idx}`}
+                              disabled
+                              label=""
+                              showLabel={false}
+                              aria-hidden
+                              icon={<Box sx={{ width: 44, height: 36 }} />}
+                              sx={{
+                                minWidth: 0,
+                                flex: 1,
+                                py: 0.75,
+                                opacity: 0,
+                                pointerEvents: "none",
+                              }}
+                            />
+                          );
+                        })
+                      : left.map(renderItem)}
+                    {showCenterCheck && centerCheck ? (
+                      <BottomNavigationAction
+                        key="center-check"
+                        label=""
+                        showLabel={false}
+                        aria-label={centerCheck.ariaLabel}
+                        onClick={() => navigate(centerCheck.to)}
+                        icon={
+                          <Box
+                            sx={{
+                              width: 54,
+                              height: 54,
+                              borderRadius: 999,
+                              display: "grid",
+                              placeItems: "center",
+                              bgcolor: centerCheck.bg,
+                              color: centerCheck.fg,
+                              border: "1px solid",
+                              borderColor: alpha(centerCheck.bg, 0.55),
+                              boxShadow: "0 16px 44px rgba(0,0,0,0.22)",
+                              "& svg": { fontSize: 28 },
+                            }}
+                          >
+                            {centerCheck.icon}
+                          </Box>
+                        }
                         sx={{
-                          width: 44,
-                          height: 36,
-                          borderRadius: 999,
-                          display: "grid",
-                          placeItems: "center",
-                          bgcolor: selected
-                            ? alpha(theme.palette.primary.main, 0.14)
-                            : "transparent",
-                          border: "1px solid",
-                          borderColor: selected
-                            ? alpha(theme.palette.primary.main, 0.2)
-                            : "transparent",
-                          transition:
-                            "background-color 140ms ease, border-color 140ms ease",
-                          "& svg": {
-                            fontSize: 22,
+                          minWidth: 0,
+                          flex: 1,
+                          py: 0.75,
+                          "&:hover": { bgcolor: "transparent" },
+                          "& .MuiBottomNavigationAction-label": {
+                            display: "none !important",
                           },
                         }}
-                      >
-                        {item.icon}
-                      </Box>
-                    }
-                    sx={{
-                      minWidth: 0,
-                      flex: 1,
-                      py: 0.75,
-                      color: selected
-                        ? theme.palette.primary.main
-                        : theme.palette.text.secondary,
-                      "& .MuiBottomNavigationAction-label": { display: "none" },
-                      "&.Mui-selected": { color: theme.palette.primary.main },
-                    }}
-                  />
+                      />
+                    ) : showCenterCheck ? (
+                      <BottomNavigationAction
+                        key="center-check-pad"
+                        disabled
+                        label=""
+                        showLabel={false}
+                        aria-hidden
+                        icon={<Box sx={{ width: 54, height: 54 }} />}
+                        sx={{
+                          minWidth: 0,
+                          flex: 1,
+                          py: 0.75,
+                          opacity: 0,
+                          pointerEvents: "none",
+                        }}
+                      />
+                    ) : null}
+                    {showCenterCheck ? (
+                      <>
+                        {Array.from({ length: 2 }).map((_, idx) => {
+                          const item = right[idx] as NavItem | undefined;
+                          return item ? (
+                            renderItem(item)
+                          ) : (
+                            <BottomNavigationAction
+                              key={`right-pad-${idx}`}
+                              disabled
+                              label=""
+                              showLabel={false}
+                              aria-hidden
+                              icon={<Box sx={{ width: 44, height: 36 }} />}
+                              sx={{
+                                minWidth: 0,
+                                flex: 1,
+                                py: 0.75,
+                                opacity: 0,
+                                pointerEvents: "none",
+                              }}
+                            />
+                          );
+                        })}
+                      </>
+                    ) : null}
+                  </>
                 );
-              })}
+              })()}
             </BottomNavigation>
           </Paper>
         </Box>

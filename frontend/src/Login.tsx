@@ -839,7 +839,8 @@ export default function Login() {
         onClose={() => setShowTenantInactive(false)}
         maxWidth="xs"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>Tenant inactive</DialogTitle>
         <DialogContent sx={{ pt: 1 }}>
@@ -864,7 +865,8 @@ export default function Login() {
         onClose={() => setShowForgot(false)}
         maxWidth="xs"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>Reset Password</DialogTitle>
         <form onSubmit={handleForgotSubmit}>

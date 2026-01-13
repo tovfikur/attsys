@@ -28,6 +28,7 @@ import {
   Tooltip,
   CircularProgress,
   Alert,
+  useMediaQuery,
   useTheme,
   alpha,
 } from "@mui/material";
@@ -674,6 +675,7 @@ function EmployeeLoginDialog({
   onClose: () => void;
 }) {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState("");
@@ -744,7 +746,8 @@ function EmployeeLoginDialog({
       onClose={onClose}
       maxWidth="xs"
       fullWidth
-      PaperProps={{ sx: { borderRadius: 3 } }}
+      fullScreen={isMobile}
+      PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
     >
       <form onSubmit={submit}>
         <DialogTitle
@@ -840,6 +843,7 @@ function EnrollBiometricDialog({
   onClose: () => void;
 }) {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [image, setImage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -950,7 +954,8 @@ function EnrollBiometricDialog({
       onClose={busy ? undefined : close}
       maxWidth="sm"
       fullWidth
-      PaperProps={{ sx: { borderRadius: 3 } }}
+      fullScreen={isMobile}
+      PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
     >
       <DialogTitle
         sx={{
@@ -1090,6 +1095,8 @@ function CreateEmployeeDialog({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [form, setForm] = useState({
     name: "",
     code: "",
@@ -1145,7 +1152,8 @@ function CreateEmployeeDialog({
       onClose={onClose}
       maxWidth="sm"
       fullWidth
-      PaperProps={{ sx: { borderRadius: 3 } }}
+      fullScreen={isMobile}
+      PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
     >
       <form onSubmit={handleSubmit}>
         <DialogTitle
@@ -1344,6 +1352,7 @@ function EditEmployeeDialog({
   onSuccess: () => void;
 }) {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
   const profilePhotoUrlRef = useRef<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
@@ -1699,7 +1708,8 @@ function EditEmployeeDialog({
       onClose={onClose}
       maxWidth="md"
       fullWidth
-      PaperProps={{ sx: { borderRadius: 3 } }}
+      fullScreen={isMobile}
+      PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
     >
       <DialogTitle
         sx={{
@@ -2315,6 +2325,7 @@ function AttendanceDialog({
     reason: "",
   });
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const lastRefreshAtRef = useRef(0);
   const role = getUser()?.role || "";
   const canManageLeaveTypes = role === "hr_admin" || role === "tenant_owner";
@@ -2941,7 +2952,10 @@ function AttendanceDialog({
       onClose={onClose}
       maxWidth="md"
       fullWidth
-      PaperProps={{ sx: { borderRadius: 3, minHeight: "600px" } }}
+      fullScreen={isMobile}
+      PaperProps={{
+        sx: { borderRadius: isMobile ? 0 : 3, minHeight: "600px" },
+      }}
     >
       <DialogTitle
         sx={{
@@ -3203,7 +3217,12 @@ function AttendanceDialog({
                     Set yearly allocations per leave type.
                   </Typography>
                 </Box>
-                <Stack direction="row" spacing={1} alignItems="center">
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={1}
+                  alignItems={{ xs: "stretch", sm: "center" }}
+                  sx={{ width: { xs: "100%", sm: "auto" } }}
+                >
                   <TextField
                     label="Year"
                     type="number"
@@ -3214,13 +3233,14 @@ function AttendanceDialog({
                       if (Number.isFinite(n)) setAllocYear(Math.trunc(n));
                     }}
                     size="small"
-                    sx={{ width: 140 }}
+                    sx={{ width: { xs: "100%", sm: 140 } }}
                     inputProps={{ min: 1970, max: 2200 }}
                   />
                   <Button
                     variant="outlined"
                     onClick={() => void fetchLeaveAllocations()}
                     disabled={allocLoading}
+                    fullWidth={isMobile}
                   >
                     {allocLoading ? "Loading..." : "Refresh"}
                   </Button>
@@ -3244,26 +3264,9 @@ function AttendanceDialog({
                   No allocations found.
                 </Typography>
               ) : (
-                <TableContainer
-                  component={Paper}
-                  variant="outlined"
-                  sx={{
-                    width: "100%",
-                    overflowX: "auto",
-                    WebkitOverflowScrolling: "touch",
-                  }}
-                >
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Leave Type</TableCell>
-                        <TableCell align="right">Allocated</TableCell>
-                        <TableCell align="right">Used</TableCell>
-                        <TableCell align="right">Remaining</TableCell>
-                        <TableCell align="right">Actions</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
+                <>
+                  {isMobile ? (
+                    <Stack spacing={1.5}>
                       {allocationRows
                         .slice()
                         .sort((a, b) =>
@@ -3282,12 +3285,49 @@ function AttendanceDialog({
                             allocDraftByType[code] ??
                             String(row.allocated_days ?? 0);
                           return (
-                            <TableRow key={`${row.year}-${code}`}>
-                              <TableCell sx={{ fontWeight: 800 }}>
-                                {row.leave_type_name || row.leave_type}
-                              </TableCell>
-                              <TableCell align="right">
+                            <Paper
+                              key={`${row.year}-${code}`}
+                              variant="outlined"
+                              sx={{ p: 1.5, borderRadius: 3 }}
+                            >
+                              <Stack spacing={1.25}>
+                                <Stack
+                                  direction="row"
+                                  justifyContent="space-between"
+                                  spacing={1}
+                                  alignItems="center"
+                                >
+                                  <Typography sx={{ fontWeight: 900 }}>
+                                    {row.leave_type_name || row.leave_type}
+                                  </Typography>
+                                  <Stack
+                                    direction="row"
+                                    spacing={1}
+                                    flexWrap="wrap"
+                                    useFlexGap
+                                    justifyContent="flex-end"
+                                  >
+                                    <Chip
+                                      size="small"
+                                      variant="outlined"
+                                      label={`Used ${Number(
+                                        row.used_days ?? 0
+                                      ).toFixed(1)}`}
+                                      sx={{ fontWeight: 800 }}
+                                    />
+                                    <Chip
+                                      size="small"
+                                      variant="outlined"
+                                      label={`Remaining ${Number(
+                                        row.remaining_days ?? 0
+                                      ).toFixed(1)}`}
+                                      sx={{ fontWeight: 800 }}
+                                    />
+                                  </Stack>
+                                </Stack>
+
                                 <TextField
+                                  label="Allocated"
                                   value={draft}
                                   onChange={(e) =>
                                     setAllocDraftByType((p) => ({
@@ -3298,49 +3338,130 @@ function AttendanceDialog({
                                   size="small"
                                   type="number"
                                   inputProps={{ min: 0, step: 0.5 }}
-                                  sx={{ width: 120 }}
+                                  fullWidth
                                 />
-                              </TableCell>
-                              <TableCell align="right">
-                                {Number(row.used_days ?? 0).toFixed(1)}
-                              </TableCell>
-                              <TableCell align="right">
-                                {Number(row.remaining_days ?? 0).toFixed(1)}
-                              </TableCell>
-                              <TableCell align="right">
-                                <Stack
-                                  direction={{ xs: "column", sm: "row" }}
-                                  spacing={1}
-                                  justifyContent="flex-end"
-                                  alignItems={{ xs: "stretch", sm: "center" }}
-                                >
+
+                                <Stack direction="row" spacing={1}>
                                   <Button
-                                    size="small"
                                     variant="contained"
                                     disabled={busy}
                                     onClick={() => void saveAllocation(code)}
-                                    sx={{ width: { xs: "100%", sm: "auto" } }}
+                                    fullWidth
                                   >
                                     {busy ? "Saving..." : "Save"}
                                   </Button>
                                   <Button
-                                    size="small"
                                     variant="outlined"
                                     color="inherit"
                                     disabled={busy}
                                     onClick={() => void clearAllocation(code)}
-                                    sx={{ width: { xs: "100%", sm: "auto" } }}
+                                    fullWidth
                                   >
                                     Clear
                                   </Button>
                                 </Stack>
-                              </TableCell>
-                            </TableRow>
+                              </Stack>
+                            </Paper>
                           );
                         })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                    </Stack>
+                  ) : (
+                    <TableContainer
+                      component={Paper}
+                      variant="outlined"
+                      sx={{
+                        width: "100%",
+                        overflowX: "auto",
+                        WebkitOverflowScrolling: "touch",
+                      }}
+                    >
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Leave Type</TableCell>
+                            <TableCell align="right">Allocated</TableCell>
+                            <TableCell align="right">Used</TableCell>
+                            <TableCell align="right">Remaining</TableCell>
+                            <TableCell align="right">Actions</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {allocationRows
+                            .slice()
+                            .sort((a, b) =>
+                              String(
+                                a.leave_type_name || a.leave_type
+                              ).localeCompare(
+                                String(b.leave_type_name || b.leave_type)
+                              )
+                            )
+                            .map((row) => {
+                              const code = String(row.leave_type || "")
+                                .trim()
+                                .toLowerCase();
+                              const busy = allocBusyType === code;
+                              const draft =
+                                allocDraftByType[code] ??
+                                String(row.allocated_days ?? 0);
+                              return (
+                                <TableRow key={`${row.year}-${code}`}>
+                                  <TableCell sx={{ fontWeight: 800 }}>
+                                    {row.leave_type_name || row.leave_type}
+                                  </TableCell>
+                                  <TableCell align="right">
+                                    <TextField
+                                      value={draft}
+                                      onChange={(e) =>
+                                        setAllocDraftByType((p) => ({
+                                          ...p,
+                                          [code]: e.target.value,
+                                        }))
+                                      }
+                                      size="small"
+                                      type="number"
+                                      inputProps={{ min: 0, step: 0.5 }}
+                                      sx={{ width: 120 }}
+                                    />
+                                  </TableCell>
+                                  <TableCell align="right">
+                                    {Number(row.used_days ?? 0).toFixed(1)}
+                                  </TableCell>
+                                  <TableCell align="right">
+                                    {Number(row.remaining_days ?? 0).toFixed(1)}
+                                  </TableCell>
+                                  <TableCell align="right">
+                                    <Stack direction="row" spacing={1}>
+                                      <Button
+                                        size="small"
+                                        variant="contained"
+                                        disabled={busy}
+                                        onClick={() =>
+                                          void saveAllocation(code)
+                                        }
+                                      >
+                                        {busy ? "Saving..." : "Save"}
+                                      </Button>
+                                      <Button
+                                        size="small"
+                                        variant="outlined"
+                                        color="inherit"
+                                        disabled={busy}
+                                        onClick={() =>
+                                          void clearAllocation(code)
+                                        }
+                                      >
+                                        Clear
+                                      </Button>
+                                    </Stack>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </>
               )}
             </Paper>
           ) : null}
@@ -3388,7 +3509,8 @@ function AttendanceDialog({
         onClose={closeDayDetails}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle
           sx={{
@@ -3669,7 +3791,8 @@ function AttendanceDialog({
         onClose={() => setApplyOpen(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle sx={{ display: "flex", justifyContent: "space-between" }}>
           <Typography variant="h6" fontWeight={800}>

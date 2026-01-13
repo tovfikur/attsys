@@ -18,6 +18,8 @@ import {
   Alert,
   Stack,
   CircularProgress,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import { AccessTime, ExitToApp, Login } from "@mui/icons-material";
 
@@ -42,6 +44,8 @@ type BiometricGeo = {
 };
 
 export default function Clock() {
+  const theme = useTheme();
+  const isSmDown = useMediaQuery(theme.breakpoints.down("sm"));
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeId, setEmployeeId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -231,7 +235,7 @@ export default function Clock() {
         geo: biometric.geo || null,
       });
       const record = res.data.record;
-      let msg = `${type === "in" ? "Clock In" : "Clock Out"} Successful`;
+      let msg = `${type === "in" ? "Check In" : "Check Out"} Successful`;
 
       if (record.status && record.status !== "Present") {
         msg += ` (${record.status})`;
@@ -297,12 +301,37 @@ export default function Clock() {
     !employeeId || (openShift === null ? true : openShift === true);
 
   return (
-    <Container maxWidth="sm" sx={{ mt: 8 }}>
-      <Paper elevation={3} sx={{ p: 4, textAlign: "center" }}>
-        <Stack spacing={3} alignItems="center">
-          <AccessTime sx={{ fontSize: 60, color: "primary.main" }} />
-          <Typography variant="h4" component="h1" gutterBottom>
-            Time Clock
+    <Container
+      maxWidth="sm"
+      disableGutters
+      sx={{
+        mt: { xs: 2, sm: 6 },
+      }}
+    >
+      <Paper
+        elevation={0}
+        variant="outlined"
+        sx={{
+          p: { xs: 2, sm: 4 },
+          borderRadius: 3,
+          textAlign: "center",
+        }}
+      >
+        <Stack spacing={{ xs: 2, sm: 3 }} alignItems="center">
+          <AccessTime
+            sx={{ fontSize: { xs: 48, sm: 60 }, color: "primary.main" }}
+          />
+          <Typography
+            component="h1"
+            sx={{
+              fontWeight: 900,
+              fontSize: { xs: 22, sm: 34 },
+              lineHeight: 1.15,
+              letterSpacing: "-0.02em",
+              m: 0,
+            }}
+          >
+            Check In/Out
           </Typography>
 
           <FormControl fullWidth>
@@ -321,7 +350,11 @@ export default function Clock() {
             </Select>
           </FormControl>
 
-          <Stack direction="row" spacing={2} width="100%">
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={{ xs: 1.25, sm: 2 }}
+            width="100%"
+          >
             {showClockIn && (
               <Button
                 variant="contained"
@@ -331,8 +364,9 @@ export default function Clock() {
                 startIcon={<Login />}
                 onClick={() => openBiometric("clock_in")}
                 disabled={!employeeId || loading || statusLoading}
+                sx={{ borderRadius: 2, py: 1.25, fontWeight: 800 }}
               >
-                Clock In
+                Check In
               </Button>
             )}
             {showClockOut && (
@@ -344,8 +378,9 @@ export default function Clock() {
                 startIcon={<ExitToApp />}
                 onClick={() => openBiometric("clock_out")}
                 disabled={!employeeId || loading || statusLoading}
+                sx={{ borderRadius: 2, py: 1.25, fontWeight: 800 }}
               >
-                Clock Out
+                Check Out
               </Button>
             )}
           </Stack>
@@ -355,6 +390,7 @@ export default function Clock() {
             fullWidth
             disabled={!employeeId || loading || statusLoading}
             onClick={() => openBiometric("enroll")}
+            sx={{ borderRadius: 2, py: 1.15, fontWeight: 800 }}
           >
             Enroll Biometrics
           </Button>
@@ -389,14 +425,15 @@ export default function Clock() {
         onClose={biometricBusy ? undefined : closeBiometric}
         maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
+        fullScreen={isSmDown}
+        PaperProps={{ sx: { borderRadius: isSmDown ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 900 }}>
           {biometricAction === "enroll"
             ? "Enroll Biometrics"
             : biometricAction === "clock_in"
-            ? "Clock In (Biometric)"
-            : "Clock Out (Biometric)"}
+            ? "Check In (Biometric)"
+            : "Check Out (Biometric)"}
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -495,8 +532,8 @@ export default function Clock() {
               : biometricAction === "enroll"
               ? "Enroll"
               : biometricAction === "clock_in"
-              ? "Clock In"
-              : "Clock Out"}
+              ? "Check In"
+              : "Check Out"}
           </Button>
         </DialogActions>
       </Dialog>
