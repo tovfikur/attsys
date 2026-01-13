@@ -20,6 +20,7 @@ import Shifts from "./Shifts";
 import Leaves from "./Leaves";
 import Reports from "./Reports";
 import EmployeePortal from "./EmployeePortal";
+import Messenger from "./Messenger";
 import AppShell from "./layout/AppShell";
 import "./App.css";
 import { clearSession, getToken, getUser } from "./utils/session";
@@ -203,6 +204,14 @@ function App() {
           element={
             <DenyRoleRoute deny={["employee", "superadmin"]}>
               <Reports />
+            </DenyRoleRoute>
+          }
+        />
+        <Route
+          path="/messenger"
+          element={
+            <DenyRoleRoute deny={["superadmin"]}>
+              <Messenger />
             </DenyRoleRoute>
           }
         />

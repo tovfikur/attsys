@@ -1711,6 +1711,98 @@ class AttendanceController
         echo json_encode(['leaves' => $rows]);
     }
 
+    private function ensureLeaveViewsTable(\PDO $pdo): void
+    {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS leave_views (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            tenant_id INT NOT NULL,
+            user_id INT NOT NULL,
+            last_seen_at TIMESTAMP NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_leave_views (tenant_id, user_id),
+            INDEX idx_leave_views_user (tenant_id, user_id)
+        ) ENGINE=InnoDB");
+    }
+
+    public function leavesPendingUnseen()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $userId = isset($user['id']) && is_numeric($user['id']) ? (int)$user['id'] : 0;
+        if ($userId <= 0) {
+            echo json_encode(['unseen_pending' => 0]);
+            return;
+        }
+
+        $this->ensureLeaveViewsTable($pdo);
+
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM leaves
+            WHERE tenant_id=?
+              AND status='pending'
+              AND created_at > COALESCE((SELECT last_seen_at FROM leave_views WHERE tenant_id=? AND user_id=? LIMIT 1), '1970-01-01 00:00:00')");
+        $stmt->execute([(int)$tenantId, (int)$tenantId, (int)$userId]);
+        $count = (int)($stmt->fetchColumn() ?: 0);
+
+        echo json_encode(['unseen_pending' => $count]);
+    }
+
+    public function leavesMarkSeen()
+    {
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $userId = isset($user['id']) && is_numeric($user['id']) ? (int)$user['id'] : 0;
+        if ($userId <= 0) {
+            echo json_encode(['ok' => true]);
+            return;
+        }
+
+        $this->ensureLeaveViewsTable($pdo);
+        $stmt = $pdo->prepare('INSERT INTO leave_views(tenant_id, user_id, last_seen_at) VALUES(?, ?, CURRENT_TIMESTAMP) ON DUPLICATE KEY UPDATE last_seen_at=CURRENT_TIMESTAMP');
+        $stmt->execute([(int)$tenantId, (int)$userId]);
+
+        echo json_encode(['ok' => true]);
+    }
+
     public function leavesCreate()
     {
         header('Content-Type: application/json');

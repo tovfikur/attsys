@@ -318,3 +318,87 @@ SET @sql := IF(@be_has_accuracy_m = 0, 'ALTER TABLE biometric_evidence ADD COLUM
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS messenger_conversations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  kind VARCHAR(16) NOT NULL,
+  conversation_key VARCHAR(64) NOT NULL,
+  direct_employee_a INT NULL,
+  direct_employee_b INT NULL,
+  direct_user_id INT NULL,
+  direct_employee_id INT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_messenger_conversations_key (tenant_id, conversation_key),
+  INDEX idx_messenger_conversations_tenant_kind (tenant_id, kind),
+  INDEX idx_messenger_conversations_direct_a (tenant_id, direct_employee_a),
+  INDEX idx_messenger_conversations_direct_b (tenant_id, direct_employee_b),
+  INDEX idx_messenger_conversations_direct_user (tenant_id, direct_user_id),
+  INDEX idx_messenger_conversations_direct_employee (tenant_id, direct_employee_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+SET @mc_has_direct_user_id := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'messenger_conversations'
+    AND column_name = 'direct_user_id'
+);
+SET @sql := IF(@mc_has_direct_user_id = 0, 'ALTER TABLE messenger_conversations ADD COLUMN direct_user_id INT NULL AFTER direct_employee_b', 'DO 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @mc_has_direct_employee_id := (
+  SELECT COUNT(*)
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'messenger_conversations'
+    AND column_name = 'direct_employee_id'
+);
+SET @sql := IF(@mc_has_direct_employee_id = 0, 'ALTER TABLE messenger_conversations ADD COLUMN direct_employee_id INT NULL AFTER direct_user_id', 'DO 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @mc_idx_direct_user_exists := (
+  SELECT COUNT(*)
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE()
+    AND table_name = 'messenger_conversations'
+    AND index_name = 'idx_messenger_conversations_direct_user'
+);
+SET @sql := IF(@mc_idx_direct_user_exists = 0, 'ALTER TABLE messenger_conversations ADD INDEX idx_messenger_conversations_direct_user (tenant_id, direct_user_id)', 'DO 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @mc_idx_direct_employee_exists := (
+  SELECT COUNT(*)
+  FROM information_schema.statistics
+  WHERE table_schema = DATABASE()
+    AND table_name = 'messenger_conversations'
+    AND index_name = 'idx_messenger_conversations_direct_employee'
+);
+SET @sql := IF(@mc_idx_direct_employee_exists = 0, 'ALTER TABLE messenger_conversations ADD INDEX idx_messenger_conversations_direct_employee (tenant_id, direct_employee_id)', 'DO 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS messenger_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  conversation_id INT NOT NULL,
+  sender_user_id INT NULL,
+  sender_employee_id INT NULL,
+  sender_role VARCHAR(32) NOT NULL,
+  sender_name VARCHAR(128) NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_messenger_messages_tenant_conv_id (tenant_id, conversation_id, id),
+  INDEX idx_messenger_messages_conv_created (conversation_id, created_at),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (conversation_id) REFERENCES messenger_conversations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;

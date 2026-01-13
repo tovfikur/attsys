@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
   Avatar,
+  Badge,
   alpha,
   Box,
   Button,
@@ -41,6 +42,7 @@ import {
   DevicesRounded,
   ExitToAppRounded,
   EventNoteRounded,
+  ChatRounded,
   LoginRounded,
   LogoutRounded,
   MenuRounded,
@@ -67,6 +69,12 @@ const navItems: NavItem[] = [
     to: "/employee-portal",
     icon: <PeopleAltRounded />,
     roles: ["employee"],
+  },
+  {
+    label: "Messenger",
+    to: "/messenger",
+    icon: <ChatRounded />,
+    roles: ["tenant_owner", "hr_admin", "payroll_admin", "manager", "employee"],
   },
   {
     label: "Profile",
@@ -157,6 +165,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     severity: "success" | "error" | "info" | "warning";
   }>({ open: false, message: "", severity: "success" });
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [messengerUnread, setMessengerUnread] = useState(0);
+  const [leavesUnseenPending, setLeavesUnseenPending] = useState(0);
 
   const handleLogout = () => {
     setLogoutConfirmOpen(true);
@@ -189,6 +199,93 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("app:toast", onToast);
     return () => window.removeEventListener("app:toast", onToast);
   }, []);
+
+  const refreshIndicators = useCallback(async () => {
+    if (!user) {
+      setMessengerUnread(0);
+      setLeavesUnseenPending(0);
+      return;
+    }
+
+    const wantsMessenger =
+      role === "tenant_owner" ||
+      role === "hr_admin" ||
+      role === "payroll_admin" ||
+      role === "manager" ||
+      role === "employee";
+
+    const wantsLeaves = role === "tenant_owner";
+
+    try {
+      if (wantsMessenger) {
+        const res = await api.get("/api/messenger/unread_count", {
+          timeout: 8000,
+        });
+        setMessengerUnread(Math.max(0, Number(res.data?.unread || 0) || 0));
+      } else {
+        setMessengerUnread(0);
+      }
+    } catch {
+      setMessengerUnread(0);
+    }
+
+    try {
+      if (wantsLeaves) {
+        const res = await api.get("/api/leaves/pending_unseen", {
+          timeout: 8000,
+        });
+        setLeavesUnseenPending(
+          Math.max(0, Number(res.data?.unseen_pending || 0) || 0)
+        );
+      } else {
+        setLeavesUnseenPending(0);
+      }
+    } catch {
+      setLeavesUnseenPending(0);
+    }
+  }, [role, user]);
+
+  useEffect(() => {
+    void refreshIndicators();
+
+    const triggerRefresh = () => {
+      void refreshIndicators();
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) triggerRefresh();
+    };
+
+    window.addEventListener("attendance:updated", triggerRefresh);
+    window.addEventListener("focus", triggerRefresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const pollId = window.setInterval(triggerRefresh, 15_000);
+
+    return () => {
+      window.removeEventListener("attendance:updated", triggerRefresh);
+      window.removeEventListener("focus", triggerRefresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(pollId);
+    };
+  }, [refreshIndicators]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (role !== "tenant_owner") return;
+    if (!location.pathname.startsWith("/leaves")) return;
+    void (async () => {
+      try {
+        await api.post(
+          "/api/leaves/mark_seen",
+          {},
+          { headers: { "X-Toast-Skip": "1" }, timeout: 8000 }
+        );
+      } finally {
+        void refreshIndicators();
+      }
+    })();
+  }, [location.pathname, refreshIndicators, role, user]);
 
   useEffect(() => {
     if (role !== "employee") {
@@ -474,12 +571,36 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return navItems.filter((i) => !i.roles || i.roles.includes(role));
   }, [role]);
 
+  const renderNavIcon = useCallback(
+    (item: NavItem) => {
+      const to = String(item.to || "");
+      const isMessenger = to === "/messenger";
+      const isLeaves = to === "/leaves";
+      const badgeCount = isMessenger
+        ? messengerUnread
+        : isLeaves
+        ? leavesUnseenPending
+        : 0;
+      if (badgeCount <= 0) return item.icon;
+      return (
+        <Badge
+          color="error"
+          badgeContent={badgeCount > 99 ? "99+" : badgeCount}
+        >
+          {item.icon}
+        </Badge>
+      );
+    },
+    [leavesUnseenPending, messengerUnread]
+  );
+
   const title = useMemo(() => {
     if (location.pathname.startsWith("/employees")) return "Employees";
     if (location.pathname.startsWith("/clock")) return "Check In/Out";
     if (location.pathname.startsWith("/attendance")) return "Attendance";
     if (location.pathname.startsWith("/leaves")) return "Leaves";
     if (location.pathname.startsWith("/reports")) return "Reports";
+    if (location.pathname.startsWith("/messenger")) return "Messenger";
     if (location.pathname.startsWith("/employee-portal"))
       return "Employee Portal";
     if (location.pathname.startsWith("/devices")) return "Devices";
@@ -601,7 +722,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               },
             }}
           >
-            <ListItemIcon sx={{ minWidth: 40 }}>{item.icon}</ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              {renderNavIcon(item)}
+            </ListItemIcon>
             <ListItemText
               primary={item.label}
               primaryTypographyProps={{ fontWeight: 700 }}
@@ -1137,7 +1260,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                             },
                           }}
                         >
-                          {item.icon}
+                          {renderNavIcon(item)}
                         </Box>
                       }
                       sx={{
@@ -1155,113 +1278,123 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   );
                 };
 
-                return (
-                  <>
-                    {showCenterCheck
-                      ? Array.from({ length: 2 }).map((_, idx) => {
-                          const item = left[idx] as NavItem | undefined;
-                          return item ? (
-                            renderItem(item)
-                          ) : (
-                            <BottomNavigationAction
-                              key={`left-pad-${idx}`}
-                              disabled
-                              label=""
-                              showLabel={false}
-                              aria-hidden
-                              icon={<Box sx={{ width: 44, height: 36 }} />}
-                              sx={{
-                                minWidth: 0,
-                                flex: 1,
-                                py: 0.75,
-                                opacity: 0,
-                                pointerEvents: "none",
-                              }}
-                            />
-                          );
-                        })
-                      : left.map(renderItem)}
-                    {showCenterCheck && centerCheck ? (
-                      <BottomNavigationAction
-                        key="center-check"
-                        label=""
-                        showLabel={false}
-                        aria-label={centerCheck.ariaLabel}
-                        onClick={() => navigate(centerCheck.to)}
-                        icon={
-                          <Box
-                            sx={{
-                              width: 54,
-                              height: 54,
-                              borderRadius: 999,
-                              display: "grid",
-                              placeItems: "center",
-                              bgcolor: centerCheck.bg,
-                              color: centerCheck.fg,
-                              border: "1px solid",
-                              borderColor: alpha(centerCheck.bg, 0.55),
-                              boxShadow: "0 16px 44px rgba(0,0,0,0.22)",
-                              "& svg": { fontSize: 28 },
-                            }}
-                          >
-                            {centerCheck.icon}
-                          </Box>
-                        }
-                        sx={{
-                          minWidth: 0,
-                          flex: 1,
-                          py: 0.75,
-                          "&:hover": { bgcolor: "transparent" },
-                          "& .MuiBottomNavigationAction-label": {
-                            display: "none !important",
-                          },
-                        }}
-                      />
-                    ) : showCenterCheck ? (
-                      <BottomNavigationAction
-                        key="center-check-pad"
-                        disabled
-                        label=""
-                        showLabel={false}
-                        aria-hidden
-                        icon={<Box sx={{ width: 54, height: 54 }} />}
-                        sx={{
-                          minWidth: 0,
-                          flex: 1,
-                          py: 0.75,
-                          opacity: 0,
-                          pointerEvents: "none",
-                        }}
-                      />
-                    ) : null}
-                    {showCenterCheck ? (
-                      <>
-                        {Array.from({ length: 2 }).map((_, idx) => {
-                          const item = right[idx] as NavItem | undefined;
-                          return item ? (
-                            renderItem(item)
-                          ) : (
-                            <BottomNavigationAction
-                              key={`right-pad-${idx}`}
-                              disabled
-                              label=""
-                              showLabel={false}
-                              aria-hidden
-                              icon={<Box sx={{ width: 44, height: 36 }} />}
-                              sx={{
-                                minWidth: 0,
-                                flex: 1,
-                                py: 0.75,
-                                opacity: 0,
-                                pointerEvents: "none",
-                              }}
-                            />
-                          );
-                        })}
-                      </>
-                    ) : null}
-                  </>
-                );
+                const nodes: React.ReactNode[] = [];
+
+                if (showCenterCheck) {
+                  for (let idx = 0; idx < 2; idx++) {
+                    const item = left[idx] as NavItem | undefined;
+                    nodes.push(
+                      item ? (
+                        renderItem(item)
+                      ) : (
+                        <BottomNavigationAction
+                          key={`left-pad-${idx}`}
+                          disabled
+                          label=""
+                          showLabel={false}
+                          aria-hidden
+                          icon={<Box sx={{ width: 44, height: 36 }} />}
+                          sx={{
+                            minWidth: 0,
+                            flex: 1,
+                            py: 0.75,
+                            opacity: 0,
+                            pointerEvents: "none",
+                          }}
+                        />
+                      )
+                    );
+                  }
+                } else {
+                  nodes.push(...left.map(renderItem));
+                }
+
+                if (showCenterCheck && centerCheck) {
+                  nodes.push(
+                    <BottomNavigationAction
+                      key="center-check"
+                      label=""
+                      showLabel={false}
+                      aria-label={centerCheck.ariaLabel}
+                      onClick={() => navigate(centerCheck.to)}
+                      icon={
+                        <Box
+                          sx={{
+                            width: 54,
+                            height: 54,
+                            borderRadius: 999,
+                            display: "grid",
+                            placeItems: "center",
+                            bgcolor: centerCheck.bg,
+                            color: centerCheck.fg,
+                            border: "1px solid",
+                            borderColor: alpha(centerCheck.bg, 0.55),
+                            boxShadow: "0 16px 44px rgba(0,0,0,0.22)",
+                            "& svg": { fontSize: 28 },
+                          }}
+                        >
+                          {centerCheck.icon}
+                        </Box>
+                      }
+                      sx={{
+                        minWidth: 0,
+                        flex: 1,
+                        py: 0.75,
+                        "&:hover": { bgcolor: "transparent" },
+                        "& .MuiBottomNavigationAction-label": {
+                          display: "none !important",
+                        },
+                      }}
+                    />
+                  );
+                } else if (showCenterCheck) {
+                  nodes.push(
+                    <BottomNavigationAction
+                      key="center-check-pad"
+                      disabled
+                      label=""
+                      showLabel={false}
+                      aria-hidden
+                      icon={<Box sx={{ width: 54, height: 54 }} />}
+                      sx={{
+                        minWidth: 0,
+                        flex: 1,
+                        py: 0.75,
+                        opacity: 0,
+                        pointerEvents: "none",
+                      }}
+                    />
+                  );
+                }
+
+                if (showCenterCheck) {
+                  for (let idx = 0; idx < 2; idx++) {
+                    const item = right[idx] as NavItem | undefined;
+                    nodes.push(
+                      item ? (
+                        renderItem(item)
+                      ) : (
+                        <BottomNavigationAction
+                          key={`right-pad-${idx}`}
+                          disabled
+                          label=""
+                          showLabel={false}
+                          aria-hidden
+                          icon={<Box sx={{ width: 44, height: 36 }} />}
+                          sx={{
+                            minWidth: 0,
+                            flex: 1,
+                            py: 0.75,
+                            opacity: 0,
+                            pointerEvents: "none",
+                          }}
+                        />
+                      )
+                    );
+                  }
+                }
+
+                return nodes;
               })()}
             </BottomNavigation>
           </Paper>

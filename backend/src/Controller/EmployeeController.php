@@ -234,17 +234,13 @@ class EmployeeController
         $stmt->execute([$tenantId, $employeeId]);
         $storedPath = (string)($stmt->fetchColumn() ?: '');
         if ($storedPath === '') {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 
         $abs = __DIR__ . '/../../data/' . $storedPath;
         if (!is_file($abs)) {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 

@@ -415,9 +415,7 @@ class ProfileController
         $tenantId = (int)($user['tenant_id'] ?? 0);
         $employeeId = (int)($user['employee_id'] ?? 0);
         if ($tenantId <= 0 || $employeeId <= 0) {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 
@@ -425,17 +423,13 @@ class ProfileController
         $stmt->execute([$tenantId, $employeeId]);
         $storedPath = (string)($stmt->fetchColumn() ?: '');
         if ($storedPath === '') {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 
         $abs = __DIR__ . '/../../data/' . $storedPath;
         if (!is_file($abs)) {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 
@@ -569,9 +563,7 @@ class ProfileController
             return;
         }
         if (($user['role'] ?? null) === 'superadmin') {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 
@@ -585,16 +577,12 @@ class ProfileController
 
         $tenantId = $this->resolveTenantIdFromUser($user, $pdo);
         if (!$tenantId) {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 
         if (!$this->ensureTenantLogoColumn($pdo)) {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 
@@ -602,17 +590,13 @@ class ProfileController
         $stmt->execute([(int)$tenantId]);
         $storedPath = (string)($stmt->fetchColumn() ?: '');
         if ($storedPath === '') {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 
         $abs = __DIR__ . '/../../data/' . $storedPath;
         if (!is_file($abs)) {
-            http_response_code(404);
-            header('Content-Type: application/json');
-            echo json_encode(['error' => 'Not found']);
+            http_response_code(204);
             return;
         }
 

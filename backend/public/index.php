@@ -34,7 +34,10 @@ if ($origin) {
     header("Access-Control-Allow-Origin: *");
 }
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Tenant-ID");
+$reqHeaders = $_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'] ?? '';
+$reqHeaders = preg_replace("/[\r\n]+/", "", (string)$reqHeaders);
+$baseHeaders = "Content-Type, Authorization, X-Tenant-ID, X-Toast-Skip";
+header("Access-Control-Allow-Headers: " . ($reqHeaders ? ($baseHeaders . ", " . $reqHeaders) : $baseHeaders));
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -127,8 +130,19 @@ $router->getAuth('/api/employees/attachments/download', ['App\Controller\Employe
 $router->postAuth('/api/employees/attachments/upload', ['App\Controller\EmployeeController', 'uploadAttachment'], 'perm:employees.write');
 $router->postAuth('/api/employees/attachments/delete', ['App\Controller\EmployeeController', 'deleteAttachment'], 'perm:employees.write');
 
+// Messenger
+$router->getAuth('/api/messenger/people', ['App\Controller\MessengerController', 'people'], 'tenant');
+$router->getAuth('/api/messenger/conversations', ['App\Controller\MessengerController', 'conversations'], 'tenant');
+$router->postAuth('/api/messenger/conversations/direct', ['App\Controller\MessengerController', 'directConversation'], 'tenant');
+$router->getAuth('/api/messenger/messages', ['App\Controller\MessengerController', 'messages'], 'tenant');
+$router->getAuth('/api/messenger/unread_count', ['App\Controller\MessengerController', 'unreadCount'], 'tenant');
+$router->postAuth('/api/messenger/messages/send', ['App\Controller\MessengerController', 'sendMessage'], 'tenant');
+$router->postAuth('/api/messenger/messages/broadcast', ['App\Controller\MessengerController', 'broadcast'], 'tenant');
+
 // Leaves
 $router->getAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesList'], 'perm:leaves.read');
+$router->getAuth('/api/leaves/pending_unseen', ['App\Controller\AttendanceController', 'leavesPendingUnseen'], 'perm:leaves.read');
+$router->postAuth('/api/leaves/mark_seen', ['App\Controller\AttendanceController', 'leavesMarkSeen'], 'perm:leaves.read');
 $router->getAuth('/api/leaves/balance', ['App\Controller\AttendanceController', 'leaveBalance'], 'perm:leaves.read');
 $router->postAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesCreate'], 'perm:leaves.manage');
 $router->postAuth('/api/leaves/apply', ['App\Controller\AttendanceController', 'leavesApply'], 'perm:leaves.apply');
