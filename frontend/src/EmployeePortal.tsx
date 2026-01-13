@@ -294,6 +294,7 @@ export default function EmployeePortal() {
   const [biometricImage, setBiometricImage] = useState("");
   const [biometricBusy, setBiometricBusy] = useState(false);
   const [biometricError, setBiometricError] = useState("");
+  const [biometricCameraOn, setBiometricCameraOn] = useState(false);
   const biometricVideoRef = useRef<HTMLVideoElement | null>(null);
   const biometricStreamRef = useRef<MediaStream | null>(null);
 
@@ -480,6 +481,7 @@ export default function EmployeePortal() {
     }
     const el = biometricVideoRef.current;
     if (el) el.srcObject = null;
+    setBiometricCameraOn(false);
   }, []);
 
   const closeBiometric = useCallback(() => {
@@ -499,6 +501,7 @@ export default function EmployeePortal() {
     setBiometricAction("enroll");
     setBiometricImage("");
     setBiometricError("");
+    setBiometricCameraOn(false);
     setBiometricOpen(true);
   }, [canEnrollBiometrics]);
 
@@ -506,6 +509,7 @@ export default function EmployeePortal() {
     setBiometricAction(type === "in" ? "clock_in" : "clock_out");
     setBiometricImage("");
     setBiometricError("");
+    setBiometricCameraOn(false);
     setBiometricOpen(true);
   }, []);
 
@@ -828,6 +832,7 @@ export default function EmployeePortal() {
     stopBiometricCamera();
     if (!navigator?.mediaDevices?.getUserMedia) {
       setBiometricError("Camera not available");
+      setBiometricCameraOn(false);
       return;
     }
     try {
@@ -839,10 +844,12 @@ export default function EmployeePortal() {
       const el = biometricVideoRef.current;
       if (el) {
         el.srcObject = stream;
-        await el.play();
+        await el.play().catch(() => {});
       }
+      setBiometricCameraOn(true);
     } catch (err: unknown) {
       setBiometricError(getErrorMessage(err, "Failed to start camera"));
+      setBiometricCameraOn(false);
     }
   }, [stopBiometricCamera]);
 
@@ -860,20 +867,29 @@ export default function EmployeePortal() {
     ctx.drawImage(el, 0, 0, w, h);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
     setBiometricImage(dataUrl);
-  }, []);
+    stopBiometricCamera();
+  }, [stopBiometricCamera]);
 
-  const onPickBiometricFile = useCallback(
-    (file: File | null) => {
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const v = typeof reader.result === "string" ? reader.result : "";
-        setBiometricImage(v);
-      };
-      reader.readAsDataURL(file);
-    },
-    [setBiometricImage]
-  );
+  const takeBiometricPicture = useCallback(async () => {
+    if (biometricBusy) return;
+    setBiometricError("");
+    if (biometricImage) {
+      setBiometricImage("");
+      await startBiometricCamera();
+      return;
+    }
+    if (!biometricCameraOn) {
+      await startBiometricCamera();
+      return;
+    }
+    captureBiometricSelfie();
+  }, [
+    biometricBusy,
+    biometricCameraOn,
+    biometricImage,
+    captureBiometricSelfie,
+    startBiometricCamera,
+  ]);
 
   const submitBiometric = useCallback(async () => {
     if (!employeeId) return;
@@ -4019,6 +4035,7 @@ export default function EmployeePortal() {
                   overflow: "hidden",
                   border: "1px solid",
                   borderColor: alpha(theme.palette.text.primary, 0.12),
+                  position: "relative",
                 }}
               >
                 <Box
@@ -4027,66 +4044,46 @@ export default function EmployeePortal() {
                   muted
                   playsInline
                   autoPlay
-                  sx={{ width: "100%", display: "block" }}
+                  sx={{
+                    width: "100%",
+                    display: biometricImage
+                      ? "none"
+                      : biometricCameraOn
+                      ? "block"
+                      : "none",
+                  }}
                 />
+                {biometricImage ? (
+                  <Box
+                    component="img"
+                    src={biometricImage}
+                    alt="Captured"
+                    sx={{ width: "100%", display: "block" }}
+                  />
+                ) : null}
+                {!biometricImage && !biometricCameraOn ? (
+                  <Box sx={{ p: 3 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Tap “Take picture” to open camera.
+                    </Typography>
+                  </Box>
+                ) : null}
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button
-                  variant="outlined"
-                  onClick={() => void startBiometricCamera()}
-                  disabled={biometricBusy}
-                  sx={{ borderRadius: 2, fontWeight: 700 }}
-                >
-                  Start Camera
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={stopBiometricCamera}
-                  disabled={biometricBusy}
-                  sx={{ borderRadius: 2, fontWeight: 700 }}
-                >
-                  Stop Camera
-                </Button>
-                <Button
                   variant="contained"
-                  onClick={captureBiometricSelfie}
+                  onClick={() => void takeBiometricPicture()}
                   disabled={biometricBusy}
                   sx={{ borderRadius: 2, fontWeight: 700 }}
                 >
-                  Take Selfie
-                </Button>
-                <Button
-                  component="label"
-                  variant="outlined"
-                  disabled={biometricBusy}
-                  sx={{ borderRadius: 2, fontWeight: 700 }}
-                >
-                  Upload Image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) =>
-                      onPickBiometricFile(e.target.files?.[0] || null)
-                    }
-                  />
+                  {biometricImage
+                    ? "Retake picture"
+                    : biometricCameraOn
+                    ? "Capture"
+                    : "Take picture"}
                 </Button>
               </Stack>
             </Stack>
-
-            {biometricImage ? (
-              <Box
-                component="img"
-                src={biometricImage}
-                alt="Biometric"
-                sx={{
-                  width: "100%",
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: alpha(theme.palette.text.primary, 0.12),
-                }}
-              />
-            ) : null}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

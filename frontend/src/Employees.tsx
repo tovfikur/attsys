@@ -1012,29 +1012,41 @@ function EnrollBiometricDialog({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                position: "relative",
               }}
             >
+              <Box
+                component="video"
+                ref={videoRef}
+                muted
+                playsInline
+                autoPlay
+                sx={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: image ? "none" : cameraOn ? "block" : "none",
+                }}
+              />
               {image ? (
                 <Box
                   component="img"
                   src={image}
                   alt="Captured"
-                  sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  sx={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
                 />
-              ) : cameraOn ? (
-                <Box
-                  component="video"
-                  ref={videoRef}
-                  muted
-                  playsInline
-                  autoPlay
-                  sx={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              ) : (
+              ) : null}
+              {!image && !cameraOn ? (
                 <Typography variant="body2" color="text.secondary">
                   Tap “Take picture” to open camera.
                 </Typography>
-              )}
+              ) : null}
             </Box>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Button

@@ -186,7 +186,7 @@ export default function Clock() {
       const el = biometricVideoRef.current;
       if (el) {
         el.srcObject = stream;
-        await el.play();
+        await el.play().catch(() => {});
       }
       setBiometricCameraOn(true);
     } catch (err: unknown) {
@@ -470,8 +470,24 @@ export default function Clock() {
                   overflow: "hidden",
                   border: "1px solid",
                   borderColor: "divider",
+                  position: "relative",
                 }}
               >
+                <Box
+                  component="video"
+                  ref={biometricVideoRef}
+                  muted
+                  playsInline
+                  autoPlay
+                  sx={{
+                    width: "100%",
+                    display: biometricImage
+                      ? "none"
+                      : biometricCameraOn
+                      ? "block"
+                      : "none",
+                  }}
+                />
                 {biometricImage ? (
                   <Box
                     component="img"
@@ -479,22 +495,14 @@ export default function Clock() {
                     alt="Captured"
                     sx={{ width: "100%", display: "block" }}
                   />
-                ) : biometricCameraOn ? (
-                  <Box
-                    component="video"
-                    ref={biometricVideoRef}
-                    muted
-                    playsInline
-                    autoPlay
-                    sx={{ width: "100%", display: "block" }}
-                  />
-                ) : (
+                ) : null}
+                {!biometricImage && !biometricCameraOn ? (
                   <Box sx={{ p: 3 }}>
                     <Typography variant="body2" color="text.secondary">
                       Tap “Take picture” to open camera.
                     </Typography>
                   </Box>
-                )}
+                ) : null}
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button

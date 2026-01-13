@@ -579,7 +579,7 @@ export default function Attendance() {
       const el = enrollVideoRef.current;
       if (el) {
         el.srcObject = stream;
-        await el.play();
+        await el.play().catch(() => {});
       }
       setEnrollCameraOn(true);
     } catch (err: unknown) {
@@ -2829,8 +2829,24 @@ export default function Attendance() {
                   overflow: "hidden",
                   border: "1px solid",
                   borderColor: alpha(theme.palette.text.primary, 0.12),
+                  position: "relative",
                 }}
               >
+                <Box
+                  component="video"
+                  ref={enrollVideoRef}
+                  muted
+                  playsInline
+                  autoPlay
+                  sx={{
+                    width: "100%",
+                    display: enrollImage
+                      ? "none"
+                      : enrollCameraOn
+                      ? "block"
+                      : "none",
+                  }}
+                />
                 {enrollImage ? (
                   <Box
                     component="img"
@@ -2838,22 +2854,14 @@ export default function Attendance() {
                     alt="Captured"
                     sx={{ width: "100%", display: "block" }}
                   />
-                ) : enrollCameraOn ? (
-                  <Box
-                    component="video"
-                    ref={enrollVideoRef}
-                    muted
-                    playsInline
-                    autoPlay
-                    sx={{ width: "100%", display: "block" }}
-                  />
-                ) : (
+                ) : null}
+                {!enrollImage && !enrollCameraOn ? (
                   <Box sx={{ p: 3 }}>
                     <Typography variant="body2" color="text.secondary">
                       Tap “Take picture” to open camera.
                     </Typography>
                   </Box>
-                )}
+                ) : null}
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button
