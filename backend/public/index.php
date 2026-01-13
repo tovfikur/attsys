@@ -129,6 +129,7 @@ $router->postAuth('/api/employees/attachments/delete', ['App\Controller\Employee
 
 // Leaves
 $router->getAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesList'], 'perm:leaves.read');
+$router->getAuth('/api/leaves/balance', ['App\Controller\AttendanceController', 'leaveBalance'], 'perm:leaves.read');
 $router->postAuth('/api/leaves', ['App\Controller\AttendanceController', 'leavesCreate'], 'perm:leaves.manage');
 $router->postAuth('/api/leaves/apply', ['App\Controller\AttendanceController', 'leavesApply'], 'perm:leaves.apply');
 $router->postAuth('/api/leaves/update', ['App\Controller\AttendanceController', 'leavesUpdate'], 'perm:leaves.approve');

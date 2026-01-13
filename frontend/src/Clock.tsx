@@ -64,6 +64,7 @@ export default function Clock() {
   const [biometricImage, setBiometricImage] = useState("");
   const [biometricBusy, setBiometricBusy] = useState(false);
   const [biometricError, setBiometricError] = useState("");
+  const [biometricCameraOn, setBiometricCameraOn] = useState(false);
   const biometricVideoRef = useRef<HTMLVideoElement | null>(null);
   const biometricStreamRef = useRef<MediaStream | null>(null);
 
@@ -152,6 +153,7 @@ export default function Clock() {
     }
     const el = biometricVideoRef.current;
     if (el) el.srcObject = null;
+    setBiometricCameraOn(false);
   }, []);
 
   const closeBiometric = useCallback(() => {
@@ -164,6 +166,7 @@ export default function Clock() {
     setBiometricAction(action);
     setBiometricImage("");
     setBiometricError("");
+    setBiometricCameraOn(false);
     setBiometricOpen(true);
   }, []);
 
@@ -171,6 +174,7 @@ export default function Clock() {
     stopBiometricCamera();
     if (!navigator?.mediaDevices?.getUserMedia) {
       setBiometricError("Camera not available");
+      setBiometricCameraOn(false);
       return;
     }
     try {
@@ -184,8 +188,10 @@ export default function Clock() {
         el.srcObject = stream;
         await el.play();
       }
+      setBiometricCameraOn(true);
     } catch (err: unknown) {
       setBiometricError(getErrorMessage(err, "Failed to start camera"));
+      setBiometricCameraOn(false);
     }
   }, [stopBiometricCamera]);
 
@@ -203,17 +209,29 @@ export default function Clock() {
     ctx.drawImage(el, 0, 0, w, h);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
     setBiometricImage(dataUrl);
-  }, []);
+    stopBiometricCamera();
+  }, [stopBiometricCamera]);
 
-  const onPickBiometricFile = useCallback((file: File | null) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const v = typeof reader.result === "string" ? reader.result : "";
-      setBiometricImage(v);
-    };
-    reader.readAsDataURL(file);
-  }, []);
+  const takeBiometricPicture = useCallback(async () => {
+    if (biometricBusy) return;
+    setBiometricError("");
+    if (biometricImage) {
+      setBiometricImage("");
+      await startBiometricCamera();
+      return;
+    }
+    if (!biometricCameraOn) {
+      await startBiometricCamera();
+      return;
+    }
+    captureBiometricSelfie();
+  }, [
+    biometricBusy,
+    biometricCameraOn,
+    biometricImage,
+    captureBiometricSelfie,
+    startBiometricCamera,
+  ]);
 
   const clock = async (
     type: "in" | "out",
@@ -454,68 +472,44 @@ export default function Clock() {
                   borderColor: "divider",
                 }}
               >
-                <Box
-                  component="video"
-                  ref={biometricVideoRef}
-                  muted
-                  playsInline
-                  autoPlay
-                  sx={{ width: "100%", display: "block" }}
-                />
+                {biometricImage ? (
+                  <Box
+                    component="img"
+                    src={biometricImage}
+                    alt="Captured"
+                    sx={{ width: "100%", display: "block" }}
+                  />
+                ) : biometricCameraOn ? (
+                  <Box
+                    component="video"
+                    ref={biometricVideoRef}
+                    muted
+                    playsInline
+                    autoPlay
+                    sx={{ width: "100%", display: "block" }}
+                  />
+                ) : (
+                  <Box sx={{ p: 3 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Tap “Take picture” to open camera.
+                    </Typography>
+                  </Box>
+                )}
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button
-                  variant="outlined"
-                  onClick={() => void startBiometricCamera()}
-                  disabled={biometricBusy}
-                >
-                  Start Camera
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={stopBiometricCamera}
-                  disabled={biometricBusy}
-                >
-                  Stop Camera
-                </Button>
-                <Button
                   variant="contained"
-                  onClick={captureBiometricSelfie}
+                  onClick={() => void takeBiometricPicture()}
                   disabled={biometricBusy}
                 >
-                  Take Selfie
-                </Button>
-                <Button
-                  component="label"
-                  variant="outlined"
-                  disabled={biometricBusy}
-                >
-                  Upload Image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) =>
-                      onPickBiometricFile(e.target.files?.[0] || null)
-                    }
-                  />
+                  {biometricImage
+                    ? "Retake picture"
+                    : biometricCameraOn
+                    ? "Capture"
+                    : "Take picture"}
                 </Button>
               </Stack>
             </Stack>
-
-            {biometricImage ? (
-              <Box
-                component="img"
-                src={biometricImage}
-                alt="Biometric"
-                sx={{
-                  width: "100%",
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              />
-            ) : null}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>

@@ -2207,6 +2207,149 @@ class AttendanceController
         echo json_encode(['allocations' => $out]);
     }
 
+    public function leaveBalance()
+    {
+        \App\Core\Auth::requireRole('perm:leaves.read');
+        header('Content-Type: application/json');
+        $pdo = \App\Core\Database::get();
+        if (!$pdo) {
+            http_response_code(500);
+            echo json_encode(['error' => 'DB error']);
+            return;
+        }
+
+        $user = \App\Core\Auth::currentUser();
+        if (!$user) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            return;
+        }
+
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) {
+            http_response_code(400);
+            echo json_encode(['error' => 'tenant not resolved']);
+            return;
+        }
+
+        $employeeId = 0;
+        if (($user['role'] ?? null) === 'employee') {
+            $employeeId = (int)($user['employee_id'] ?? 0);
+            if ($employeeId <= 0) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Employee account not linked']);
+                return;
+            }
+        } else {
+            if (!\App\Core\Auth::hasPermission($user, 'leaves.manage')) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Forbidden']);
+                return;
+            }
+            $employeeId = (int)($_GET['employee_id'] ?? 0);
+            if ($employeeId <= 0) {
+                http_response_code(400);
+                echo json_encode(['error' => 'employee_id required']);
+                return;
+            }
+        }
+
+        $yearRaw = $_GET['year'] ?? date('Y');
+        $year = is_numeric($yearRaw) ? (int)$yearRaw : 0;
+        if ($year < 1970 || $year > 2200) {
+            http_response_code(400);
+            echo json_encode(['error' => 'invalid year']);
+            return;
+        }
+
+        $empCheck = $pdo->prepare('SELECT 1 FROM employees WHERE tenant_id=? AND id=? LIMIT 1');
+        $empCheck->execute([(int)$tenantId, (int)$employeeId]);
+        if (!$empCheck->fetchColumn()) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Employee not found']);
+            return;
+        }
+
+        $start = sprintf('%04d-01-01', $year);
+        $end = sprintf('%04d-12-31', $year);
+        $asOfRaw = $_GET['as_of'] ?? null;
+        if (is_string($asOfRaw) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $asOfRaw)) {
+            $asOfYear = (int)substr($asOfRaw, 0, 4);
+            if ($asOfYear === (int)$year) $end = $asOfRaw;
+        }
+
+        $workingDays = $this->getEmployeeWorkingDays($pdo, (int)$tenantId, (int)$employeeId);
+        $workingDaysSet = [];
+        foreach ($workingDays as $d) $workingDaysSet[strtolower($d)] = true;
+
+        $hStmt = $pdo->prepare('SELECT date FROM holidays WHERE tenant_id=? AND date BETWEEN ? AND ?');
+        $hStmt->execute([(int)$tenantId, $start, $end]);
+        $holidaySet = [];
+        foreach ($hStmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+            $d = (string)($r['date'] ?? '');
+            if ($d !== '') $holidaySet[$d] = true;
+        }
+
+        $usedByType = [];
+        $lStmt = $pdo->prepare("SELECT date, leave_type, day_part FROM leaves WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? AND status='approved'");
+        $lStmt->execute([(int)$tenantId, (int)$employeeId, $start, $end]);
+        $leaves = $lStmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+        foreach ($leaves as $l) {
+            $dateStr = (string)($l['date'] ?? '');
+            if ($dateStr === '') continue;
+            if (isset($holidaySet[$dateStr])) continue;
+            $dowKey = strtolower((new \DateTimeImmutable($dateStr, new \DateTimeZone('Asia/Dhaka')))->format('D'));
+            if (!isset($workingDaysSet[$dowKey])) continue;
+
+            $type = strtolower(trim((string)($l['leave_type'] ?? '')));
+            if ($type === '') continue;
+            $dayPart = strtolower((string)($l['day_part'] ?? 'full'));
+            $amount = $dayPart === 'full' ? 1.0 : 0.5;
+            if (!isset($usedByType[$type])) $usedByType[$type] = 0.0;
+            $usedByType[$type] += $amount;
+        }
+
+        $allocStmt = $pdo->prepare('SELECT leave_type, allocated_days FROM leave_allocations WHERE tenant_id=? AND employee_id=? AND year=?');
+        $allocStmt->execute([(int)$tenantId, (int)$employeeId, (int)$year]);
+        $allocMap = [];
+        foreach ($allocStmt->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+            $t = strtolower(trim((string)($r['leave_type'] ?? '')));
+            if ($t === '') continue;
+            $allocMap[$t] = (float)($r['allocated_days'] ?? 0);
+        }
+
+        $types = $this->getLeaveTypes($pdo, (int)$tenantId, true);
+        $typeNameByCode = [];
+        $codes = [];
+        foreach ($types as $t) {
+            $code = strtolower(trim((string)($t['code'] ?? '')));
+            if ($code === '') continue;
+            $codes[$code] = true;
+            $typeNameByCode[$code] = (string)($t['name'] ?? $code);
+        }
+        foreach (array_keys($allocMap) as $code) $codes[$code] = true;
+        foreach (array_keys($usedByType) as $code) $codes[$code] = true;
+
+        $out = [];
+        foreach (array_keys($codes) as $code) {
+            $allocated = (float)($allocMap[$code] ?? 0);
+            $used = (float)($usedByType[$code] ?? 0);
+            $remaining = $allocated - $used;
+            $out[] = [
+                'employee_id' => (int)$employeeId,
+                'year' => (int)$year,
+                'leave_type' => $code,
+                'leave_type_name' => (string)($typeNameByCode[$code] ?? $code),
+                'allocated_days' => $allocated,
+                'used_days' => $used,
+                'remaining_days' => $remaining,
+            ];
+        }
+
+        usort($out, fn($a, $b) => strcmp((string)$a['leave_type'], (string)$b['leave_type']));
+        echo json_encode(['allocations' => $out]);
+    }
+
     public function leaveAllocationsUpsert()
     {
         header('Content-Type: application/json');

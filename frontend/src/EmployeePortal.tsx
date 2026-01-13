@@ -125,6 +125,28 @@ type LeaveType = {
   created_at?: string;
 };
 
+type AttendanceDay = {
+  employee_id: number;
+  date: string;
+  in_time: string | null;
+  out_time: string | null;
+  worked_minutes: number;
+  late_minutes?: number;
+  early_leave_minutes?: number;
+  overtime_minutes?: number;
+  status: string;
+};
+
+type LeaveBalanceRow = {
+  employee_id: number;
+  year: number;
+  leave_type: string;
+  leave_type_name: string;
+  allocated_days: number;
+  used_days: number;
+  remaining_days: number;
+};
+
 type EvidenceItem = {
   id: string;
   employee_id: string;
@@ -156,6 +178,12 @@ function minutesToHM(mins: number) {
   const h = Math.floor(m / 60);
   const mm = m % 60;
   return `${h}h ${mm}m`;
+}
+
+function formatDaysAmount(days: number) {
+  const v = Number.isFinite(days) ? days : 0;
+  const rounded = Math.round(v * 2) / 2;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 const formatTime = (value: string | null | undefined): string => {
@@ -286,6 +314,15 @@ export default function EmployeePortal() {
     day_part: "full",
     reason: "",
   });
+
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [reportFrom, setReportFrom] = useState("");
+  const [reportTo, setReportTo] = useState("");
+  const [reportDays, setReportDays] = useState<AttendanceDay[]>([]);
+  const [reportLeaves, setReportLeaves] = useState<LeaveRecord[]>([]);
+  const [reportBalance, setReportBalance] = useState<LeaveBalanceRow[]>([]);
 
   const selectableLeaveTypes = useMemo<LeaveType[]>(() => {
     const normalized = leaveTypes
@@ -958,6 +995,88 @@ export default function EmployeePortal() {
     }
   }, [applyForm, employeeId, fetchEmployeeMonth, notifyAttendanceUpdated]);
 
+  const dateToStr = useCallback((d: Date) => {
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  }, []);
+
+  const runReportForRange = useCallback(
+    async (start: string, end: string) => {
+      if (!employeeId) return;
+      setReportBusy(true);
+      setReportError("");
+      try {
+        const [daysRes, leavesRes] = await Promise.all([
+          api.get(
+            `/api/attendance/days?start=${encodeURIComponent(
+              start
+            )}&end=${encodeURIComponent(end)}&limit=10000`
+          ),
+          api.get(
+            `/api/leaves?start=${encodeURIComponent(
+              start
+            )}&end=${encodeURIComponent(end)}`
+          ),
+        ]);
+
+        setReportDays(
+          Array.isArray(daysRes.data?.days)
+            ? (daysRes.data.days as AttendanceDay[])
+            : []
+        );
+        setReportLeaves(
+          Array.isArray(leavesRes.data?.leaves)
+            ? (leavesRes.data.leaves as LeaveRecord[])
+            : []
+        );
+
+        const fromYear = Number(String(start || "").slice(0, 4) || "0");
+        const toYear = Number(String(end || "").slice(0, 4) || "0");
+        const year =
+          toYear >= 1970
+            ? toYear
+            : fromYear >= 1970
+            ? fromYear
+            : Number(todayStr.slice(0, 4));
+        try {
+          const balanceRes = await api.get(
+            `/api/leaves/balance?year=${encodeURIComponent(
+              String(year)
+            )}&as_of=${encodeURIComponent(end)}`
+          );
+          setReportBalance(
+            Array.isArray(balanceRes.data?.allocations)
+              ? (balanceRes.data.allocations as LeaveBalanceRow[])
+              : []
+          );
+        } catch {
+          setReportBalance([]);
+        }
+      } catch (err: unknown) {
+        setReportDays([]);
+        setReportLeaves([]);
+        setReportBalance([]);
+        setReportError(getErrorMessage(err, "Failed to load report"));
+      } finally {
+        setReportBusy(false);
+      }
+    },
+    [employeeId, todayStr]
+  );
+
+  const generateReport = useCallback(() => {
+    const a = String(reportFrom || "").trim();
+    const b = String(reportTo || "").trim();
+    if (!a || !b) {
+      setReportError("Select a start and end date");
+      return;
+    }
+    const start = a <= b ? a : b;
+    const end = a <= b ? b : a;
+    if (start !== reportFrom) setReportFrom(start);
+    if (end !== reportTo) setReportTo(end);
+    void runReportForRange(start, end);
+  }, [reportFrom, reportTo, runReportForRange]);
+
   const openApplyForDate = useCallback((date: string) => {
     setApplyError("");
     setApplyOk("");
@@ -1072,6 +1191,86 @@ export default function EmployeePortal() {
     return c;
   }, [leaves]);
 
+  const reportSummary = useMemo(() => {
+    const workedMinutes = reportDays.reduce(
+      (sum, d) => sum + Math.max(0, Number(d.worked_minutes || 0)),
+      0
+    );
+    const overtimeMinutes = reportDays.reduce(
+      (sum, d) => sum + Math.max(0, Number(d.overtime_minutes || 0)),
+      0
+    );
+    const lateDays = reportDays.reduce(
+      (sum, d) => sum + (Number(d.late_minutes || 0) > 0 ? 1 : 0),
+      0
+    );
+    const earlyLeaveDays = reportDays.reduce(
+      (sum, d) => sum + (Number(d.early_leave_minutes || 0) > 0 ? 1 : 0),
+      0
+    );
+    const workedDays = reportDays.reduce(
+      (sum, d) => sum + (Number(d.worked_minutes || 0) > 0 ? 1 : 0),
+      0
+    );
+    const absentDays = reportDays.reduce((sum, d) => {
+      const s = String(d.status || "")
+        .toLowerCase()
+        .trim();
+      return sum + (s === "absent" ? 1 : 0);
+    }, 0);
+
+    const byStatus = { approved: 0, pending: 0, rejected: 0 } as Record<
+      "approved" | "pending" | "rejected",
+      number
+    >;
+    const byType = new Map<
+      string,
+      { name: string; approved: number; pending: number; rejected: number }
+    >();
+    for (const l of reportLeaves) {
+      const status = String(l.status || "pending")
+        .toLowerCase()
+        .trim();
+      const statusKey =
+        status === "approved" || status === "rejected" ? status : "pending";
+      const part = String(l.day_part || "full")
+        .toLowerCase()
+        .trim();
+      const amount = part === "full" ? 1 : 0.5;
+      byStatus[statusKey] += amount;
+
+      const code = String(l.leave_type || "unknown")
+        .toLowerCase()
+        .trim();
+      const name = leaveTypeNameByCode.get(code) || code || "Unknown";
+      const cur = byType.get(code) || {
+        name,
+        approved: 0,
+        pending: 0,
+        rejected: 0,
+      };
+      cur[statusKey] += amount;
+      byType.set(code, cur);
+    }
+
+    const leaveTypes = Array.from(byType.entries())
+      .map(([code, v]) => ({ code, ...v }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return {
+      workedMinutes,
+      overtimeMinutes,
+      lateDays,
+      earlyLeaveDays,
+      workedDays,
+      absentDays,
+      leaveDaysApproved: byStatus.approved,
+      leaveDaysPending: byStatus.pending,
+      leaveDaysRejected: byStatus.rejected,
+      leaveTypes,
+    };
+  }, [leaveTypeNameByCode, reportDays, reportLeaves]);
+
   const filteredLeaves = useMemo(() => {
     const list =
       leaveStatusFilter === "all"
@@ -1115,6 +1314,54 @@ export default function EmployeePortal() {
     if (!employeeId) return;
     if (isProfileRoute) setViewProfileOpen(true);
   }, [employeeId, isProfileRoute]);
+
+  useEffect(() => {
+    if (!employeeId) return;
+    if (reportFrom && reportTo) return;
+    const end = todayStr;
+    const startDate = new Date(`${todayStr}T00:00:00`);
+    startDate.setDate(startDate.getDate() - 29);
+    const start = dateToStr(startDate);
+    setReportFrom(start);
+    setReportTo(end);
+  }, [dateToStr, employeeId, reportFrom, reportTo, todayStr]);
+
+  useEffect(() => {
+    if (!employeeId) return;
+    const p = new URLSearchParams(location.search || "");
+    if (!p.get("report")) return;
+    const startParam = String(p.get("start") || "").trim();
+    const endParam = String(p.get("end") || "").trim();
+    let start = String(startParam || reportFrom || "").trim();
+    let end = String(endParam || reportTo || "").trim();
+    if (!start || !end) {
+      const fallbackEnd = todayStr;
+      const startDate = new Date(`${todayStr}T00:00:00`);
+      startDate.setDate(startDate.getDate() - 29);
+      const fallbackStart = dateToStr(startDate);
+      if (!start) start = fallbackStart;
+      if (!end) end = fallbackEnd;
+    }
+    setReportFrom(start);
+    setReportTo(end);
+    setReportError("");
+    setReportOpen(true);
+    if (start && end)
+      void runReportForRange(
+        start <= end ? start : end,
+        start <= end ? end : start
+      );
+    navigate("/employee-portal", { replace: true });
+  }, [
+    dateToStr,
+    employeeId,
+    location.search,
+    navigate,
+    reportFrom,
+    reportTo,
+    runReportForRange,
+    todayStr,
+  ]);
 
   useEffect(() => {
     if (!employeeId) return;
@@ -3420,6 +3667,225 @@ export default function EmployeePortal() {
             disabled={editProfileBusy}
           >
             {editProfileBusy ? "Please wait…" : "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={reportOpen}
+        onClose={reportBusy ? undefined : () => setReportOpen(false)}
+        maxWidth="md"
+        fullWidth
+        fullScreen={isMobile}
+        PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>My Report</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {reportError ? (
+              <Alert severity="error" sx={{ borderRadius: 2 }}>
+                {reportError}
+              </Alert>
+            ) : null}
+
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={2}
+              alignItems={{ sm: "flex-end" }}
+            >
+              <TextField
+                label="From"
+                type="date"
+                value={reportFrom}
+                onChange={(e) => setReportFrom(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                disabled={reportBusy}
+                fullWidth
+              />
+              <TextField
+                label="To"
+                type="date"
+                value={reportTo}
+                onChange={(e) => setReportTo(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                disabled={reportBusy}
+                fullWidth
+              />
+              <Button
+                variant="contained"
+                onClick={generateReport}
+                disabled={reportBusy || !reportFrom || !reportTo}
+                sx={{ borderRadius: 2, fontWeight: 800, px: 3, py: 1.25 }}
+              >
+                {reportBusy ? "Loading…" : "Generate"}
+              </Button>
+            </Stack>
+
+            <Paper
+              variant="outlined"
+              sx={{ borderRadius: 3, p: { xs: 1.5, sm: 2 } }}
+            >
+              <Stack spacing={1.25}>
+                <Typography sx={{ fontWeight: 800 }}>Summary</Typography>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                  <Chip
+                    label={`Worked: ${minutesToHM(
+                      reportSummary.workedMinutes
+                    )}`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                  <Chip
+                    label={`Worked days: ${reportSummary.workedDays}`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                  <Chip
+                    label={`Absent days: ${reportSummary.absentDays}`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                  <Chip
+                    label={`Late days: ${reportSummary.lateDays}`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                  <Chip
+                    label={`Early leave days: ${reportSummary.earlyLeaveDays}`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                  <Chip
+                    label={`Overtime: ${minutesToHM(
+                      reportSummary.overtimeMinutes
+                    )}`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                </Stack>
+                <Divider sx={{ my: 1 }} />
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                  <Chip
+                    color="success"
+                    label={`Leave approved: ${formatDaysAmount(
+                      reportSummary.leaveDaysApproved
+                    )} day(s)`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                  <Chip
+                    color="warning"
+                    label={`Leave pending: ${formatDaysAmount(
+                      reportSummary.leaveDaysPending
+                    )} day(s)`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                  <Chip
+                    color="error"
+                    label={`Leave rejected: ${formatDaysAmount(
+                      reportSummary.leaveDaysRejected
+                    )} day(s)`}
+                    sx={{ fontWeight: 800 }}
+                  />
+                </Stack>
+              </Stack>
+            </Paper>
+
+            <Paper
+              variant="outlined"
+              sx={{ borderRadius: 3, p: { xs: 1.5, sm: 2 } }}
+            >
+              <Stack spacing={1.25}>
+                <Typography sx={{ fontWeight: 800 }}>
+                  Leave Balance (as of {reportTo || "—"})
+                </Typography>
+                {reportBalance.length === 0 ? (
+                  <Typography color="text.secondary">
+                    No leave balance data available.
+                  </Typography>
+                ) : (
+                  <Stack spacing={1}>
+                    {reportBalance.map((r) => (
+                      <Box
+                        key={`${r.leave_type}-${r.year}`}
+                        sx={{
+                          border: "1px solid",
+                          borderColor: "divider",
+                          borderRadius: 2.5,
+                          p: 1.5,
+                          display: "grid",
+                          gridTemplateColumns: { xs: "1fr", sm: "1fr auto" },
+                          gap: 1,
+                          alignItems: "center",
+                        }}
+                      >
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontWeight: 800 }} noWrap>
+                            {r.leave_type_name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {r.year} • Allocated{" "}
+                            {formatDaysAmount(r.allocated_days)} • Used{" "}
+                            {formatDaysAmount(r.used_days)}
+                          </Typography>
+                        </Box>
+                        <Chip
+                          label={`Remaining ${formatDaysAmount(
+                            r.remaining_days
+                          )}`}
+                          color={r.remaining_days > 0 ? "success" : "default"}
+                          sx={{ fontWeight: 800, justifySelf: { sm: "end" } }}
+                        />
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+              </Stack>
+            </Paper>
+
+            {reportSummary.leaveTypes.length > 0 ? (
+              <Paper
+                variant="outlined"
+                sx={{ borderRadius: 3, p: { xs: 1.5, sm: 2 } }}
+              >
+                <Stack spacing={1.25}>
+                  <Typography sx={{ fontWeight: 800 }}>
+                    Leave Breakdown (selected range)
+                  </Typography>
+                  <Stack spacing={1}>
+                    {reportSummary.leaveTypes.map((t) => (
+                      <Box
+                        key={t.code}
+                        sx={{
+                          border: "1px solid",
+                          borderColor: "divider",
+                          borderRadius: 2.5,
+                          p: 1.5,
+                          display: "grid",
+                          gridTemplateColumns: { xs: "1fr", sm: "1fr auto" },
+                          gap: 1,
+                          alignItems: "center",
+                        }}
+                      >
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontWeight: 800 }} noWrap>
+                            {t.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Approved {formatDaysAmount(t.approved)} • Pending{" "}
+                            {formatDaysAmount(t.pending)} • Rejected{" "}
+                            {formatDaysAmount(t.rejected)}
+                          </Typography>
+                        </Box>
+                        <Chip
+                          label={`Total ${formatDaysAmount(
+                            t.approved + t.pending + t.rejected
+                          )}`}
+                          sx={{ fontWeight: 800, justifySelf: { sm: "end" } }}
+                        />
+                      </Box>
+                    ))}
+                  </Stack>
+                </Stack>
+              </Paper>
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setReportOpen(false)} disabled={reportBusy}>
+            Close
           </Button>
         </DialogActions>
       </Dialog>

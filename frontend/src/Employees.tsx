@@ -845,6 +845,7 @@ function EnrollBiometricDialog({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [image, setImage] = useState("");
+  const [cameraOn, setCameraOn] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
@@ -859,6 +860,7 @@ function EnrollBiometricDialog({
     }
     const el = videoRef.current;
     if (el) el.srcObject = null;
+    setCameraOn(false);
   }, []);
 
   const close = useCallback(() => {
@@ -876,6 +878,7 @@ function EnrollBiometricDialog({
     setOk("");
     if (!navigator?.mediaDevices?.getUserMedia) {
       setError("Camera not available");
+      setCameraOn(false);
       return;
     }
     try {
@@ -888,8 +891,10 @@ function EnrollBiometricDialog({
         el.srcObject = stream;
         await el.play().catch(() => {});
       }
+      setCameraOn(true);
     } catch {
       setError("Failed to start camera");
+      setCameraOn(false);
     }
   }, [stopCamera]);
 
@@ -910,19 +915,24 @@ function EnrollBiometricDialog({
     setImage(dataUrl);
     setError("");
     setOk("");
-  }, []);
+    stopCamera();
+  }, [stopCamera]);
 
-  const onPickFile = useCallback((file: File | null) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const v = typeof reader.result === "string" ? reader.result : "";
-      setImage(v);
-      setError("");
-      setOk("");
-    };
-    reader.readAsDataURL(file);
-  }, []);
+  const takePicture = useCallback(async () => {
+    if (busy) return;
+    setError("");
+    setOk("");
+    if (image) {
+      setImage("");
+      await startCamera();
+      return;
+    }
+    if (!cameraOn) {
+      await startCamera();
+      return;
+    }
+    captureSelfie();
+  }, [busy, cameraOn, captureSelfie, image, startCamera]);
 
   const submit = useCallback(async () => {
     if (!image) {
@@ -1004,69 +1014,43 @@ function EnrollBiometricDialog({
                 justifyContent: "center",
               }}
             >
-              <Box
-                component="video"
-                ref={videoRef}
-                muted
-                playsInline
-                sx={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
+              {image ? (
+                <Box
+                  component="img"
+                  src={image}
+                  alt="Captured"
+                  sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : cameraOn ? (
+                <Box
+                  component="video"
+                  ref={videoRef}
+                  muted
+                  playsInline
+                  autoPlay
+                  sx={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Tap “Take picture” to open camera.
+                </Typography>
+              )}
             </Box>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Button
-                variant="outlined"
-                onClick={() => void startCamera()}
-                disabled={busy}
-                sx={{ borderRadius: 2, fontWeight: 900 }}
-              >
-                Start Camera
-              </Button>
-              <Button
-                variant="outlined"
-                onClick={stopCamera}
-                disabled={busy}
-                sx={{ borderRadius: 2, fontWeight: 900 }}
-              >
-                Stop Camera
-              </Button>
-              <Button
                 variant="contained"
-                onClick={captureSelfie}
+                onClick={() => void takePicture()}
                 disabled={busy}
                 sx={{ borderRadius: 2, fontWeight: 900 }}
               >
-                Take Selfie
-              </Button>
-              <Button
-                component="label"
-                variant="outlined"
-                disabled={busy}
-                sx={{ borderRadius: 2, fontWeight: 900 }}
-              >
-                Upload Image
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) => onPickFile(e.target.files?.[0] || null)}
-                />
+                {image
+                  ? "Retake picture"
+                  : cameraOn
+                  ? "Capture"
+                  : "Take picture"}
               </Button>
             </Stack>
           </Stack>
-
-          {image ? (
-            <Box
-              component="img"
-              src={image}
-              alt="Biometric"
-              sx={{
-                width: "100%",
-                borderRadius: 2,
-                border: "1px solid",
-                borderColor: alpha(theme.palette.text.primary, 0.12),
-              }}
-            />
-          ) : null}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ p: 2.5 }}>

@@ -443,6 +443,7 @@ export default function Attendance() {
   const [enrollEmployeeId, setEnrollEmployeeId] = useState<string>("");
   const [enrollEmployeeLabel, setEnrollEmployeeLabel] = useState<string>("");
   const [enrollImage, setEnrollImage] = useState("");
+  const [enrollCameraOn, setEnrollCameraOn] = useState(false);
   const [enrollBusy, setEnrollBusy] = useState(false);
   const [enrollError, setEnrollError] = useState("");
   const [enrollOk, setEnrollOk] = useState("");
@@ -548,6 +549,7 @@ export default function Attendance() {
     }
     const el = enrollVideoRef.current;
     if (el) el.srcObject = null;
+    setEnrollCameraOn(false);
   }, []);
 
   const closeEnroll = useCallback(() => {
@@ -565,6 +567,7 @@ export default function Attendance() {
     stopEnrollCamera();
     if (!navigator?.mediaDevices?.getUserMedia) {
       setEnrollError("Camera not available");
+      setEnrollCameraOn(false);
       return;
     }
     try {
@@ -578,8 +581,10 @@ export default function Attendance() {
         el.srcObject = stream;
         await el.play();
       }
+      setEnrollCameraOn(true);
     } catch (err: unknown) {
       setEnrollError(getErrorMessage(err, "Failed to start camera"));
+      setEnrollCameraOn(false);
     }
   }, [stopEnrollCamera]);
 
@@ -597,17 +602,30 @@ export default function Attendance() {
     ctx.drawImage(el, 0, 0, w, h);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
     setEnrollImage(dataUrl);
-  }, []);
+    stopEnrollCamera();
+  }, [stopEnrollCamera]);
 
-  const onPickEnrollFile = useCallback((file: File | null) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const v = typeof reader.result === "string" ? reader.result : "";
-      setEnrollImage(v);
-    };
-    reader.readAsDataURL(file);
-  }, []);
+  const takeEnrollPicture = useCallback(async () => {
+    if (enrollBusy) return;
+    setEnrollError("");
+    setEnrollOk("");
+    if (enrollImage) {
+      setEnrollImage("");
+      await startEnrollCamera();
+      return;
+    }
+    if (!enrollCameraOn) {
+      await startEnrollCamera();
+      return;
+    }
+    captureEnrollSelfie();
+  }, [
+    captureEnrollSelfie,
+    enrollBusy,
+    enrollCameraOn,
+    enrollImage,
+    startEnrollCamera,
+  ]);
 
   const submitEnroll = useCallback(async () => {
     if (!enrollEmployeeId) return;
@@ -2813,72 +2831,45 @@ export default function Attendance() {
                   borderColor: alpha(theme.palette.text.primary, 0.12),
                 }}
               >
-                <Box
-                  component="video"
-                  ref={enrollVideoRef}
-                  muted
-                  playsInline
-                  autoPlay
-                  sx={{ width: "100%", display: "block" }}
-                />
+                {enrollImage ? (
+                  <Box
+                    component="img"
+                    src={enrollImage}
+                    alt="Captured"
+                    sx={{ width: "100%", display: "block" }}
+                  />
+                ) : enrollCameraOn ? (
+                  <Box
+                    component="video"
+                    ref={enrollVideoRef}
+                    muted
+                    playsInline
+                    autoPlay
+                    sx={{ width: "100%", display: "block" }}
+                  />
+                ) : (
+                  <Box sx={{ p: 3 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Tap “Take picture” to open camera.
+                    </Typography>
+                  </Box>
+                )}
               </Box>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Button
-                  variant="outlined"
-                  onClick={() => void startEnrollCamera()}
-                  disabled={enrollBusy}
-                  sx={{ borderRadius: 2, fontWeight: 900 }}
-                >
-                  Start Camera
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={stopEnrollCamera}
-                  disabled={enrollBusy}
-                  sx={{ borderRadius: 2, fontWeight: 900 }}
-                >
-                  Stop Camera
-                </Button>
-                <Button
                   variant="contained"
-                  onClick={captureEnrollSelfie}
+                  onClick={() => void takeEnrollPicture()}
                   disabled={enrollBusy}
                   sx={{ borderRadius: 2, fontWeight: 900 }}
                 >
-                  Take Selfie
-                </Button>
-                <Button
-                  component="label"
-                  variant="outlined"
-                  disabled={enrollBusy}
-                  sx={{ borderRadius: 2, fontWeight: 900 }}
-                >
-                  Upload Image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) =>
-                      onPickEnrollFile(e.target.files?.[0] || null)
-                    }
-                  />
+                  {enrollImage
+                    ? "Retake picture"
+                    : enrollCameraOn
+                    ? "Capture"
+                    : "Take picture"}
                 </Button>
               </Stack>
             </Stack>
-
-            {enrollImage ? (
-              <Box
-                component="img"
-                src={enrollImage}
-                alt="Biometric"
-                sx={{
-                  width: "100%",
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: alpha(theme.palette.text.primary, 0.12),
-                }}
-              />
-            ) : null}
 
             <Stack direction="row" spacing={1} justifyContent="flex-end">
               <Button onClick={closeEnroll} disabled={enrollBusy}>

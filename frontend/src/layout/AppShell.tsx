@@ -35,6 +35,7 @@ import {
   AccessTimeRounded,
   AccountCircleRounded,
   ApartmentRounded,
+  AssessmentRounded,
   DashboardRounded,
   DevicesRounded,
   ExitToAppRounded,
@@ -112,7 +113,13 @@ const navItems: NavItem[] = [
     label: "Shifts",
     to: "/shifts",
     icon: <AccessTimeRounded />,
-    roles: ["tenant_owner", "hr_admin"],
+    roles: ["tenant_owner", "hr_admin", "manager"],
+  },
+  {
+    label: "Reports",
+    to: "/reports",
+    icon: <AssessmentRounded />,
+    roles: ["tenant_owner", "hr_admin", "manager"],
   },
   {
     label: "Devices",
@@ -437,6 +444,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (location.pathname.startsWith("/clock")) return "Check In/Out";
     if (location.pathname.startsWith("/attendance")) return "Attendance";
     if (location.pathname.startsWith("/leaves")) return "Leaves";
+    if (location.pathname.startsWith("/reports")) return "Reports";
     if (location.pathname.startsWith("/employee-portal"))
       return "Employee Portal";
     if (location.pathname.startsWith("/devices")) return "Devices";
@@ -446,8 +454,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const showCenterCheck = useMemo(() => {
     if (isDesktop) return false;
-    if (role === "employee") return true;
-    return role === "tenant_owner" || role === "hr_admin" || role === "manager";
+    return role === "employee";
   }, [isDesktop, role]);
 
   const centerCheck = useMemo(() => {
@@ -984,22 +991,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               }}
             >
               {(() => {
-                const visible: NavItem[] = showCenterCheck
-                  ? role === "employee"
+                const isTenantRole =
+                  role === "tenant_owner" ||
+                  role === "hr_admin" ||
+                  role === "manager";
+                const visible: NavItem[] =
+                  role === "employee" && showCenterCheck
                     ? [
+                        {
+                          label: "Report",
+                          to: "/employee-portal?report=1",
+                          icon: <QueryStatsRounded />,
+                        },
                         items.find((i) => i.to === "/employee-portal"),
                         items.find((i) => i.to.includes("applyLeave=1")),
                         items.find((i) => i.to === "/employee-portal/profile"),
                       ].filter((i): i is NavItem => Boolean(i))
-                    : items.slice(0, 4)
-                  : items.slice(0, 5);
+                    : isTenantRole
+                    ? [
+                        "/employees",
+                        "/attendance",
+                        "/leaves",
+                        "/shifts",
+                        "/reports",
+                      ]
+                        .map((to) => items.find((i) => i.to === to))
+                        .filter((i): i is NavItem => Boolean(i))
+                    : items.slice(0, 5);
                 const left = showCenterCheck ? visible.slice(0, 2) : visible;
                 const right = showCenterCheck ? visible.slice(2, 4) : [];
 
                 const renderItem = (item: NavItem) => {
-                  const selected =
-                    location.pathname === item.to ||
-                    location.pathname.startsWith(`${item.to}/`);
+                  const selected = item.to.includes("?")
+                    ? `${location.pathname}${location.search || ""}` === item.to
+                    : location.pathname === item.to ||
+                      location.pathname.startsWith(`${item.to}/`);
                   return (
                     <BottomNavigationAction
                       key={item.to}

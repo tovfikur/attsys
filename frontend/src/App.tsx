@@ -18,6 +18,7 @@ import DeviceIngestTest from "./DeviceIngestTest";
 import Sites from "./Sites";
 import Shifts from "./Shifts";
 import Leaves from "./Leaves";
+import Reports from "./Reports";
 import EmployeePortal from "./EmployeePortal";
 import AppShell from "./layout/AppShell";
 import "./App.css";
@@ -194,6 +195,14 @@ function App() {
           element={
             <DenyRoleRoute deny={["superadmin"]}>
               <Shifts />
+            </DenyRoleRoute>
+          }
+        />
+        <Route
+          path="/reports"
+          element={
+            <DenyRoleRoute deny={["employee", "superadmin"]}>
+              <Reports />
             </DenyRoleRoute>
           }
         />
