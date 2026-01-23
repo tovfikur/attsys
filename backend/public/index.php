@@ -1,5 +1,8 @@
 <?php
 
+// Set system timezone to Bangladesh Standard Time
+date_default_timezone_set('Asia/Dhaka');
+
 // Simple Autoloader (since composer is missing in env)
 spl_autoload_register(function ($class) {
     $prefix = 'App\\';
@@ -31,17 +34,26 @@ if ($origin) {
     header("Access-Control-Allow-Credentials: true");
     header("Vary: Origin");
 } else {
+    // Fallback for tools like Postman or non-browser agents
     header("Access-Control-Allow-Origin: *");
 }
-header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 $reqHeaders = $_SERVER['HTTP_ACCESS_CONTROL_REQUEST_HEADERS'] ?? '';
-$reqHeaders = preg_replace("/[\r\n]+/", "", (string)$reqHeaders);
+// Sanitize headers to prevent header injection
+$reqHeaders = preg_replace("/[^a-zA-Z0-9\-\_,]/", "", (string)$reqHeaders);
 $baseHeaders = "Content-Type, Authorization, X-Tenant-ID, X-Toast-Skip";
-header("Access-Control-Allow-Headers: " . ($reqHeaders ? ($baseHeaders . ", " . $reqHeaders) : $baseHeaders));
+$allowedHeaders = $baseHeaders;
+if ($reqHeaders) {
+    $allowedHeaders .= ", " . $reqHeaders;
+}
+header("Access-Control-Allow-Headers: $allowedHeaders");
+header("Access-Control-Max-Age: 86400"); // Cache preflight for 24h
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    header("Content-Length: 0");
+    header("Content-Type: text/plain");
     http_response_code(200);
-    exit;
+    exit(0);
 }
 
 // 2. Error Handling (Basic)

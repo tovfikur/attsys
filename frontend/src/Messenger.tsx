@@ -68,6 +68,8 @@ type Conversation = {
   owner_employee_name?: string | null;
   owner_employee_code?: string | null;
   owner_employee_photo?: string | null;
+  last_sender?: string | null;
+  last_message?: string | null;
 };
 
 type Message = {
@@ -565,9 +567,18 @@ export default function Messenger() {
                           }
                           noWrap
                         >
-                          {c.updated_at
-                            ? formatTimeLabel(String(c.updated_at))
-                            : " "}
+                          {c.last_sender ? (
+                            <span style={{ fontWeight: 700 }}>
+                              {c.last_sender}:{" "}
+                              <span style={{ fontWeight: 400 }}>
+                                {c.last_message}
+                              </span>
+                            </span>
+                          ) : c.updated_at ? (
+                            formatTimeLabel(String(c.updated_at))
+                          ) : (
+                            " "
+                          )}
                         </Typography>
                       </Box>
                     </Button>

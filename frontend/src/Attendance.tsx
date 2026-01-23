@@ -250,6 +250,15 @@ const isEarlyLeave = (r: AttendanceRow): boolean => {
   return false;
 };
 
+const isPresentStatus = (status: string | undefined | null): boolean => {
+  if (!status) return false;
+  const s = status.trim();
+  if (s === "Absent") return false;
+  if (s === "Leave") return false;
+  if (s === "Half Leave") return false;
+  return true;
+};
+
 export default function Attendance() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -899,7 +908,7 @@ export default function Attendance() {
       if (hasProcessedDays) {
         for (const day of d) {
           coveredPairs.add(`${day.employee_id}::${day.date}`);
-          if (day.status !== "Absent") daysPresent.add(day.date);
+          if (isPresentStatus(day.status)) daysPresent.add(day.date);
           workedMinutes += Math.max(0, day.worked_minutes || 0);
           if (day.in_time && !day.out_time) openShift = true;
           const candidate = day.out_time || day.in_time;
@@ -971,9 +980,9 @@ export default function Attendance() {
     const hasProcessedDays = days.length > 0;
     if (hasProcessedDays) {
       for (const d of days) {
-        if (d.status !== "Absent") dayPairs.add(`${d.employee_id}::${d.date}`);
+        if (isPresentStatus(d.status)) dayPairs.add(`${d.employee_id}::${d.date}`);
         workedMinutes += Math.max(0, d.worked_minutes || 0);
-        if (d.date === today && d.status !== "Absent")
+        if (d.date === today && isPresentStatus(d.status))
           presentToday.add(String(d.employee_id));
         if (d.date === today && d.in_time && !d.out_time)
           openShifts.add(String(d.employee_id));

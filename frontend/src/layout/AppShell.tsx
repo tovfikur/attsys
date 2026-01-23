@@ -180,6 +180,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    if (role === "employee") {
+      document.title = "KHR-Employee";
+    } else if (
+      role === "tenant_owner" ||
+      role === "hr_admin" ||
+      role === "manager" ||
+      role === "superadmin"
+    ) {
+      document.title = "KHR-Admin";
+    } else {
+      document.title = "KHR-SaaS";
+    }
+  }, [role]);
+
+  useEffect(() => {
     const onToast = (ev: Event) => {
       const detail = (ev as CustomEvent).detail as
         | { message?: unknown; severity?: unknown }

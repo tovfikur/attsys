@@ -353,7 +353,9 @@ export default function Employees() {
                       </Stack>
                     </Box>
                     <Typography variant="caption" color="text.secondary" noWrap>
-                      {new Date(emp.created_at).toLocaleDateString()}
+                      {emp.date_of_joining
+                        ? new Date(emp.date_of_joining).toLocaleDateString()
+                        : "-"}
                     </Typography>
                   </Stack>
 
@@ -527,7 +529,9 @@ export default function Employees() {
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" color="text.secondary">
-                          {new Date(emp.created_at).toLocaleDateString()}
+                          {emp.date_of_joining
+                            ? new Date(emp.date_of_joining).toLocaleDateString()
+                            : "-"}
                         </Typography>
                       </TableCell>
                       <TableCell align="right">

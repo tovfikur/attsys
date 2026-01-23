@@ -394,6 +394,10 @@ class EmployeesStore
                 $stmt = $pdo->prepare('UPDATE employees SET name=?, code=?, gender=?, date_of_birth=?, personal_phone=?, email=?, present_address=?, permanent_address=?, department=?, designation=?, employee_type=?, date_of_joining=?, supervisor_name=?, work_location=?, status=? WHERE tenant_id=? AND id=?');
                 $stmt->execute([$nameStr, $codeStr, $gender, $dateOfBirth, $personalPhone, $email, $presentAddress, $permanentAddress, $department, $designation, $employeeType, $dateOfJoining, $supervisorName, $workLocation, $statusStr, (int)$tenantId, $idInt]);
 
+                // Sync status to tenant_users to control login access
+                $updT = $pdo->prepare('UPDATE tenant_users SET status=? WHERE tenant_id=? AND employee_id=?');
+                $updT->execute([$statusStr, (int)$tenantId, $idInt]);
+
                 if (is_array($deviceSyncIds)) {
                     $del = $pdo->prepare('DELETE FROM employee_device_sync_ids WHERE tenant_id=? AND employee_id=?');
                     $del->execute([(int)$tenantId, $idInt]);

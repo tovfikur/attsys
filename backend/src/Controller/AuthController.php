@@ -130,7 +130,7 @@ class AuthController
         if ($tenantStatus !== 'active') {
             http_response_code(403);
             echo json_encode([
-                'error' => 'This tenant is inactive. Please contact Kenroo to login to this tenant.',
+                'error' => 'This tenant is inactive. Please contact Kendroo to login to this tenant.',
                 'code' => 'TENANT_INACTIVE',
             ]);
             return;

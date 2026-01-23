@@ -112,7 +112,7 @@ export default function Login() {
   const [twofa, setTwofa] = useState(false);
   const [showTenantInactive, setShowTenantInactive] = useState(false);
   const [tenantInactiveMessage, setTenantInactiveMessage] = useState(
-    "This tenant is inactive. Please contact Kenroo to login to this tenant."
+    "This tenant is inactive. Please contact Kendroo to login to this tenant."
   );
 
   // Forgot Password State
@@ -227,6 +227,10 @@ export default function Login() {
   }, [isMobile, isRootHost, rootDomain, tenantFromHost, tenantHint]);
 
   const effectiveTenantHint = isMobile ? tenantHint : "";
+
+  useEffect(() => {
+    document.title = "KHR-SaaS";
+  }, []);
 
   const isSuperadminPortal =
     !isMobile &&
@@ -359,7 +363,7 @@ export default function Login() {
         setTenantInactiveMessage(
           typeof msg === "string" && msg.trim()
             ? msg
-            : "This tenant is inactive. Please contact Kenroo to login to this tenant."
+            : "This tenant is inactive. Please contact Kendroo to login to this tenant."
         );
         setShowTenantInactive(true);
         setError("");
