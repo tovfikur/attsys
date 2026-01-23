@@ -121,6 +121,11 @@ $router->getAuth('/api/devices/hik/config', ['App\Controller\DeviceController', 
 $router->postAuth('/api/devices/hik/config', ['App\Controller\DeviceController', 'setHikConfig'], 'perm:devices.manage');
 $router->postAuth('/api/devices/hik/test', ['App\Controller\DeviceController', 'testHikConnection'], 'perm:devices.manage');
 $router->postAuth('/api/devices/hik/sync', ['App\Controller\DeviceController', 'syncHikLogs'], 'perm:devices.manage');
+// ZKTeco device routes
+$router->getAuth('/api/devices/zk/config', ['App\Controller\DeviceController', 'getZkConfig'], 'perm:devices.manage');
+$router->postAuth('/api/devices/zk/config', ['App\Controller\DeviceController', 'setZkConfig'], 'perm:devices.manage');
+$router->postAuth('/api/devices/zk/test', ['App\Controller\DeviceController', 'testZkConnection'], 'perm:devices.manage');
+$router->postAuth('/api/devices/zk/sync', ['App\Controller\DeviceController', 'syncZkLogs'], 'perm:devices.manage');
 $router->getAuth('/api/sites', ['App\Controller\SiteController', 'list'], 'perm:sites.manage');
 $router->postAuth('/api/sites', ['App\Controller\SiteController', 'create'], 'perm:sites.manage');
 

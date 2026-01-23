@@ -984,7 +984,7 @@ function EnrollBiometricDialog({
             Enroll Biometrics
           </Typography>
           <Typography variant="body2" color="text.secondary" noWrap>
-            {employee.name} • #{employee.id}
+            {employee.name} • {employee.code}
           </Typography>
         </Box>
         <IconButton onClick={close} size="small" disabled={busy}>

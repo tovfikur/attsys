@@ -66,6 +66,8 @@ class AttendanceProcessor
                 if ($pairCount > 0) {
                     if ((count($punches) % 2) === 0) $v['has_out'] = true;
                     $worked = 0;
+                    // OBS-006: Minimum punch duration of 5 minutes to filter out invalid/accidental punches
+                    $minPunchDurationMinutes = 5;
                     for ($i = 0; $i + 1 < count($punches); $i += 2) {
                         $inDt = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', (string)$punches[$i], $utcTz);
                         $outDt = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', (string)$punches[$i + 1], $utcTz);
@@ -73,7 +75,10 @@ class AttendanceProcessor
                         $inTs = $inDt->getTimestamp();
                         $outTs = $outDt->getTimestamp();
                         if ($outTs <= $inTs) continue;
-                        $worked += (int)floor(($outTs - $inTs) / 60);
+                        $punchDuration = (int)floor(($outTs - $inTs) / 60);
+                        // Skip punches shorter than minimum duration (likely accidental)
+                        if ($punchDuration < $minPunchDurationMinutes) continue;
+                        $worked += $punchDuration;
                     }
                     $v['worked'] = max((int)$v['worked'], $worked);
 
@@ -108,13 +113,23 @@ class AttendanceProcessor
                 }
 
                 $dur = $r['duration_minutes'] ?? null;
+                // OBS-006: Minimum punch duration of 5 minutes
+                $minPunchDurationMinutes = 5;
                 if (is_numeric($dur)) {
-                    $byEmpDate[$key]['worked'] += max(0, (int)$dur);
+                    $punchMinutes = max(0, (int)$dur);
+                    // Skip punches shorter than minimum duration
+                    if ($punchMinutes >= $minPunchDurationMinutes) {
+                        $byEmpDate[$key]['worked'] += $punchMinutes;
+                    }
                 } else {
                     $inTs = $clockIn ? strtotime((string)$clockIn) : false;
                     $outTs = $clockOut ? strtotime((string)$clockOut) : false;
                     if ($inTs !== false && $outTs !== false) {
-                        $byEmpDate[$key]['worked'] += max(0, (int)floor(($outTs - $inTs) / 60));
+                        $punchMinutes = max(0, (int)floor(($outTs - $inTs) / 60));
+                        // Skip punches shorter than minimum duration
+                        if ($punchMinutes >= $minPunchDurationMinutes) {
+                            $byEmpDate[$key]['worked'] += $punchMinutes;
+                        }
                     }
                 }
             }

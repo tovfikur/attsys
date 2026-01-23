@@ -3500,7 +3500,7 @@ export default function EmployeePortal() {
         PaperProps={{ sx: { borderRadius: isMobile ? 0 : 3 } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>
-          Evidence{evidenceFor?.id ? ` • #${String(evidenceFor.id)}` : ""}
+          Evidence{evidenceFor?.date ? ` • ${String(evidenceFor.date)}` : ""}
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>

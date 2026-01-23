@@ -235,7 +235,9 @@ export default function Shifts() {
                     </Stack>
                   </TableCell>
                   <TableCell>
-                    {shift.working_days.replace(/,/g, ", ")}
+                    {shift.working_days && shift.working_days !== "0"
+                      ? shift.working_days.replace(/,/g, ", ")
+                      : "—"}
                   </TableCell>
                   <TableCell>
                     {shift.late_tolerance_minutes}m /{" "}
@@ -297,7 +299,9 @@ export default function Shifts() {
                     display="block"
                     color="text.secondary"
                   >
-                    Days: {shift.working_days.replace(/,/g, ", ")}
+                    Days: {shift.working_days && shift.working_days !== "0"
+                      ? shift.working_days.replace(/,/g, ", ")
+                      : "Not set"}
                   </Typography>
                   <Typography
                     variant="caption"

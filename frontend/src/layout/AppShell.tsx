@@ -771,7 +771,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             >
               {(user?.name || "U").slice(0, 1).toUpperCase()}
             </Avatar>
-            <Box sx={{ minWidth: 0 }}>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
               <Typography sx={{ fontWeight: 800, fontSize: 14 }} noWrap>
                 {user?.name || "User"}
               </Typography>
@@ -779,17 +779,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 {user?.email || role}
               </Typography>
             </Box>
-            <IconButton
-              aria-label="Change Password"
-              onClick={() => setShowPwdModal(true)}
-              size="small"
-            >
-              <VpnKeyRounded fontSize="small" />
-            </IconButton>
-            <IconButton aria-label="Logout" onClick={handleLogout} size="small">
-              <LogoutRounded fontSize="small" />
-            </IconButton>
           </Stack>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: "block", mt: 1, textAlign: "center" }}
+          >
+            Use profile menu for account settings
+          </Typography>
         </Paper>
       </Box>
     </Box>

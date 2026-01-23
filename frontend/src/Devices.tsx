@@ -17,6 +17,7 @@ import {
   DialogTitle,
   Divider,
   IconButton,
+  MenuItem,
   Paper,
   Stack,
   Table,
@@ -49,6 +50,12 @@ interface Device {
   hik_api_url?: string | null;
   hik_token_expire_time?: string | null;
   hik_configured?: number | boolean | null;
+  // ZKTeco fields
+  zk_ip?: string | null;
+  zk_port?: number | null;
+  zk_password?: number | null;
+  zk_configured?: number | boolean | null;
+  zk_last_sync?: string | null;
 }
 
 type HikConfigState = {
@@ -56,6 +63,17 @@ type HikConfigState = {
   hik_app_key: string;
   hik_secret_key: string;
   hik_api_url: string;
+  busy: boolean;
+  message: string;
+  error: string;
+  unknown_employee_codes?: { code: string; count: number }[];
+  unknown_employee_codes_truncated?: boolean;
+};
+
+type ZkConfigState = {
+  zk_ip: string;
+  zk_port: string;
+  zk_password: string;
   busy: boolean;
   message: string;
   error: string;
@@ -91,6 +109,11 @@ export default function Devices() {
 
   const [hikOpen, setHikOpen] = useState(false);
   const [hikDeviceId, setHikDeviceId] = useState<string>("");
+
+  // ZKTeco state
+  const [zk, setZk] = useState<Record<string, ZkConfigState>>({});
+  const [zkOpen, setZkOpen] = useState(false);
+  const [zkDeviceId, setZkDeviceId] = useState<string>("");
 
   const allowed =
     user && (user.role === "tenant_owner" || user.role === "hr_admin");
@@ -288,6 +311,106 @@ export default function Devices() {
     }
   };
 
+  // ZKTeco helper functions
+  const updateZk = (deviceId: string, patch: Partial<ZkConfigState>) => {
+    setZk((prev) => ({
+      ...prev,
+      [deviceId]: {
+        ...(prev[deviceId] || {
+          zk_ip: "",
+          zk_port: "4370",
+          zk_password: "0",
+          busy: false,
+          message: "",
+          error: "",
+          unknown_employee_codes: [],
+          unknown_employee_codes_truncated: false,
+        }),
+        ...patch,
+      },
+    }));
+  };
+
+  const loadZkConfig = async (deviceId: string) => {
+    if (!deviceId) return;
+    updateZk(deviceId, { busy: true, message: "", error: "" });
+    try {
+      const r = await api.get(
+        `/api/devices/zk/config?device_id=${encodeURIComponent(deviceId)}`
+      );
+      updateZk(deviceId, {
+        zk_ip: (r.data?.zk_ip || "").toString(),
+        zk_port: (r.data?.zk_port || "4370").toString(),
+        zk_password: (r.data?.zk_password || "0").toString(),
+      });
+    } catch (err: unknown) {
+      updateZk(deviceId, { error: getErrorMessage(err, "Failed to load config") });
+    } finally {
+      updateZk(deviceId, { busy: false });
+    }
+  };
+
+  const saveZkConfig = async (deviceId: string) => {
+    const st = zk[deviceId];
+    if (!st) return;
+    updateZk(deviceId, { busy: true, message: "", error: "" });
+    try {
+      await api.post("/api/devices/zk/config", {
+        device_id: deviceId,
+        zk_ip: st.zk_ip.trim(),
+        zk_port: parseInt(st.zk_port, 10) || 4370,
+        zk_password: parseInt(st.zk_password, 10) || 0,
+      });
+      updateZk(deviceId, { message: "Saved" });
+    } catch (err: unknown) {
+      updateZk(deviceId, { error: getErrorMessage(err, "Failed") });
+    } finally {
+      updateZk(deviceId, { busy: false });
+    }
+  };
+
+  const testZk = async (deviceId: string) => {
+    updateZk(deviceId, { busy: true, message: "", error: "" });
+    try {
+      const r = await api.post("/api/devices/zk/test", {
+        device_id: deviceId,
+      });
+      updateZk(deviceId, {
+        message: r.data?.connected
+          ? `Connected! Device: ${r.data?.device_name || "Unknown"}, Users: ${r.data?.user_count || 0}`
+          : "Connection failed",
+      });
+    } catch (err: unknown) {
+      updateZk(deviceId, { error: getErrorMessage(err, "Failed") });
+    } finally {
+      updateZk(deviceId, { busy: false });
+    }
+  };
+
+  const syncZk = async (deviceId: string, mode: "last2days" | "all") => {
+    updateZk(deviceId, { busy: true, message: "", error: "" });
+    try {
+      const r = await api.post("/api/devices/zk/sync", {
+        device_id: deviceId,
+        mode,
+      });
+      const d = r.data || {};
+      updateZk(deviceId, {
+        message: `Added: ${d.added ?? 0}, Duplicates: ${
+          d.duplicates ?? 0
+        }, Unknown employees: ${d.skipped_unknown_employee ?? 0}`,
+        unknown_employee_codes: Array.isArray(d.unknown_employee_codes)
+          ? (d.unknown_employee_codes as { code: string; count: number }[])
+          : [],
+        unknown_employee_codes_truncated: !!d.unknown_employee_codes_truncated,
+      });
+    } catch (err: unknown) {
+      updateZk(deviceId, { error: getErrorMessage(err, "Failed") });
+    } finally {
+      updateZk(deviceId, { busy: false });
+    }
+  };
+
   const openEdit = (d: Device) => {
     setEditError("");
     setEditOk("");
@@ -434,7 +557,12 @@ export default function Devices() {
                   onChange={(e) => setType(e.target.value)}
                   required
                   fullWidth
-                />
+                  select
+                >
+                  <MenuItem value="terminal">Terminal (Generic)</MenuItem>
+                  <MenuItem value="hikvision">Hikvision</MenuItem>
+                  <MenuItem value="zkteco">ZKTeco</MenuItem>
+                </TextField>
                 <Button
                   type="submit"
                   variant="contained"
@@ -558,17 +686,31 @@ export default function Devices() {
                           >
                             <EditRounded fontSize="small" />
                           </IconButton>
-                          <IconButton
-                            size="small"
-                            onClick={() => {
-                              setHikDeviceId(d.device_id);
-                              setHikOpen(true);
-                              void loadHikConfig(d.device_id);
-                            }}
-                            aria-label="Hik-Connect settings"
-                          >
-                            <SettingsRounded fontSize="small" />
-                          </IconButton>
+                          {d.type === "zkteco" ? (
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setZkDeviceId(d.device_id);
+                                setZkOpen(true);
+                                void loadZkConfig(d.device_id);
+                              }}
+                              aria-label="ZKTeco settings"
+                            >
+                              <SettingsRounded fontSize="small" />
+                            </IconButton>
+                          ) : (
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setHikDeviceId(d.device_id);
+                                setHikOpen(true);
+                                void loadHikConfig(d.device_id);
+                              }}
+                              aria-label="Hik-Connect settings"
+                            >
+                              <SettingsRounded fontSize="small" />
+                            </IconButton>
+                          )}
                         </Stack>
                         <Button
                           size="small"
@@ -657,17 +799,31 @@ export default function Devices() {
                           >
                             <EditRounded fontSize="small" />
                           </IconButton>
-                          <IconButton
-                            size="small"
-                            onClick={() => {
-                              setHikDeviceId(d.device_id);
-                              setHikOpen(true);
-                              void loadHikConfig(d.device_id);
-                            }}
-                            aria-label="Hik-Connect settings"
-                          >
-                            <SettingsRounded fontSize="small" />
-                          </IconButton>
+                          {d.type === "zkteco" ? (
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setZkDeviceId(d.device_id);
+                                setZkOpen(true);
+                                void loadZkConfig(d.device_id);
+                              }}
+                              aria-label="ZKTeco settings"
+                            >
+                              <SettingsRounded fontSize="small" />
+                            </IconButton>
+                          ) : (
+                            <IconButton
+                              size="small"
+                              onClick={() => {
+                                setHikDeviceId(d.device_id);
+                                setHikOpen(true);
+                                void loadHikConfig(d.device_id);
+                              }}
+                              aria-label="Hik-Connect settings"
+                            >
+                              <SettingsRounded fontSize="small" />
+                            </IconButton>
+                          )}
                           <Button
                             size="small"
                             variant="outlined"
@@ -750,7 +906,12 @@ export default function Devices() {
                 setEditForm((p) => ({ ...p, type: e.target.value }))
               }
               fullWidth
-            />
+              select
+            >
+              <MenuItem value="terminal">Terminal (Generic)</MenuItem>
+              <MenuItem value="hikvision">Hikvision</MenuItem>
+              <MenuItem value="zkteco">ZKTeco</MenuItem>
+            </TextField>
           </Stack>
         </MuiDialogContent>
         <DialogActions>
@@ -914,6 +1075,156 @@ export default function Devices() {
               setHikDeviceId("");
             }}
             disabled={!!hik[hikDeviceId]?.busy}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ZKTeco Configuration Dialog */}
+      <Dialog
+        open={zkOpen}
+        onClose={() => {
+          if (zk[zkDeviceId]?.busy) return;
+          setZkOpen(false);
+          setZkDeviceId("");
+        }}
+        fullWidth
+        maxWidth="sm"
+        fullScreen={isSmDown}
+        PaperProps={{ sx: { borderRadius: isSmDown ? 0 : 3 } }}
+      >
+        <DialogTitle>ZKTeco Device Configuration</DialogTitle>
+        <MuiDialogContent>
+          <Stack spacing={2} sx={{ pt: 0.5 }}>
+            {zk[zkDeviceId]?.error && (
+              <Alert severity="error">{zk[zkDeviceId].error}</Alert>
+            )}
+            {zk[zkDeviceId]?.message && (
+              <Alert severity="success">{zk[zkDeviceId].message}</Alert>
+            )}
+            <Alert severity="info" sx={{ borderRadius: 2 }}>
+              Connect to ZKTeco attendance devices via TCP/IP. The device must be
+              on the same network as the server and have port 4370 accessible.
+            </Alert>
+            <TextField
+              label="Device IP Address"
+              value={zk[zkDeviceId]?.zk_ip || ""}
+              onChange={(e) =>
+                updateZk(zkDeviceId, { zk_ip: e.target.value })
+              }
+              placeholder="192.168.1.201"
+              fullWidth
+            />
+            <TextField
+              label="Port"
+              value={zk[zkDeviceId]?.zk_port || "4370"}
+              onChange={(e) =>
+                updateZk(zkDeviceId, { zk_port: e.target.value })
+              }
+              type="number"
+              fullWidth
+              helperText="Default: 4370"
+            />
+            <TextField
+              label="Comm Key (Password)"
+              value={zk[zkDeviceId]?.zk_password || "0"}
+              onChange={(e) =>
+                updateZk(zkDeviceId, { zk_password: e.target.value })
+              }
+              type="number"
+              fullWidth
+              helperText="Communication key set on device (0 if not set)"
+            />
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              spacing={1}
+              sx={{ pt: 0.5 }}
+            >
+              <Button
+                variant="contained"
+                onClick={() => void saveZkConfig(zkDeviceId)}
+                disabled={!!zk[zkDeviceId]?.busy}
+              >
+                {zk[zkDeviceId]?.busy ? "Working..." : "Save"}
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => void testZk(zkDeviceId)}
+                disabled={!!zk[zkDeviceId]?.busy}
+              >
+                Test Connection
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<SyncRounded />}
+                onClick={() => void syncZk(zkDeviceId, "last2days")}
+                disabled={!!zk[zkDeviceId]?.busy}
+              >
+                Sync 2 Days
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<SyncRounded />}
+                onClick={() => void syncZk(zkDeviceId, "all")}
+                disabled={!!zk[zkDeviceId]?.busy}
+              >
+                Sync All
+              </Button>
+            </Stack>
+            {!!zk[zkDeviceId]?.unknown_employee_codes?.length && (
+              <Paper variant="outlined" sx={{ p: 1.5 }}>
+                <Stack spacing={1}>
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    justifyContent="space-between"
+                  >
+                    <Typography sx={{ fontWeight: 800 }}>
+                      Unknown Employees
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => {
+                        const rows =
+                          zk[zkDeviceId]?.unknown_employee_codes || [];
+                        const text = rows
+                          .map((x) => `${x.code}\t${x.count}`)
+                          .join("\n");
+                        void navigator.clipboard?.writeText(text);
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </Stack>
+                  <TextField
+                    value={(zk[zkDeviceId]?.unknown_employee_codes || [])
+                      .map((x) => `${x.code} (${x.count})`)
+                      .join("\n")}
+                    multiline
+                    minRows={4}
+                    fullWidth
+                    InputProps={{ readOnly: true }}
+                  />
+                  {zk[zkDeviceId]?.unknown_employee_codes_truncated && (
+                    <Alert severity="warning">
+                      List truncated (showing first 200 unique codes).
+                    </Alert>
+                  )}
+                </Stack>
+              </Paper>
+            )}
+          </Stack>
+        </MuiDialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setZkOpen(false);
+              setZkDeviceId("");
+            }}
+            disabled={!!zk[zkDeviceId]?.busy}
           >
             Close
           </Button>

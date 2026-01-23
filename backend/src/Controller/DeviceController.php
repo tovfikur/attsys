@@ -383,6 +383,21 @@ class DeviceController
             }
 
             if ($resolvedEmployeeId === null) {
+                // Try looking up by employee code
+                $codeChk = $pdo->prepare('SELECT id FROM employees WHERE tenant_id=? AND code=? LIMIT 1');
+                $codeChk->execute([$tenantId, (string)$employee_id]);
+                $row = $codeChk->fetch();
+                if ($row) $resolvedEmployeeId = (int)$row['id'];
+            }
+
+            // Also try matching ZKTeco numeric ID to code (if code is numeric)
+            if ($resolvedEmployeeId === null && is_string($employee_id) && ctype_digit($employee_id)) {
+                 // Logic: ZKTeco user_id might be "5", employee code might be "005" or "5"
+                 // This is fuzzy but helpful. For now, strict code match is safer, but if codes are "EMP001", ZK ID "1" won't match.
+                 // Let's stick to code match. The user should ensure ZK User ID == Employee Code.
+            }
+
+            if ($resolvedEmployeeId === null) {
                 $pdo->exec("CREATE TABLE IF NOT EXISTS employee_device_sync_ids (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     tenant_id INT NOT NULL,
@@ -783,4 +798,288 @@ class DeviceController
             echo json_encode(['error' => $e->getMessage()]);
         }
     }
+
+    // ZKTeco Device Endpoints
+
+    public function getZkConfig()
+    {
+        Auth::requireRole('perm:devices.manage');
+        header('Content-Type: application/json');
+        $deviceId = trim((string)($_GET['device_id'] ?? ''));
+        if ($deviceId === '') { http_response_code(400); echo json_encode(['error' => 'device_id required']); return; }
+
+        $pdo = Database::get();
+        if (!$pdo) { http_response_code(500); echo json_encode(['error' => 'DB error']); return; }
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) { http_response_code(400); echo json_encode(['error' => 'tenant not resolved']); return; }
+
+        $stmt = $pdo->prepare('SELECT device_id, zk_ip, zk_port, zk_password FROM devices WHERE tenant_id=? AND device_id=? LIMIT 1');
+        $stmt->execute([(int)$tenantId, $deviceId]);
+        $dev = $stmt->fetch();
+        if (!$dev) { http_response_code(404); echo json_encode(['error' => 'Device not found']); return; }
+
+        echo json_encode([
+            'device_id' => $dev['device_id'],
+            'zk_ip' => $dev['zk_ip'] ?? '',
+            'zk_port' => $dev['zk_port'] ?? 4370,
+            'zk_password' => $dev['zk_password'] ?? 0,
+        ]);
+    }
+
+    public function setZkConfig()
+    {
+        Auth::requireRole('perm:devices.manage');
+        header('Content-Type: application/json');
+        $in = json_decode(file_get_contents('php://input'), true);
+        $deviceId = trim((string)($in['device_id'] ?? ''));
+        if ($deviceId === '') { http_response_code(400); echo json_encode(['error' => 'device_id required']); return; }
+
+        $pdo = Database::get();
+        if (!$pdo) { http_response_code(500); echo json_encode(['error' => 'DB error']); return; }
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) { http_response_code(400); echo json_encode(['error' => 'tenant not resolved']); return; }
+
+        $stmt = $pdo->prepare('SELECT id FROM devices WHERE tenant_id=? AND device_id=? LIMIT 1');
+        $stmt->execute([(int)$tenantId, $deviceId]);
+        if (!$stmt->fetch()) { http_response_code(404); echo json_encode(['error' => 'Device not found']); return; }
+
+        $zkIp = trim((string)($in['zk_ip'] ?? ''));
+        $zkPort = (int)($in['zk_port'] ?? 4370);
+        $zkPassword = (int)($in['zk_password'] ?? 0);
+
+        $upd = $pdo->prepare('UPDATE devices SET zk_ip=?, zk_port=?, zk_password=? WHERE tenant_id=? AND device_id=?');
+        $upd->execute([$zkIp ?: null, $zkPort, $zkPassword, (int)$tenantId, $deviceId]);
+
+        echo json_encode(['ok' => true]);
+    }
+
+    public function testZkConnection()
+    {
+        Auth::requireRole('perm:devices.manage');
+        header('Content-Type: application/json');
+        $in = json_decode(file_get_contents('php://input'), true);
+        $deviceId = trim((string)($in['device_id'] ?? ''));
+        if ($deviceId === '') { http_response_code(400); echo json_encode(['error' => 'device_id required']); return; }
+
+        $pdo = Database::get();
+        if (!$pdo) { http_response_code(500); echo json_encode(['error' => 'DB error']); return; }
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) { http_response_code(400); echo json_encode(['error' => 'tenant not resolved']); return; }
+
+        $stmt = $pdo->prepare('SELECT zk_ip, zk_port, zk_password FROM devices WHERE tenant_id=? AND device_id=? LIMIT 1');
+        $stmt->execute([(int)$tenantId, $deviceId]);
+        $dev = $stmt->fetch();
+        if (!$dev) { http_response_code(404); echo json_encode(['error' => 'Device not found']); return; }
+
+        $zkIp = trim((string)($dev['zk_ip'] ?? ''));
+        $zkPort = (int)($dev['zk_port'] ?? 4370);
+        $zkPassword = (int)($dev['zk_password'] ?? 0);
+
+        if ($zkIp === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'ZKTeco device IP not configured']);
+            return;
+        }
+
+        // Path to the Python sync script
+        $scriptPath = __DIR__ . '/../../zk_sync.py';
+        if (!file_exists($scriptPath)) {
+            // Fallback to TCP check if script not found
+            $socket = @fsockopen($zkIp, $zkPort, $errno, $errstr, 5);
+            if ($socket) {
+                fclose($socket);
+                echo json_encode([
+                    'connected' => true,
+                    'device_name' => 'ZKTeco Device',
+                    'user_count' => 0,
+                    'message' => 'TCP connection successful. For full device info, install pyzk library.'
+                ]);
+            } else {
+                echo json_encode([
+                    'connected' => false,
+                    'error' => "Connection failed: $errstr ($errno)"
+                ]);
+            }
+            return;
+        }
+
+        // Build command
+        $pythonCmd = $this->findPython();
+        if (!$pythonCmd) {
+            // Fallback to TCP check if Python not found
+            $socket = @fsockopen($zkIp, $zkPort, $errno, $errstr, 5);
+            if ($socket) {
+                fclose($socket);
+                echo json_encode([
+                    'connected' => true,
+                    'device_name' => 'ZKTeco Device',
+                    'user_count' => 0,
+                    'message' => 'TCP connection successful. Install Python 3 and pyzk for full device info.'
+                ]);
+            } else {
+                echo json_encode([
+                    'connected' => false,
+                    'error' => "Connection failed: $errstr ($errno)"
+                ]);
+            }
+            return;
+        }
+
+        $cmd = sprintf(
+            '%s %s --device-id %s --ip %s --port %d --password %d --action test --json 2>&1',
+            escapeshellarg($pythonCmd),
+            escapeshellarg($scriptPath),
+            escapeshellarg($deviceId),
+            escapeshellarg($zkIp),
+            $zkPort,
+            $zkPassword
+        );
+
+        // Execute Python script
+        $output = [];
+        $returnCode = 0;
+        exec($cmd, $output, $returnCode);
+        $outputStr = implode("\n", $output);
+
+        // Try to parse JSON output
+        $result = json_decode($outputStr, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            // If parsing fails, check if it's a connection error
+            echo json_encode([
+                'connected' => false,
+                'error' => 'Failed to parse device response',
+                'output' => $outputStr
+            ]);
+            return;
+        }
+
+        echo json_encode($result);
+    }
+
+    public function syncZkLogs()
+    {
+        Auth::requireRole('perm:devices.manage');
+        header('Content-Type: application/json');
+        $in = json_decode(file_get_contents('php://input'), true);
+        $deviceId = trim((string)($in['device_id'] ?? ''));
+        $mode = trim((string)($in['mode'] ?? 'last2days'));
+        if ($deviceId === '') { http_response_code(400); echo json_encode(['error' => 'device_id required']); return; }
+
+        $pdo = Database::get();
+        if (!$pdo) { http_response_code(500); echo json_encode(['error' => 'DB error']); return; }
+        $tenantId = $this->resolveTenantId($pdo);
+        if (!$tenantId) { http_response_code(400); echo json_encode(['error' => 'tenant not resolved']); return; }
+
+        $stmt = $pdo->prepare('SELECT id, zk_ip, zk_port, zk_password FROM devices WHERE tenant_id=? AND device_id=? LIMIT 1');
+        $stmt->execute([(int)$tenantId, $deviceId]);
+        $dev = $stmt->fetch();
+        if (!$dev) { http_response_code(404); echo json_encode(['error' => 'Device not found']); return; }
+
+        $zkIp = trim((string)($dev['zk_ip'] ?? ''));
+        if ($zkIp === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'ZKTeco device IP not configured']);
+            return;
+        }
+
+        // Get device secret for authentication
+        $secretStmt = $pdo->prepare('SELECT secret FROM devices WHERE tenant_id=? AND device_id=? LIMIT 1');
+        $secretStmt->execute([(int)$tenantId, $deviceId]);
+        $secretRow = $secretStmt->fetch();
+        $deviceSecret = $secretRow['secret'] ?? '';
+
+        if ($deviceSecret === '') {
+            http_response_code(400);
+            echo json_encode(['error' => 'Device secret not found']);
+            return;
+        }
+
+        $zkPort = (int)($dev['zk_port'] ?? 4370);
+        $zkPassword = (int)($dev['zk_password'] ?? 0);
+
+        // Determine the API URL for the Python script to call back
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $apiUrl = getenv('API_URL') ?: "{$protocol}://{$host}";
+
+        // Path to the Python sync script
+        $scriptPath = __DIR__ . '/../../zk_sync.py';
+        if (!file_exists($scriptPath)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'ZKTeco sync script not found. Expected at: ' . $scriptPath]);
+            return;
+        }
+
+        // Build command
+        $pythonCmd = $this->findPython();
+        if (!$pythonCmd) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Python not found on server. Please install Python 3 and pyzk library.']);
+            return;
+        }
+
+        $cmd = sprintf(
+            '%s %s --device-id %s --ip %s --port %d --password %d --api-url %s --secret %s --mode %s --action sync --json 2>&1',
+            escapeshellarg($pythonCmd),
+            escapeshellarg($scriptPath),
+            escapeshellarg($deviceId),
+            escapeshellarg($zkIp),
+            $zkPort,
+            $zkPassword,
+            escapeshellarg($apiUrl),
+            escapeshellarg($deviceSecret),
+            escapeshellarg($mode)
+        );
+
+        // Execute Python script
+        $output = [];
+        $returnCode = 0;
+        exec($cmd, $output, $returnCode);
+        $outputStr = implode("\n", $output);
+
+        // Try to parse JSON output
+        $result = json_decode($outputStr, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            // If not valid JSON, return the raw output as error
+            http_response_code(500);
+            echo json_encode([
+                'ok' => false,
+                'error' => 'Failed to parse sync result',
+                'output' => $outputStr,
+                'return_code' => $returnCode
+            ]);
+            return;
+        }
+
+        // Update last sync time
+        if (isset($result['ok']) && $result['ok']) {
+            $upd = $pdo->prepare('UPDATE devices SET zk_last_sync = CURRENT_TIMESTAMP WHERE tenant_id=? AND device_id=?');
+            $upd->execute([(int)$tenantId, $deviceId]);
+        }
+
+        echo json_encode($result);
+    }
+
+    /**
+     * Find available Python command
+     */
+    private function findPython(): ?string
+    {
+        $candidates = ['python3', 'python', 'py'];
+        
+        foreach ($candidates as $cmd) {
+            // Check if command exists
+            $check = PHP_OS_FAMILY === 'Windows' 
+                ? "where $cmd 2>nul" 
+                : "which $cmd 2>/dev/null";
+            
+            exec($check, $output, $returnCode);
+            if ($returnCode === 0) {
+                return $cmd;
+            }
+        }
+        
+        return null;
+    }
 }
+

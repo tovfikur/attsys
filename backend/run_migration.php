@@ -118,6 +118,7 @@ function splitSqlStatements(string $sql): array
 $files = [
     __DIR__ . '/migration_shifts.sql',
     __DIR__ . '/migration_employee_profile.sql',
+    __DIR__ . '/migration_zkteco.sql',
 ];
 
 try {
@@ -136,6 +137,13 @@ try {
                 }
                 $pdo->exec($stmt);
             } catch (PDOException $e) {
+                // Ignore "Duplicate column name" (1060) and "Duplicate key name" (1061)
+                $errCode = $e->errorInfo[1] ?? 0;
+                if ($errCode == 1060 || $errCode == 1061) {
+                    echo "Skipping duplicate: " . $e->getMessage() . "\n";
+                    continue;
+                }
+
                 $preview = preg_replace('/\s+/', ' ', trim($stmt));
                 $preview = substr((string)$preview, 0, 220);
                 echo "Migration statement failed: " . basename($path) . " #" . ($idx + 1) . " " . $preview . "\n";

@@ -1,0 +1,364 @@
+# 📘 pyzk – Full Documentation
+
+**Python Library for ZKTeco Attendance & Biometric Devices**
+
+---
+
+## 1. Overview
+
+**pyzk** is an **unofficial Python SDK** for communicating with **ZKTeco biometric and attendance devices** over the network.
+
+It works by implementing ZKTeco’s **proprietary TCP/UDP protocol** (usually on port `4370`) and allows you to:
+
+* Connect to a ZKTeco device via IP
+* Read attendance logs
+* Read users
+* Control device state (enable/disable, restart)
+* Sync data with ERP / HR / Payroll systems
+
+> ⚠️ pyzk does **NOT** use REST APIs.
+> It communicates directly with the device firmware.
+
+---
+
+## 2. Supported Devices
+
+pyzk works with **most ZKTeco devices that support the ZK protocol**, including:
+
+* ZKTeco K40 / K60
+* ZKTeco F18 / F19
+* ZKTeco iFace series
+* ZKTeco U580 / U160
+* Many rebranded ZKTeco OEM devices
+
+✅ Works best with **Ethernet-connected devices**
+⚠️ Wi-Fi devices can be unstable
+
+---
+
+## 3. Network Requirements
+
+| Requirement  | Value                  |
+| ------------ | ---------------------- |
+| Protocol     | TCP / UDP              |
+| Default Port | **4370**               |
+| IP Type      | Static recommended     |
+| Network      | Same LAN or VPN        |
+| Firewall     | Port 4370 must be open |
+
+### Recommended Device Settings
+
+* Assign **static IP**
+* Disable cloud sync if not used
+* Set **Comm Key** (optional but recommended)
+
+---
+
+## 4. Installation
+
+### System Requirements
+
+* Python **3.7+**
+* Linux / Windows / macOS
+* Network access to device
+
+### Install via pip
+
+```bash
+pip install pyzk
+```
+
+### Import Test
+
+```python
+from zk import ZK
+```
+
+---
+
+## 5. Core Concepts
+
+### Main Objects
+
+| Object       | Description                               |
+| ------------ | ----------------------------------------- |
+| `ZK`         | Device configuration + connection handler |
+| `Connection` | Active device session                     |
+| `Attendance` | Attendance record                         |
+| `User`       | Device user profile                       |
+
+---
+
+## 6. Basic Connection
+
+### Create a Device Instance
+
+```python
+from zk import ZK
+
+zk = ZK(
+    ip='192.168.1.201',
+    port=4370,
+    timeout=5,
+    password=0,     # Comm Key (0 if not set)
+    force_udp=False,
+    ommit_ping=False
+)
+```
+
+### Connect to Device
+
+```python
+conn = zk.connect()
+```
+
+### Disconnect
+
+```python
+conn.disconnect()
+```
+
+---
+
+## 7. Attendance Logs
+
+### Fetch Attendance Records
+
+```python
+attendances = conn.get_attendance()
+```
+
+### Attendance Object Fields
+
+```python
+attendance.user_id        # Employee ID on device
+attendance.timestamp      # datetime object
+attendance.status         # Punch status
+attendance.punch          # IN / OUT type
+attendance.uid            # Internal record ID
+```
+
+### Example
+
+```python
+for a in attendances:
+    print(a.user_id, a.timestamp)
+```
+
+---
+
+## 8. Users Management
+
+### Get All Users
+
+```python
+users = conn.get_users()
+```
+
+### User Object Fields
+
+```python
+user.uid
+user.name
+user.user_id
+user.privilege
+user.password
+user.group_id
+user.card
+```
+
+### Example
+
+```python
+for u in users:
+    print(u.user_id, u.name)
+```
+
+---
+
+### Add a User
+
+```python
+conn.set_user(
+    uid=1,
+    name="John Doe",
+    privilege=0,
+    password="",
+    group_id="",
+    user_id="EMP001"
+)
+```
+
+---
+
+### Delete a User
+
+```python
+conn.delete_user(uid=1)
+```
+
+---
+
+## 9. Device Control
+
+### Disable Device (Recommended Before Sync)
+
+```python
+conn.disable_device()
+```
+
+### Enable Device
+
+```python
+conn.enable_device()
+```
+
+### Restart Device
+
+```python
+conn.restart()
+```
+
+### Get Device Information
+
+```python
+conn.get_firmware_version()
+conn.get_serialnumber()
+conn.get_platform()
+conn.get_device_name()
+```
+
+---
+
+## 10. Best Practice: Safe Sync Pattern (ERP)
+
+```python
+from zk import ZK
+
+zk = ZK('192.168.1.201', port=4370, timeout=5)
+
+conn = zk.connect()
+conn.disable_device()
+
+logs = conn.get_attendance()
+
+for log in logs:
+    save_to_erp(log)
+
+conn.enable_device()
+conn.disconnect()
+```
+
+✅ Prevents user interaction during sync
+✅ Reduces data corruption risk
+
+---
+
+## 11. ERP Integration Architecture
+
+### Recommended Flow
+
+```
+ZKTeco Device
+     ↓
+pyzk (Python Service)
+     ↓
+ERP Database / API
+```
+
+### Deployment Options
+
+* Cron job (every 5–10 minutes)
+* Background worker (Celery)
+* API microservice (FastAPI)
+
+---
+
+## 12. FastAPI Example (ERP Bridge)
+
+```python
+from fastapi import FastAPI
+from zk import ZK
+
+app = FastAPI()
+
+@app.get("/sync-attendance")
+def sync():
+    zk = ZK("192.168.1.201", 4370)
+    conn = zk.connect()
+    logs = conn.get_attendance()
+    conn.disconnect()
+    return {"count": len(logs)}
+```
+
+---
+
+## 13. Error Handling
+
+### Common Errors
+
+| Error       | Cause                     |
+| ----------- | ------------------------- |
+| Timeout     | Device offline / firewall |
+| Broken pipe | Device rebooted           |
+| Empty logs  | No records / wrong device |
+
+### Safe Wrapper
+
+```python
+try:
+    conn = zk.connect()
+except Exception as e:
+    print("Connection failed:", e)
+```
+
+---
+
+## 14. Limitations
+
+❌ No REST API
+❌ No push/webhook support
+❌ Real-time sync requires polling
+❌ Firmware differences may cause issues
+
+---
+
+## 15. Security Considerations
+
+* Use **VPN** if device is remote
+* Do not expose port 4370 publicly
+* Match **Comm Key** on device and pyzk
+* Restrict server IP access
+
+---
+
+## 16. Performance Tips
+
+* Fetch logs in batches
+* Avoid frequent polling (<3 min)
+* Clear device logs after successful sync (optional)
+* Run one connection per device at a time
+
+---
+
+## 17. When NOT to Use pyzk
+
+❌ If you need:
+
+* Real-time push
+* Cloud-only access
+* HTTPS REST APIs
+
+➡ Use **middleware / ZKTeco Push SDK** instead.
+
+---
+
+## 18. Final Recommendation
+
+### ⭐ Best Use Case
+
+✔ Local or VPN-connected devices
+✔ ERP / HR / Payroll systems
+✔ Scheduled attendance sync
+
+**pyzk is the most stable and practical choice for ERP integration.**

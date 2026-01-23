@@ -13,11 +13,16 @@ import {
   Typography,
 } from "@mui/material";
 import {
-  AddRounded,
   ApartmentRounded,
   BoltRounded,
   SecurityRounded,
+  OpenInNewRounded,
+  VisibilityRounded,
+  VisibilityOffRounded,
 } from "@mui/icons-material";
+import Tooltip from "@mui/material/Tooltip";
+import InputAdornment from "@mui/material/InputAdornment";
+import IconButton from "@mui/material/IconButton";
 import { getUser } from "./utils/session";
 import { getErrorMessage } from "./utils/errors";
 
@@ -146,6 +151,10 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [createOk, setCreateOk] = useState("");
+
+  // Password visibility toggles (OBS-003)
+  const [showCreatePwd, setShowCreatePwd] = useState(false);
+  const [showResetPwd, setShowResetPwd] = useState(false);
 
   const user = getUser();
   const userName = user?.name || "Admin";
@@ -379,23 +388,9 @@ export default function Dashboard() {
                   / {summary.totalCount} total
                 </Typography>
               </Typography>
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<AddRounded />}
-                onClick={() => setMenu("create")}
-                sx={{ borderRadius: 3 }}
-              >
-                Create tenant
-              </Button>
-              <Button
-                variant="outlined"
-                size="large"
-                onClick={() => setMenu("password")}
-                sx={{ borderRadius: 3 }}
-              >
-                Set password
-              </Button>
+              <Typography variant="body2" color="text.secondary">
+                Use the tabs below to create tenants or manage passwords.
+              </Typography>
             </Stack>
           </Card>
         )}
@@ -438,9 +433,6 @@ export default function Dashboard() {
                   >
                     <Typography sx={{ fontWeight: 900, fontSize: 18 }}>
                       Tenants
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Open a tenant portal in a new tab
                     </Typography>
                   </Stack>
                   {statusError ? (
@@ -511,15 +503,18 @@ export default function Dashboard() {
                           ) : null}
                           <Divider />
                           <Stack direction="row" spacing={1}>
-                            <Button
-                              variant="contained"
-                              href={`${protocol}//${t.subdomain}.${rootDomain}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              sx={{ borderRadius: 3, flex: 1 }}
-                            >
-                              Visit portal
-                            </Button>
+                            <Tooltip title="Opens tenant portal in a new tab" arrow>
+                              <Button
+                                variant="contained"
+                                href={`${protocol}//${t.subdomain}.${rootDomain}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                sx={{ borderRadius: 3, flex: 1 }}
+                                endIcon={<OpenInNewRounded fontSize="small" />}
+                              >
+                                Visit portal
+                              </Button>
+                            </Tooltip>
                             <Button
                               variant={
                                 t.status === "active" ? "outlined" : "contained"
@@ -600,7 +595,7 @@ export default function Dashboard() {
                       />
                       <TextField
                         label="Tenant Password"
-                        type="password"
+                        type={showCreatePwd ? "text" : "password"}
                         value={newTenant.password}
                         onChange={(e) =>
                           setNewTenant({
@@ -609,6 +604,24 @@ export default function Dashboard() {
                           })
                         }
                         required
+                        InputProps={{
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                aria-label="toggle password visibility"
+                                onClick={() => setShowCreatePwd(!showCreatePwd)}
+                                edge="end"
+                                size="small"
+                              >
+                                {showCreatePwd ? (
+                                  <VisibilityOffRounded />
+                                ) : (
+                                  <VisibilityRounded />
+                                )}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        }}
                       />
                     </Stack>
                     <TextField
@@ -672,7 +685,7 @@ export default function Dashboard() {
                       />
                       <TextField
                         label="New Password"
-                        type="password"
+                        type={showResetPwd ? "text" : "password"}
                         value={resetForm.new_password}
                         onChange={(e) =>
                           setResetForm({
@@ -681,6 +694,24 @@ export default function Dashboard() {
                           })
                         }
                         required
+                        InputProps={{
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                aria-label="toggle password visibility"
+                                onClick={() => setShowResetPwd(!showResetPwd)}
+                                edge="end"
+                                size="small"
+                              >
+                                {showResetPwd ? (
+                                  <VisibilityOffRounded />
+                                ) : (
+                                  <VisibilityRounded />
+                                )}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        }}
                       />
                     </Stack>
                     <Box>

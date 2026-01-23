@@ -1424,7 +1424,7 @@ export default function Attendance() {
                             color="text.secondary"
                             noWrap
                           >
-                            {s.employeeCode} • #{s.employeeId}
+                            {s.employeeCode}
                           </Typography>
                         </Box>
                         <IconButton
@@ -1560,7 +1560,7 @@ export default function Attendance() {
                               color="text.secondary"
                               noWrap
                             >
-                              {s.employeeCode} • #{s.employeeId}
+                              {s.employeeCode}
                             </Typography>
                           </Stack>
                         </TableCell>
@@ -1954,7 +1954,7 @@ export default function Attendance() {
                 {selectedEmployee?.employeeName || "Employee"}
               </Typography>
               <Typography variant="body2" color="text.secondary" noWrap>
-                {selectedEmployee?.employeeCode || "—"} • #{selectedEmployeeId}{" "}
+                {selectedEmployee?.employeeCode || "—"}
                 • {start} → {end}
               </Typography>
             </Box>
@@ -2771,11 +2771,7 @@ export default function Attendance() {
                                             fontWeight: 800,
                                           }}
                                         >
-                                          IN:{" "}
-                                          {formatLatLng(
-                                            r.clock_in_lat,
-                                            r.clock_in_lng
-                                          )}
+                                          IN: View on Map 📍
                                         </Typography>
                                       ) : null}
                                       {r.clock_out && outHasGeo ? (
@@ -2794,11 +2790,7 @@ export default function Attendance() {
                                             fontWeight: 800,
                                           }}
                                         >
-                                          OUT:{" "}
-                                          {formatLatLng(
-                                            r.clock_out_lat,
-                                            r.clock_out_lng
-                                          )}
+                                          OUT: View on Map 📍
                                         </Typography>
                                       ) : null}
                                     </Stack>
