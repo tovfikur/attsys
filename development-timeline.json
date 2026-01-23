@@ -1,0 +1,536 @@
+[
+  {
+    "name": "Project Analysis & Setup",
+    "hours": 1.5,
+    "description": "Initial project structure analysis, understanding multi-tenant architecture, PHP backend structure, React frontend setup, and Capacitor mobile configuration",
+    "date": "2026-01-08"
+  },
+  {
+    "name": "Local Environment Setup",
+    "hours": 1.5,
+    "description": "Install dependencies, configure environment variables, and verify local tooling for backend and frontend",
+    "date": "2026-01-08"
+  },
+  {
+    "name": "Backend Service Bootstrapping",
+    "hours": 1.5,
+    "description": "Run backend locally, verify routing, auth flow, tenant resolution, and basic API responses",
+    "date": "2026-01-08"
+  },
+  {
+    "name": "Frontend Dev Setup",
+    "hours": 1.5,
+    "description": "Run frontend locally, confirm routes render, verify API base URL config, and ensure login flow works",
+    "date": "2026-01-08"
+  },
+  {
+    "name": "Database Setup & Seed Data",
+    "hours": 1.5,
+    "description": "Initialize database schema, seed baseline tenant data, and validate core table relationships",
+    "date": "2026-01-08"
+  },
+  {
+    "name": "Multi-tenant Flow Walkthrough",
+    "hours": 0.75,
+    "description": "Walk through tenant-scoped flows in UI and API to confirm isolation rules and host-based behavior",
+    "date": "2026-01-08"
+  },
+  {
+    "name": "Permissions & RBAC Review",
+    "hours": 0.75,
+    "description": "Review role-based access control behavior and permission gates across key routes and endpoints",
+    "date": "2026-01-08"
+  },
+  {
+    "name": "Mobile Build Setup",
+    "hours": 1.5,
+    "description": "Verify Capacitor Android project boots, dependencies resolve, and build tooling runs end-to-end",
+    "date": "2026-01-08"
+  },
+  {
+    "name": "Backend API Extensions - Leave Indicators",
+    "hours": 1.5,
+    "description": "Implement leave indicator endpoints in AttendanceController: extend leavesList() for pending_count, add leavesPendingUnseen() and leavesMarkSeen() methods",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Backend API Extensions - Messenger Indicators",
+    "hours": 1.0,
+    "description": "Implement messenger indicator endpoint in MessengerController: add getUnreadCount() method and update conversations logic",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Frontend Indicator Integration - AppShell",
+    "hours": 1.0,
+    "description": "Integrate MUI Badge components in AppShell.tsx for leave and messenger navigation indicators with real-time updates",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Frontend Event System - Attendance Updates",
+    "hours": 0.75,
+    "description": "Implement 'attendance:updated' event dispatch in Leaves.tsx for indicator refresh when viewing leave requests",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Frontend Messenger Integration",
+    "hours": 0.75,
+    "description": "Update Messenger.tsx to fetch unread message counts on load and integrate with indicator system",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "API Testing & Validation",
+    "hours": 1.0,
+    "description": "Test all new API endpoints, validate indicator functionality, ensure proper authentication and authorization",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Frontend Build Process",
+    "hours": 0.75,
+    "description": "Build frontend assets with TypeScript compilation and Vite bundling for mobile app integration",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Capacitor Sync & Configuration",
+    "hours": 0.75,
+    "description": "Sync Capacitor configuration with frontend build, update Android project files and dependencies",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Leave Indicator UX Review",
+    "hours": 0.75,
+    "description": "Review badge placement, visibility rules, and navigation behavior for leave indicators",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Messenger Indicator UX Review",
+    "hours": 0.75,
+    "description": "Review unread badge behavior across conversation views and ensure expected clearing rules",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Real-time Refresh & Edge Cases",
+    "hours": 1.0,
+    "description": "Validate refresh triggers, handle empty states, and confirm indicator counts stay consistent",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Regression Testing - Attendance, Leaves, Messenger",
+    "hours": 1.5,
+    "description": "Run a regression pass for attendance, leave requests, and messenger flows after indicator changes",
+    "date": "2026-01-09"
+  },
+  {
+    "name": "Android Permission Configuration",
+    "hours": 0.5,
+    "description": "Add printer (BLUETOOTH_PRIVILEGED) and notification (POST_NOTIFICATIONS) permissions to AndroidManifest.xml",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "Build Gradle Configuration - Staging Variant",
+    "hours": 1.0,
+    "description": "Configure staging build variant in build.gradle: disable minification/shrinking, no signing config for testing",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "Build Gradle Configuration - Release Signing",
+    "hours": 0.85,
+    "description": "Update release signing configuration with fallback keystore path and alias for production builds",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "Android Build Process - Staging APK",
+    "hours": 1.0,
+    "description": "Execute gradlew assembleStaging to build unsigned staging APK for testing purposes",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "Build Validation & Testing",
+    "hours": 1.0,
+    "description": "Validate staging APK build, test basic functionality, ensure permissions are properly configured",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "ADB Device Detection Setup",
+    "hours": 0.5,
+    "description": "Configure ADB for device detection, restart ADB server, prepare for APK installation",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "USB Debugging Configuration",
+    "hours": 0.5,
+    "description": "Guide user through enabling USB debugging on Android device and accepting connection prompts",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "APK Installation Testing",
+    "hours": 0.75,
+    "description": "Install staging APK on connected device, verify installation success and basic app functionality",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "Mobile App Testing - Indicators",
+    "hours": 1.0,
+    "description": "Test leave and messenger indicators on mobile app, verify real-time updates and UI responsiveness",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "Release Keystore Verification",
+    "hours": 1.0,
+    "description": "Verify keystore presence, alias correctness, and signing inputs required for production builds",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "Capacitor Android Plugin Review",
+    "hours": 1.0,
+    "description": "Review Capacitor plugins and Android configuration to confirm required permissions and compatibility",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "Printer Integration Spike",
+    "hours": 1.0,
+    "description": "Validate printer-related permission needs and confirm expected integration approach in Android",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "Device Install & Smoke Tests",
+    "hours": 1.0,
+    "description": "Run a smoke test on device: login, navigation, key screens, and permission prompts",
+    "date": "2026-01-10"
+  },
+  {
+    "name": "CORS Configuration Analysis",
+    "hours": 1.05,
+    "description": "Analyze existing CORS handling in index.php, identify preflight issues and dynamic header reflection needs",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Dynamic CORS Header Implementation",
+    "hours": 1.0,
+    "description": "Implement dynamic CORS header reflection in index.php to handle preflight requests from different origins",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "API Route Documentation",
+    "hours": 1.5,
+    "description": "Document all API routes from index.php: auth, tenant, employees, messenger, leaves, attendance, shifts, profile endpoints",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Database Schema Analysis",
+    "hours": 1.0,
+    "description": "Analyze database schema files: tenants, employees, attendance, leaves, messenger tables and relationships",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Frontend Component Analysis",
+    "hours": 1.0,
+    "description": "Analyze React components: App.tsx routing, Dashboard, Employees, Attendance, Messenger, Leaves components",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Backend Controller Analysis",
+    "hours": 1.0,
+    "description": "Analyze backend controllers: AuthController, AttendanceController, MessengerController, DeviceController, EmployeeController",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Technology Stack Documentation",
+    "hours": 1.05,
+    "description": "Document technology stack: PHP backend, React 19 + TypeScript, Material-UI v7, Capacitor 7, MySQL/MariaDB",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Feature Mapping & Categorization",
+    "hours": 0.75,
+    "description": "Map all features to technical implementations: multi-tenant architecture, RBAC, attendance system, leave management",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Preflight/CORS Repro & Logging",
+    "hours": 0.75,
+    "description": "Reproduce preflight requests across origins, verify headers, and confirm behavior for credentialed requests",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Tenant Routing & Middleware Deep Dive",
+    "hours": 1.0,
+    "description": "Deep review of request lifecycle: host parsing, tenant resolution, and route protection boundaries",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "API Permissions Matrix Draft",
+    "hours": 0.75,
+    "description": "Draft a permission matrix aligning roles with protected endpoints and key UI screens",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Database Index & Query Review",
+    "hours": 1.05,
+    "description": "Review table indexes and common queries for performance risks and missing constraints",
+    "date": "2026-01-11"
+  },
+  {
+    "name": "Security Features Documentation",
+    "hours": 0.75,
+    "description": "Document security implementations: login protection, session management, audit logging, tenant isolation, data encryption",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Mobile App Features Documentation",
+    "hours": 0.75,
+    "description": "Document mobile app capabilities: native Android, offline support, push notifications, camera integration, biometric support",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Integration Capabilities Documentation",
+    "hours": 0.75,
+    "description": "Document integration features: biometric device support, external APIs, webhook support, CSV export capabilities",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Project Functionality Document Structure",
+    "hours": 0.5,
+    "description": "Create document structure: overview, tech stack, core features, API endpoints, database schema, deployment instructions",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Core Features Documentation",
+    "hours": 1.5,
+    "description": "Write detailed documentation for core features: multi-tenant architecture, authentication, employee management, attendance system",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Advanced Features Documentation",
+    "hours": 1.5,
+    "description": "Document advanced features: leave management, messenger system, device management, reporting & analytics, holiday management",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "API Endpoints Documentation",
+    "hours": 1.0,
+    "description": "Document all API endpoints with methods, authentication requirements, and permission levels for each endpoint",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Database Schema Documentation",
+    "hours": 1.0,
+    "description": "Document database tables, relationships, indexes, and foreign key constraints for all system tables",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Screenshots & Feature Inventory",
+    "hours": 0.75,
+    "description": "Capture key UI flows and compile a feature inventory that matches screens to capabilities",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "System Data Flow Notes",
+    "hours": 0.65,
+    "description": "Write clear notes for request/response flows across auth, tenant scope, and core modules",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Error Handling & Validation Review",
+    "hours": 0.65,
+    "description": "Review error handling paths and input validation for core endpoints and forms",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Deployment Configuration Review",
+    "hours": 1.0,
+    "description": "Review environment configuration needs for backend, frontend, and Android builds",
+    "date": "2026-01-12"
+  },
+  {
+    "name": "Deployment Instructions Documentation",
+    "hours": 0.75,
+    "description": "Write deployment instructions: backend requirements, frontend hosting, mobile app distribution, environment configuration",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Recent Enhancements Documentation",
+    "hours": 0.75,
+    "description": "Document recent enhancements: action-clearing indicators, mobile app improvements, CORS fixes, staging build variant",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Project Functionality Document Review",
+    "hours": 1.0,
+    "description": "Review and refine project-functionality.md document, ensure completeness, accuracy, and proper formatting",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Development Timeline Creation - Task Breakdown",
+    "hours": 1.5,
+    "description": "Create comprehensive development timeline: analyze all project tasks, break into 8 days, ensure 20min-1.5hr task granularity",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Timeline Validation & Optimization",
+    "hours": 1.0,
+    "description": "Validate timeline against project scope, optimize task distribution, ensure realistic time allocations for each component",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Final Documentation Review",
+    "hours": 1.0,
+    "description": "Final review of all documentation: project-functionality.md and development-timeline.json, ensure accuracy and completeness",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Code Quality Validation",
+    "hours": 0.75,
+    "description": "Run lint and typecheck commands on frontend code to ensure code quality and catch any issues before finalization",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Lint & Typecheck Fixes",
+    "hours": 1.5,
+    "description": "Fix any lint and type errors, stabilize builds, and confirm clean output across checks",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Mobile Build Optimization Review",
+    "hours": 1.2,
+    "description": "Review Android build outputs, variant configuration, and opportunities to reduce build friction",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Docs Consistency Pass",
+    "hours": 1.3,
+    "description": "Ensure feature names, endpoint names, and module references stay consistent across documents",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "Deployment Checklist",
+    "hours": 0.95,
+    "description": "Create a deployment checklist covering environment, build outputs, and verification steps",
+    "date": "2026-01-13"
+  },
+  {
+    "name": "System Integration Testing",
+    "hours": 1.0,
+    "description": "Test complete system integration: frontend-backend communication, mobile app functionality, API endpoints, indicator updates",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "Mobile App Final Testing",
+    "hours": 1.0,
+    "description": "Final mobile app testing: permissions, notifications, printer integration, offline capabilities, APK installation",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "Documentation Finalization",
+    "hours": 1.0,
+    "description": "Finalize all documentation: ensure project-functionality.md is complete, development-timeline.json is accurate and comprehensive",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "Project Summary & Handoff",
+    "hours": 1.0,
+    "description": "Create project summary: overview of implemented features, resolved issues, testing results, deployment status, and handoff notes",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "Performance Optimization Review",
+    "hours": 0.75,
+    "description": "Review system performance: API response times, frontend loading, mobile app performance, database query optimization",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "Security Audit & Review",
+    "hours": 1.0,
+    "description": "Security audit: authentication mechanisms, authorization checks, data isolation, input validation, API security",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "Deployment Preparation",
+    "hours": 0.75,
+    "description": "Prepare for production deployment: final build verification, environment configuration, deployment checklist creation",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "End-to-End Scenario Testing",
+    "hours": 1.5,
+    "description": "Run end-to-end scenarios across roles, tenants, and devices to confirm expected behavior",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "Performance Profiling Session",
+    "hours": 1.0,
+    "description": "Profile key screens and endpoints to spot slow queries, expensive renders, and hot paths",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "Security Review - JWT & CORS",
+    "hours": 1.0,
+    "description": "Review auth token handling, CORS policies, and permission checks for common bypass risks",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "Release Build Dry Run",
+    "hours": 1.2,
+    "description": "Dry-run the release build pipeline and validate outputs without changing release artifacts",
+    "date": "2026-01-14"
+  },
+  {
+    "name": "User Acceptance Testing",
+    "hours": 1.0,
+    "description": "Conduct user acceptance testing: verify all features work as expected, indicators clear properly, mobile app functions correctly",
+    "date": "2026-01-15"
+  },
+  {
+    "name": "Bug Fixes & Polish",
+    "hours": 1.5,
+    "description": "Fix any identified bugs, polish UI/UX elements, optimize performance, ensure smooth user experience across all platforms",
+    "date": "2026-01-15"
+  },
+  {
+    "name": "Final Build & Release",
+    "hours": 1.0,
+    "description": "Create final production build: frontend assets, mobile APK, ensure all features are working, prepare for release",
+    "date": "2026-01-15"
+  },
+  {
+    "name": "Documentation Delivery",
+    "hours": 0.75,
+    "description": "Deliver final documentation package: project-functionality.md, development-timeline.json, deployment guides, API documentation",
+    "date": "2026-01-15"
+  },
+  {
+    "name": "Project Retrospective",
+    "hours": 0.5,
+    "description": "Project retrospective: review completed work, document lessons learned, identify areas for future improvement",
+    "date": "2026-01-15"
+  },
+  {
+    "name": "Final Bug Bash",
+    "hours": 1.5,
+    "description": "Run a focused bug bash across core flows and fix the highest-impact issues found",
+    "date": "2026-01-15"
+  },
+  {
+    "name": "UI Polish Pass",
+    "hours": 1.5,
+    "description": "Polish UI/UX details: spacing, labels, loading states, and navigation consistency",
+    "date": "2026-01-15"
+  },
+  {
+    "name": "Production APK Build & Signing",
+    "hours": 1.5,
+    "description": "Build and sign the production APK, verify signature, and confirm correct variant outputs",
+    "date": "2026-01-15"
+  },
+  {
+    "name": "Release Notes & Versioning",
+    "hours": 0.65,
+    "description": "Prepare release notes and verify versioning aligns across app, backend, and deployment",
+    "date": "2026-01-15"
+  },
+  {
+    "name": "Install on Device & Final Verification",
+    "hours": 1.0,
+    "description": "Install the final APK on device and verify key flows, permissions, and stability",
+    "date": "2026-01-15"
+  }
+]
