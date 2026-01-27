@@ -68,7 +68,7 @@ class ZKTecoSync:
                 timeout=self.timeout,
                 password=self.password,
                 force_udp=False,
-                ommit_ping=True
+                omit_ping=True
             )
             self.conn = self.zk.connect()
             return True

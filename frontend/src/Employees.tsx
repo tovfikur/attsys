@@ -762,7 +762,7 @@ function EmployeeLoginDialog({
             pb: 1,
           }}
         >
-          <Typography variant="h6" fontWeight={800}>
+          <Typography fontWeight={800}>
             Employee Login
           </Typography>
           <IconButton onClick={onClose} size="small">
@@ -980,7 +980,7 @@ function EnrollBiometricDialog({
         }}
       >
         <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h6" fontWeight={800} noWrap>
+          <Typography fontWeight={800} noWrap>
             Enroll Biometrics
           </Typography>
           <Typography variant="body2" color="text.secondary" noWrap>

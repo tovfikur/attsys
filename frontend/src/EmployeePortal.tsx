@@ -3478,17 +3478,28 @@ export default function EmployeePortal() {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={closeDay}>Close</Button>
-          <Button
-            variant="contained"
-            onClick={() => {
-              if (!dayDate) return;
-              closeDay();
-              openApplyForDate(dayDate);
-            }}
-            disabled={!dayDate}
-          >
-            Apply Leave
-          </Button>
+          {(() => {
+            const leaveList = dayDate ? leavesByDate.get(dayDate) || [] : [];
+            const hasExistingLeave = leaveList.some((l) => {
+              const status = String(l.status || "pending")
+                .toLowerCase()
+                .trim();
+              return status === "pending" || status === "approved";
+            });
+            return (
+              <Button
+                variant="contained"
+                onClick={() => {
+                  if (!dayDate) return;
+                  closeDay();
+                  openApplyForDate(dayDate);
+                }}
+                disabled={!dayDate || hasExistingLeave}
+              >
+                Apply Leave
+              </Button>
+            );
+          })()}
         </DialogActions>
       </Dialog>
       <Dialog

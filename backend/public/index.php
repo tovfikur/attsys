@@ -49,6 +49,10 @@ if ($reqHeaders) {
 header("Access-Control-Allow-Headers: $allowedHeaders");
 header("Access-Control-Max-Age: 86400"); // Cache preflight for 24h
 
+// Content Security Policy - Allow scripts and resources for development
+// If you need stricter CSP in production, set this based on environment
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://demo.localhost:5173 http://localhost:5173 https://demo.localhost:5173 https://localhost:5173; style-src 'self' 'unsafe-inline' http://demo.localhost:5173 http://localhost:5173 https://demo.localhost:5173 https://localhost:5173; connect-src 'self' http://demo.localhost:5173 http://localhost:5173 https://demo.localhost:5173 https://localhost:5173 ws://demo.localhost:5173 ws://localhost:5173 wss://demo.localhost:5173 wss://localhost:5173; img-src 'self' data: blob:; font-src 'self' data:;");
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     header("Content-Length: 0");
     header("Content-Type: text/plain");

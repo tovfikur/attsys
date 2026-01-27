@@ -1849,14 +1849,33 @@ class AttendanceController
             return;
         }
 
-        $existingStmt = $pdo->prepare('SELECT id FROM leaves WHERE tenant_id=? AND employee_id=? AND date=? ORDER BY id DESC LIMIT 1');
-        $existingStmt->execute([(int)$tenantId, (int)$employeeId, $date]);
-        $existingId = $existingStmt->fetchColumn();
+        $existingCheck = $pdo->prepare("SELECT status FROM leaves WHERE tenant_id=? AND employee_id=? AND date=? AND status IN ('pending', 'approved') LIMIT 1");
+        $existingCheck->execute([(int)$tenantId, (int)$employeeId, $date]);
+        $existingStatus = $existingCheck->fetchColumn();
+        if ($existingStatus) {
+            $statusMsg = $existingStatus === 'approved' ? 'approved' : 'pending';
+            http_response_code(409);
+            echo json_encode(['error' => "Leave already {$statusMsg} for this date"]);
+            return;
+        }
 
-        if ($existingId) {
+        $existingStmt = $pdo->prepare('SELECT id, status FROM leaves WHERE tenant_id=? AND employee_id=? AND date=? ORDER BY id DESC LIMIT 1');
+        $existingStmt->execute([(int)$tenantId, (int)$employeeId, $date]);
+        $existing = $existingStmt->fetch(\PDO::FETCH_ASSOC);
+
+        if ($existing) {
+            // The check above should have caught pending/approved, but double-check for safety
+            $normalizedStatus = $this->normalizeLeaveStatus($existing['status'] ?? null);
+            if ($normalizedStatus === 'approved' || $normalizedStatus === 'pending') {
+                $statusMsg = $normalizedStatus === 'approved' ? 'approved' : 'pending';
+                http_response_code(409);
+                echo json_encode(['error' => "Leave already {$statusMsg} for this date"]);
+                return;
+            }
+            $existingId = (int)$existing['id'];
             $up = $pdo->prepare('UPDATE leaves SET leave_type=?, day_part=?, reason=?, status=? WHERE tenant_id=? AND id=?');
-            $up->execute([$leaveType, $dayPart, $reason !== '' ? $reason : null, $status, (int)$tenantId, (int)$existingId]);
-            $id = (int)$existingId;
+            $up->execute([$leaveType, $dayPart, $reason !== '' ? $reason : null, $status, (int)$tenantId, $existingId]);
+            $id = $existingId;
         } else {
             $ins = $pdo->prepare('INSERT INTO leaves(tenant_id, employee_id, date, leave_type, day_part, reason, status) VALUES(?, ?, ?, ?, ?, ?, ?)');
             $ins->execute([(int)$tenantId, (int)$employeeId, $date, $leaveType, $dayPart, $reason !== '' ? $reason : null, $status]);
@@ -2079,8 +2098,19 @@ class AttendanceController
 
         $skipped = 0;
         $created = 0;
+
+        // Pre-fetch all pending/approved leave dates in the range to skip them
+        $existingStmt = $pdo->prepare("SELECT date FROM leaves WHERE tenant_id=? AND employee_id=? AND date BETWEEN ? AND ? AND status IN ('pending', 'approved')");
+        $existingStmt->execute([(int)$tenantId, (int)$employeeId, $start, $end]);
+        $existingDates = [];
+        foreach ($existingStmt->fetchAll(\PDO::FETCH_COLUMN) as $d) $existingDates[$d] = true;
+
         $ins = $pdo->prepare('INSERT INTO leaves(tenant_id, employee_id, date, leave_type, day_part, reason, status) VALUES(?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE leave_type=VALUES(leave_type), day_part=VALUES(day_part), reason=VALUES(reason), status=VALUES(status)');
         foreach ($dates as $dateStr) {
+            if (isset($existingDates[$dateStr])) {
+                $skipped += 1;
+                continue;
+            }
             try {
                 $ins->execute([(int)$tenantId, (int)$employeeId, $dateStr, $leaveType, $dayPart, $reason !== '' ? $reason : null, $status]);
                 $created += 1;
