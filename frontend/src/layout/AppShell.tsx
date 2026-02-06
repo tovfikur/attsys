@@ -46,6 +46,7 @@ import {
   LoginRounded,
   LogoutRounded,
   MenuRounded,
+  MonetizationOnRounded,
   PeopleAltRounded,
   QueryStatsRounded,
   PhotoCameraRounded,
@@ -86,6 +87,12 @@ const navItems: NavItem[] = [
     label: "Apply Leave",
     to: "/employee-portal?applyLeave=1",
     icon: <EventNoteRounded />,
+    roles: ["employee"],
+  },
+  {
+    label: "My Payroll",
+    to: "/employee-portal?tab=payroll",
+    icon: <MonetizationOnRounded />,
     roles: ["employee"],
   },
   {
@@ -131,6 +138,12 @@ const navItems: NavItem[] = [
     roles: ["tenant_owner", "hr_admin", "manager"],
   },
   {
+    label: "Payroll",
+    to: "/payroll",
+    icon: <MonetizationOnRounded />,
+    roles: ["tenant_owner", "hr_admin", "payroll_admin"],
+  },
+  {
     label: "Devices",
     to: "/devices",
     icon: <DevicesRounded />,
@@ -149,7 +162,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const role = user?.role || "";
   const [employeeId, setEmployeeId] = useState("");
   const [employeeOpenShift, setEmployeeOpenShift] = useState<boolean | null>(
-    null
+    null,
   );
   const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
   const profilePhotoUrlRef = useRef<string | null>(null);
@@ -250,7 +263,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           timeout: 8000,
         });
         setLeavesUnseenPending(
-          Math.max(0, Number(res.data?.unseen_pending || 0) || 0)
+          Math.max(0, Number(res.data?.unseen_pending || 0) || 0),
         );
       } else {
         setLeavesUnseenPending(0);
@@ -294,7 +307,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         await api.post(
           "/api/leaves/mark_seen",
           {},
-          { headers: { "X-Toast-Skip": "1" }, timeout: 8000 }
+          { headers: { "X-Toast-Skip": "1" }, timeout: 8000 },
         );
       } finally {
         void refreshIndicators();
@@ -334,7 +347,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     try {
       const res = await api.get(
         `/api/attendance/open?employee_id=${encodeURIComponent(employeeId)}`,
-        { timeout: 8000 }
+        { timeout: 8000 },
       );
       setEmployeeOpenShift(Boolean(res.data?.open));
     } catch {
@@ -388,7 +401,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           current_password: pwdForm.current,
           new_password: pwdForm.new,
         },
-        { headers: { "X-Toast-Skip": "1" } }
+        { headers: { "X-Toast-Skip": "1" } },
       );
       setToast({
         open: true,
@@ -523,7 +536,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const handlePhotoSelected = async (
-    e: React.ChangeEvent<HTMLInputElement>
+    e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -553,7 +566,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const handleTenantLogoSelected = async (
-    e: React.ChangeEvent<HTMLInputElement>
+    e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -594,8 +607,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const badgeCount = isMessenger
         ? messengerUnread
         : isLeaves
-        ? leavesUnseenPending
-        : 0;
+          ? leavesUnseenPending
+          : 0;
       if (badgeCount <= 0) return item.icon;
       return (
         <Badge
@@ -606,7 +619,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </Badge>
       );
     },
-    [leavesUnseenPending, messengerUnread]
+    [leavesUnseenPending, messengerUnread],
   );
 
   const title = useMemo(() => {
@@ -644,14 +657,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       employeeOpenShift === true
         ? "out"
         : employeeOpenShift === false
-        ? "in"
-        : "unknown";
+          ? "in"
+          : "unknown";
     const to =
       stage === "out"
         ? "/employee-portal?quickCheck=out"
         : stage === "in"
-        ? "/employee-portal?quickCheck=in"
-        : "/employee-portal?quickCheck=auto";
+          ? "/employee-portal?quickCheck=in"
+          : "/employee-portal?quickCheck=auto";
 
     return {
       ariaLabel:
@@ -661,14 +674,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         stage === "out"
           ? theme.palette.warning.main
           : stage === "in"
-          ? theme.palette.success.main
-          : theme.palette.primary.main,
+            ? theme.palette.success.main
+            : theme.palette.primary.main,
       fg:
         stage === "out"
           ? theme.palette.warning.contrastText
           : stage === "in"
-          ? theme.palette.success.contrastText
-          : theme.palette.primary.contrastText,
+            ? theme.palette.success.contrastText
+            : theme.palette.primary.contrastText,
       icon:
         stage === "out" ? (
           <ExitToAppRounded />
@@ -1225,16 +1238,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         items.find((i) => i.to === "/employee-portal/profile"),
                       ].filter((i): i is NavItem => Boolean(i))
                     : isTenantRole
-                    ? [
-                        "/employees",
-                        "/attendance",
-                        "/leaves",
-                        "/shifts",
-                        "/reports",
-                      ]
-                        .map((to) => items.find((i) => i.to === to))
-                        .filter((i): i is NavItem => Boolean(i))
-                    : items.slice(0, 5);
+                      ? [
+                          "/employees",
+                          "/attendance",
+                          "/leaves",
+                          "/shifts",
+                          "/reports",
+                        ]
+                          .map((to) => items.find((i) => i.to === to))
+                          .filter((i): i is NavItem => Boolean(i))
+                      : items.slice(0, 5);
                 const left = showCenterCheck ? visible.slice(0, 2) : visible;
                 const right = showCenterCheck ? visible.slice(2, 4) : [];
 
@@ -1314,7 +1327,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                             pointerEvents: "none",
                           }}
                         />
-                      )
+                      ),
                     );
                   }
                 } else {
@@ -1357,7 +1370,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                           display: "none !important",
                         },
                       }}
-                    />
+                    />,
                   );
                 } else if (showCenterCheck) {
                   nodes.push(
@@ -1375,7 +1388,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                         opacity: 0,
                         pointerEvents: "none",
                       }}
-                    />
+                    />,
                   );
                 }
 
@@ -1401,7 +1414,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                             pointerEvents: "none",
                           }}
                         />
-                      )
+                      ),
                     );
                   }
                 }

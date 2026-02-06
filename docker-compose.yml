@@ -37,6 +37,8 @@ services:
       context: ./backend
     container_name: attendance_backend
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allow access to host network for ZKTeco
     environment:
       DB_HOST: db
       DB_PORT: "3306"
@@ -45,6 +47,7 @@ services:
       DB_PASS: attpass
       FACE_API_URL: "http://face_api:5000"
     working_dir: /app
+    command: sh -lc "php run_migration.php && exec php -S 0.0.0.0:8000 -t public public/index.php"
     volumes:
       - ./backend:/app
     ports:

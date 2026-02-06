@@ -115,6 +115,7 @@ $router->postAuth('/api/tenant_users/reset_password', ['App\Controller\TenantUse
 $router->getAuth('/api/tenant_users/employee_login', ['App\Controller\TenantUserController', 'getEmployeeLogin'], 'perm:employees.read');
 $router->postAuth('/api/tenant_users/employee_login/set_password', ['App\Controller\TenantUserController', 'setEmployeePassword'], 'perm:employees.write');
 $router->getAuth('/api/audit', ['App\Controller\AuditController', 'list'], 'superadmin');
+$router->getAuth('/api/audit/tenant', ['App\Controller\AuditController', 'listTenant'], 'perm:payroll.read');
 $router->getAuth('/api/devices', ['App\Controller\DeviceController', 'list'], 'perm:devices.manage');
 $router->postAuth('/api/devices/register', ['App\Controller\DeviceController', 'register'], 'perm:devices.manage');
 $router->postAuth('/api/devices/update', ['App\Controller\DeviceController', 'update'], 'perm:devices.manage');
@@ -198,6 +199,76 @@ $router->getAuth('/api/attendance/employee', ['App\Controller\AttendanceControll
 $router->getAuth('/api/attendance/open', ['App\Controller\AttendanceController', 'openShift'], 'perm:attendance.clock');
 $router->postAuth('/api/attendance/clockin', ['App\Controller\AttendanceController', 'clockIn'], 'perm:attendance.clock');
 $router->postAuth('/api/attendance/clockout', ['App\Controller\AttendanceController', 'clockOut'], 'perm:attendance.clock');
+
+// --- Payroll Module ---
+// Salary Structure
+$router->postAuth('/api/payroll/structure', ['App\Payroll\PayrollController', 'saveStructure'], 'perm:employees.write');
+$router->getAuth('/api/payroll/structure', ['App\Payroll\PayrollController', 'getStructure'], 'perm:employees.write');
+$router->getAuth('/api/payroll/structure/history', ['App\Payroll\PayrollController', 'getStructureHistory'], 'perm:employees.write');
+$router->getAuth('/api/payroll/components', ['App\Payroll\PayrollController', 'getComponents'], 'perm:employees.write');
+$router->getAuth('/api/payroll/bank_accounts', ['App\Payroll\PayrollController', 'getBankAccounts'], 'perm:employees.write');
+$router->postAuth('/api/payroll/bank_accounts', ['App\Payroll\PayrollController', 'upsertBankAccount'], 'perm:employees.write');
+$router->postAuth('/api/payroll/bank_accounts/delete', ['App\Payroll\PayrollController', 'deleteBankAccount'], 'perm:employees.write');
+$router->postAuth('/api/payroll/bank_accounts/primary', ['App\Payroll\PayrollController', 'setPrimaryBankAccount'], 'perm:employees.write');
+
+// Payroll Cycles
+$router->getAuth('/api/payroll/cycles', ['App\Payroll\PayrollController', 'getCycles'], 'perm:payroll.read');
+$router->postAuth('/api/payroll/cycles', ['App\Payroll\PayrollController', 'createCycle'], 'perm:payroll.manage');
+$router->postAuth('/api/payroll/cycles/run', ['App\Payroll\PayrollController', 'runCycle'], 'perm:payroll.run');
+$router->postAuth('/api/payroll/cycles/approve', ['App\Payroll\PayrollController', 'approveCycle'], 'perm:payroll.approve');
+$router->postAuth('/api/payroll/cycles/reject', ['App\Payroll\PayrollController', 'rejectCycle'], 'perm:payroll.approve');
+$router->getAuth('/api/payroll/cycles/approvals', ['App\Payroll\PayrollController', 'getCycleApprovals'], 'perm:payroll.read');
+$router->postAuth('/api/payroll/cycles/lock', ['App\Payroll\PayrollController', 'lockCycle'], 'perm:payroll.lock');
+$router->postAuth('/api/payroll/cycles/pay', ['App\Payroll\PayrollController', 'markPaid'], 'perm:payroll.pay');
+$router->getAuth('/api/payroll/payments', ['App\Payroll\PayrollController', 'getPaymentSummary'], 'perm:payroll.pay');
+$router->getAuth('/api/payroll/payments/payslip', ['App\Payroll\PayrollController', 'getPayslipPayments'], 'perm:payroll.pay');
+$router->postAuth('/api/payroll/payments/add', ['App\Payroll\PayrollController', 'addPayslipPayment'], 'perm:payroll.pay');
+
+// Payroll Bonuses
+$router->getAuth('/api/payroll/bonuses', ['App\Payroll\PayrollController', 'getBonuses'], 'perm:payroll.manage');
+$router->postAuth('/api/payroll/bonuses', ['App\Payroll\PayrollController', 'saveBonus'], 'perm:payroll.manage');
+$router->postAuth('/api/payroll/bonuses/delete', ['App\Payroll\PayrollController', 'deleteBonus'], 'perm:payroll.manage');
+
+// Payroll Reports
+$router->getAuth('/api/payroll/settings', ['App\Payroll\PayrollController', 'getSettings'], 'perm:payroll.settings');
+$router->postAuth('/api/payroll/settings', ['App\Payroll\PayrollController', 'updateSettings'], 'perm:payroll.settings');
+$router->getAuth('/api/payroll/permissions', ['App\Payroll\PayrollController', 'getPayrollPermissions'], 'perm:payroll.settings');
+$router->postAuth('/api/payroll/permissions', ['App\Payroll\PayrollController', 'updatePayrollPermissions'], 'perm:payroll.settings');
+$router->getAuth('/api/payroll/tax-slabs', ['App\Payroll\PayrollController', 'getTaxSlabs'], 'perm:payroll.settings');
+$router->postAuth('/api/payroll/tax-slabs', ['App\Payroll\PayrollController', 'saveTaxSlab'], 'perm:payroll.settings');
+$router->postAuth('/api/payroll/tax-slabs/delete', ['App\Payroll\PayrollController', 'deleteTaxSlab'], 'perm:payroll.settings');
+$router->getAuth('/api/payroll/reports/yearly', ['App\Payroll\PayrollController', 'getYearlyReport'], 'perm:payroll.read');
+$router->getAuth('/api/payroll/employees/history', ['App\Payroll\PayrollController', 'getEmployeeHistory'], 'perm:payroll.read');
+$router->getAuth('/api/payroll/reports/tax-export', ['App\Payroll\PayrollController', 'downloadTaxSummary'], 'perm:payroll.read');
+$router->getAuth('/api/payroll/reports/export', ['App\Payroll\PayrollController', 'downloadCycleReport'], 'perm:payroll.read');
+$router->getAuth('/api/payroll/cycles/bank-export', ['App\Payroll\PayrollController', 'downloadBankExport'], 'perm:payroll.read');
+
+// Payroll Loans
+$router->postAuth('/api/payroll/loans', ['App\Payroll\PayrollController', 'createLoan'], 'perm:payroll.manage');
+$router->postAuth('/api/payroll/advances', ['App\Payroll\PayrollController', 'createAdvance'], 'perm:payroll.manage');
+$router->getAuth('/api/payroll/loans', ['App\Payroll\PayrollController', 'getLoans'], 'perm:payroll.read');
+$router->postAuth('/api/payroll/loans/status', ['App\Payroll\PayrollController', 'updateLoanStatus'], 'perm:payroll.manage');
+
+// Employee Self-Service (Payroll)
+$router->getAuth('/api/payroll/me/payslips', ['App\Payroll\PayrollController', 'getMyPayslips'], 'any');
+$router->getAuth('/api/payroll/me/loans', ['App\Payroll\PayrollController', 'getMyLoans'], 'any');
+$router->postAuth('/api/payroll/me/loans/apply', ['App\Payroll\PayrollController', 'applyForLoan'], 'any');
+$router->getAuth('/api/payroll/me/day-status', ['App\Payroll\PayrollController', 'getMyDayStatus'], 'any');
+$router->getAuth('/api/payroll/day-status', ['App\Payroll\PayrollController', 'getDayStatus'], 'perm:payroll.read');
+
+// Payslips
+$router->getAuth('/api/payroll/payslips', ['App\Payroll\PayrollController', 'getPayslips'], 'perm:payroll.read');
+$router->getAuth('/api/payroll/payslip', ['App\Payroll\PayrollController', 'getPayslipDetail'], 'perm:payroll.read');
+$router->getAuth('/api/payroll/payslip/view', ['App\Payroll\PayrollController', 'viewPayslip'], 'any');
+$router->postAuth('/api/payroll/email', ['App\Payroll\PayrollController', 'emailPayslips'], 'perm:payroll.manage');
+
+// Journal Entries
+$router->getAuth('/api/payroll/journal_entries', ['App\Payroll\PayrollController', 'getJournalEntries'], 'perm:payroll.read');
+
+// Reports
+$router->getAuth('/api/payroll/reports', ['App\Payroll\PayrollController', 'getReports'], 'perm:payroll.read');
+
+// Attendance Evidence
 $router->getAuth('/api/attendance/evidence', ['App\Controller\AttendanceController', 'evidence'], 'perm:attendance.read');
 $router->getAuth('/api/attendance/raw_events', ['App\Controller\AttendanceController', 'rawEvents'], 'perm:attendance.read');
 $router->postAuth('/api/attendance/process', ['App\Controller\AttendanceController', 'process'], 'perm:attendance.read');

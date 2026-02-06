@@ -13,13 +13,20 @@ class Database
     {
         if (self::$pdo) return self::$pdo;
         // Load .env from project root
-        $envPath = __DIR__ . '/../../.env';
-        if (file_exists($envPath)) {
-            $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            foreach ($lines as $line) {
-                if (str_starts_with($line, '#')) continue;
-                [$k, $v] = array_map('trim', explode('=', $line, 2));
-                if ($k && $v && !getenv($k)) putenv("$k=$v");
+        $envPaths = [
+            __DIR__ . '/../../.env',       // backend/.env
+            __DIR__ . '/../../../.env'     // project root .env
+        ];
+
+        foreach ($envPaths as $envPath) {
+            if (file_exists($envPath)) {
+                $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                foreach ($lines as $line) {
+                    if (str_starts_with($line, '#')) continue;
+                    [$k, $v] = array_map('trim', explode('=', $line, 2));
+                    if ($k && $v && !getenv($k)) putenv("$k=$v");
+                }
+                break; // Found and loaded
             }
         }
 

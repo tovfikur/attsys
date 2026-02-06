@@ -119,6 +119,8 @@ $files = [
     __DIR__ . '/migration_shifts.sql',
     __DIR__ . '/migration_employee_profile.sql',
     __DIR__ . '/migration_zkteco.sql',
+    __DIR__ . '/migration_payroll.sql',
+    __DIR__ . '/migration_payroll_v2.sql',
 ];
 
 try {

@@ -5,6 +5,14 @@ namespace App\Core;
 class EmployeesStore
 {
     private $file = __DIR__ . '/../../data/employees.json';
+    private $tenantId;
+    private $pdo;
+
+    public function __construct($pdo = null, $tenantId = null)
+    {
+        $this->pdo = $pdo;
+        $this->tenantId = $tenantId;
+    }
 
     public static function ensureEmployeeProfileColumns($pdo): void
     {
@@ -34,6 +42,7 @@ class EmployeesStore
 
     private function resolveTenantId($pdo): ?int
     {
+        if ($this->tenantId) return $this->tenantId;
         $user = Auth::currentUser() ?? [];
         $tenantId = $user['tenant_id'] ?? null;
         if ($tenantId) return (int)$tenantId;
@@ -114,7 +123,8 @@ class EmployeesStore
                 ], $stmt->fetchAll());
             }
 
-            $tenantId = $user['tenant_id'] ?? null;
+            $tenantId = $this->tenantId;
+            if (!$tenantId) $tenantId = $user['tenant_id'] ?? null;
             if (!$tenantId) {
                 $hint = $_SERVER['HTTP_X_TENANT_ID'] ?? null;
                 if ($hint) {

@@ -86,18 +86,36 @@ class Auth
                 'leaves.apply',
                 'leaves.approve',
                 'leaves.manage',
+                'payroll.read',
+                'payroll.run',
+                'payroll.approve',
+                'payroll.lock',
+                'payroll.pay',
+                'payroll.settings',
+                'payroll.manage',
             ],
             'manager' => [
                 'employees.read',
                 'attendance.read',
                 'leaves.read',
                 'leaves.approve',
+                'payroll.read',
             ],
             'employee' => [
                 'attendance.clock',
                 'attendance.read',
                 'leaves.read',
                 'leaves.apply',
+            ],
+            'payroll_admin' => [
+                'payroll.read',
+                'payroll.run',
+                'payroll.approve',
+                'payroll.lock',
+                'payroll.pay',
+                'payroll.settings',
+                'employees.read',
+                'attendance.read'
             ],
         ];
 

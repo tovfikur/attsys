@@ -41,7 +41,30 @@ import {
   MoreVertRounded,
   RefreshRounded,
   VisibilityRounded,
+  DownloadRounded,
+  AddRounded,
 } from "@mui/icons-material";
+
+type PayslipHistory = {
+  cycle_name: string;
+  end_date: string;
+  gross_salary: number | string;
+  net_salary: number | string;
+  tax_deducted: number | string;
+  payslip_id: number;
+};
+
+type LoanRecord = {
+  id: number;
+  type: string;
+  amount: number | string;
+  interest_rate: number | string;
+  total_repayment_amount: number | string;
+  monthly_installment: number | string;
+  start_date: string;
+  status: string;
+  current_balance: number | string;
+};
 
 type MeResponse = {
   user: {
@@ -200,7 +223,7 @@ const formatTime = (value: string | null | undefined): string => {
 };
 
 const normalizeMethod = (
-  raw: unknown
+  raw: unknown,
 ): "machine" | "thumb" | "face" | "unknown" => {
   const v = String(raw ?? "")
     .trim()
@@ -225,7 +248,7 @@ const mapsUrl = (lat: number, lng: number): string =>
 
 const formatLatLng = (
   lat: number | null | undefined,
-  lng: number | null | undefined
+  lng: number | null | undefined,
 ): string => {
   if (typeof lat !== "number" || typeof lng !== "number") return "—";
   return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
@@ -325,6 +348,24 @@ export default function EmployeePortal() {
   const [reportLeaves, setReportLeaves] = useState<LeaveRecord[]>([]);
   const [reportBalance, setReportBalance] = useState<LeaveBalanceRow[]>([]);
 
+  const [payslips, setPayslips] = useState<PayslipHistory[]>([]);
+  const [loans, setLoans] = useState<LoanRecord[]>([]);
+  const [payrollLoading, setPayrollLoading] = useState(false);
+  const [payrollError, setPayrollError] = useState("");
+  const [payslipYear, setPayslipYear] = useState(() =>
+    new Date().getFullYear(),
+  );
+
+  const [loanApplyOpen, setLoanApplyOpen] = useState(false);
+  const [loanApplyBusy, setLoanApplyBusy] = useState(false);
+  const [loanApplyError, setLoanApplyError] = useState("");
+  const [loanApplyForm, setLoanApplyForm] = useState({
+    amount: "",
+    monthly_installment: "",
+    start_date: "",
+    reason: "",
+  });
+
   const selectableLeaveTypes = useMemo<LeaveType[]>(() => {
     const normalized = leaveTypes
       .map((t) => ({
@@ -360,7 +401,7 @@ export default function EmployeePortal() {
       if (!code) return "leave";
       return leaveTypeNameByCode.get(code.toLowerCase()) || code;
     },
-    [leaveTypeNameByCode]
+    [leaveTypeNameByCode],
   );
 
   const [dayOpen, setDayOpen] = useState(false);
@@ -441,7 +482,7 @@ export default function EmployeePortal() {
       setLeaveTypes(
         Array.isArray(res.data?.leave_types)
           ? (res.data.leave_types as LeaveType[])
-          : []
+          : [],
       );
     } catch {
       setLeaveTypes([]);
@@ -454,11 +495,11 @@ export default function EmployeePortal() {
     try {
       const res = await api.get(
         `/api/attendance/employee?id=${encodeURIComponent(
-          employeeId
-        )}&month=${encodeURIComponent(monthStr)}`
+          employeeId,
+        )}&month=${encodeURIComponent(monthStr)}`,
       );
       setAttendance(
-        Array.isArray(res.data?.attendance) ? res.data.attendance : []
+        Array.isArray(res.data?.attendance) ? res.data.attendance : [],
       );
       setLeaves(Array.isArray(res.data?.leaves) ? res.data.leaves : []);
       setHolidays(Array.isArray(res.data?.holidays) ? res.data.holidays : []);
@@ -472,6 +513,87 @@ export default function EmployeePortal() {
       setStatsLoading(false);
     }
   }, [employeeId, monthStr]);
+
+  const fetchPayrollData = useCallback(async () => {
+    if (!employeeId) return;
+    setPayrollLoading(true);
+    setPayrollError("");
+    try {
+      const [payslipsRes, loansRes] = await Promise.all([
+        api.get(`/api/payroll/me/payslips?year=${payslipYear}`),
+        api.get(`/api/payroll/me/loans`),
+      ]);
+      setPayslips(
+        Array.isArray(payslipsRes.data?.payslips)
+          ? (payslipsRes.data.payslips as PayslipHistory[])
+          : [],
+      );
+      setLoans(
+        Array.isArray(loansRes.data?.loans)
+          ? (loansRes.data.loans as LoanRecord[])
+          : [],
+      );
+    } catch (err: unknown) {
+      setPayrollError(getErrorMessage(err, "Failed to load payroll data"));
+    } finally {
+      setPayrollLoading(false);
+    }
+  }, [employeeId, payslipYear]);
+
+  const handleLoanApply = useCallback(async () => {
+    setLoanApplyBusy(true);
+    setLoanApplyError("");
+
+    const amount = Number(loanApplyForm.amount);
+    const installment = Number(loanApplyForm.monthly_installment);
+
+    if (!amount || amount <= 0) {
+      setLoanApplyError("Please enter a valid amount");
+      setLoanApplyBusy(false);
+      return;
+    }
+    if (!installment || installment <= 0) {
+      setLoanApplyError("Please enter a valid monthly installment");
+      setLoanApplyBusy(false);
+      return;
+    }
+    if (installment > amount) {
+      setLoanApplyError("Installment cannot be greater than the loan amount");
+      setLoanApplyBusy(false);
+      return;
+    }
+    if (!loanApplyForm.start_date) {
+      setLoanApplyError("Please select a start deduction date");
+      setLoanApplyBusy(false);
+      return;
+    }
+    if (!loanApplyForm.reason || loanApplyForm.reason.trim().length < 5) {
+      setLoanApplyError("Please enter a reason (at least 5 characters)");
+      setLoanApplyBusy(false);
+      return;
+    }
+
+    try {
+      await api.post("/api/payroll/me/loans/apply", {
+        amount: amount,
+        monthly_installment: installment,
+        start_date: loanApplyForm.start_date,
+        reason: loanApplyForm.reason,
+      });
+      setLoanApplyOpen(false);
+      setLoanApplyForm({
+        amount: "",
+        monthly_installment: "",
+        start_date: "",
+        reason: "",
+      });
+      void fetchPayrollData();
+    } catch (err: unknown) {
+      setLoanApplyError(getErrorMessage(err, "Failed to apply for loan"));
+    } finally {
+      setLoanApplyBusy(false);
+    }
+  }, [fetchPayrollData, loanApplyForm]);
 
   const stopBiometricCamera = useCallback(() => {
     const stream = biometricStreamRef.current;
@@ -521,7 +643,7 @@ export default function EmployeePortal() {
     try {
       const res = await api.get(
         `/api/attendance/open?employee_id=${encodeURIComponent(employeeId)}`,
-        { timeout: 8000 }
+        { timeout: 8000 },
       );
       setOpenShift(Boolean(res.data?.open));
     } catch {
@@ -585,7 +707,7 @@ export default function EmployeePortal() {
   useEffect(() => {
     if (selectableLeaveTypes.length === 0) return;
     const codes = new Set(
-      selectableLeaveTypes.map((t) => String(t.code || ""))
+      selectableLeaveTypes.map((t) => String(t.code || "")),
     );
     setApplyForm((p) => {
       const cur = String(p.leave_type || "").trim();
@@ -776,7 +898,7 @@ export default function EmployeePortal() {
             window.clearTimeout(t);
             resolve(null);
           },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 6000 }
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 6000 },
         );
       });
     }, []);
@@ -788,7 +910,7 @@ export default function EmployeePortal() {
         modality: BiometricModality;
         image: string;
         geo?: BiometricGeo | null;
-      }
+      },
     ): Promise<boolean> => {
       if (!employeeId) return false;
       setClockBusy(true);
@@ -825,7 +947,7 @@ export default function EmployeePortal() {
         setClockBusy(false);
       }
     },
-    [employeeId, notifyAttendanceUpdated]
+    [employeeId, notifyAttendanceUpdated],
   );
 
   const startBiometricCamera = useCallback(async () => {
@@ -1024,25 +1146,25 @@ export default function EmployeePortal() {
         const [daysRes, leavesRes] = await Promise.all([
           api.get(
             `/api/attendance/days?start=${encodeURIComponent(
-              start
-            )}&end=${encodeURIComponent(end)}&limit=10000`
+              start,
+            )}&end=${encodeURIComponent(end)}&limit=10000`,
           ),
           api.get(
             `/api/leaves?start=${encodeURIComponent(
-              start
-            )}&end=${encodeURIComponent(end)}`
+              start,
+            )}&end=${encodeURIComponent(end)}`,
           ),
         ]);
 
         setReportDays(
           Array.isArray(daysRes.data?.days)
             ? (daysRes.data.days as AttendanceDay[])
-            : []
+            : [],
         );
         setReportLeaves(
           Array.isArray(leavesRes.data?.leaves)
             ? (leavesRes.data.leaves as LeaveRecord[])
-            : []
+            : [],
         );
 
         const fromYear = Number(String(start || "").slice(0, 4) || "0");
@@ -1051,18 +1173,18 @@ export default function EmployeePortal() {
           toYear >= 1970
             ? toYear
             : fromYear >= 1970
-            ? fromYear
-            : Number(todayStr.slice(0, 4));
+              ? fromYear
+              : Number(todayStr.slice(0, 4));
         try {
           const balanceRes = await api.get(
             `/api/leaves/balance?year=${encodeURIComponent(
-              String(year)
-            )}&as_of=${encodeURIComponent(end)}`
+              String(year),
+            )}&as_of=${encodeURIComponent(end)}`,
           );
           setReportBalance(
             Array.isArray(balanceRes.data?.allocations)
               ? (balanceRes.data.allocations as LeaveBalanceRow[])
-              : []
+              : [],
           );
         } catch {
           setReportBalance([]);
@@ -1076,7 +1198,7 @@ export default function EmployeePortal() {
         setReportBusy(false);
       }
     },
-    [employeeId, todayStr]
+    [employeeId, todayStr],
   );
 
   const generateReport = useCallback(() => {
@@ -1106,7 +1228,7 @@ export default function EmployeePortal() {
       setDayRows((attendanceRowsByDate.get(date) || []).slice());
       setDayOpen(true);
     },
-    [attendanceRowsByDate]
+    [attendanceRowsByDate],
   );
 
   const closeDay = useCallback(() => {
@@ -1124,8 +1246,8 @@ export default function EmployeePortal() {
     try {
       const res = await api.get(
         `/api/attendance/evidence?attendance_record_id=${encodeURIComponent(
-          id
-        )}`
+          id,
+        )}`,
       );
       const list = Array.isArray(res.data?.evidence) ? res.data.evidence : [];
       setEvidenceItems(list as EvidenceItem[]);
@@ -1181,15 +1303,15 @@ export default function EmployeePortal() {
         borderColor: "divider",
         borderRadius: 3,
         bgcolor: "background.paper",
-      } as const),
-    []
+      }) as const,
+    [],
   );
 
   const recentAttendance = useMemo(() => {
     const list = attendance
       .slice()
       .sort((a, b) =>
-        String(b.clock_in || "").localeCompare(String(a.clock_in || ""))
+        String(b.clock_in || "").localeCompare(String(a.clock_in || "")),
       );
     return list.slice(0, 6);
   }, [attendance]);
@@ -1210,23 +1332,23 @@ export default function EmployeePortal() {
   const reportSummary = useMemo(() => {
     const workedMinutes = reportDays.reduce(
       (sum, d) => sum + Math.max(0, Number(d.worked_minutes || 0)),
-      0
+      0,
     );
     const overtimeMinutes = reportDays.reduce(
       (sum, d) => sum + Math.max(0, Number(d.overtime_minutes || 0)),
-      0
+      0,
     );
     const lateDays = reportDays.reduce(
       (sum, d) => sum + (Number(d.late_minutes || 0) > 0 ? 1 : 0),
-      0
+      0,
     );
     const earlyLeaveDays = reportDays.reduce(
       (sum, d) => sum + (Number(d.early_leave_minutes || 0) > 0 ? 1 : 0),
-      0
+      0,
     );
     const workedDays = reportDays.reduce(
       (sum, d) => sum + (Number(d.worked_minutes || 0) > 0 ? 1 : 0),
-      0
+      0,
     );
     const absentDays = reportDays.reduce((sum, d) => {
       const s = String(d.status || "")
@@ -1295,7 +1417,7 @@ export default function EmployeePortal() {
             (l) =>
               String(l.status || "pending")
                 .toLowerCase()
-                .trim() === leaveStatusFilter
+                .trim() === leaveStatusFilter,
           );
     return list
       .slice()
@@ -1365,7 +1487,7 @@ export default function EmployeePortal() {
     if (start && end)
       void runReportForRange(
         start <= end ? start : end,
-        start <= end ? end : start
+        start <= end ? end : start,
       );
     navigate("/employee-portal", { replace: true });
   }, [
@@ -1390,6 +1512,19 @@ export default function EmployeePortal() {
   }, [employeeId, location.search, navigate]);
 
   useEffect(() => {
+    if (tab === 3) {
+      void fetchPayrollData();
+    }
+  }, [tab, fetchPayrollData]);
+
+  useEffect(() => {
+    const p = new URLSearchParams(location.search || "");
+    if (p.get("tab") === "payroll") {
+      setTab(3);
+    }
+  }, [location.search]);
+
+  useEffect(() => {
     if (!employeeId) return;
     const p = new URLSearchParams(location.search || "");
     const raw = String(p.get("quickCheck") || "")
@@ -1400,8 +1535,8 @@ export default function EmployeePortal() {
       raw === "in" || raw === "checkin"
         ? "in"
         : raw === "out" || raw === "checkout"
-        ? "out"
-        : null;
+          ? "out"
+          : null;
     if (!nextType) {
       if (openShift === null) {
         void refreshOpenShift();
@@ -1587,15 +1722,15 @@ export default function EmployeePortal() {
                       openShift === null
                         ? "Shift: Unknown"
                         : openShift
-                        ? "Shift: Open"
-                        : "Shift: Closed"
+                          ? "Shift: Open"
+                          : "Shift: Closed"
                     }
                     color={
                       openShift === null
                         ? "default"
                         : openShift
-                        ? "success"
-                        : "warning"
+                          ? "success"
+                          : "warning"
                     }
                     variant="outlined"
                     sx={{
@@ -1942,6 +2077,7 @@ export default function EmployeePortal() {
               <Tab label="Calendar" />
               <Tab label="Leaves" />
               <Tab label="Overview" />
+              <Tab label="Payroll" />
             </Tabs>
             <Divider />
             <Box sx={{ p: 2.5 }}>
@@ -2099,7 +2235,7 @@ export default function EmployeePortal() {
                           {recentAttendance.map((r) => {
                             const inMethod = normalizeMethod(r.clock_in_method);
                             const outMethod = normalizeMethod(
-                              r.clock_out_method
+                              r.clock_out_method,
                             );
                             const inHasGeo =
                               typeof r.clock_in_lat === "number" &&
@@ -2115,13 +2251,13 @@ export default function EmployeePortal() {
                                   border: "1px solid",
                                   borderColor: alpha(
                                     theme.palette.text.primary,
-                                    0.1
+                                    0.1,
                                   ),
                                   borderRadius: 3.5,
                                   p: 1.5,
                                   bgcolor: alpha(
                                     theme.palette.background.paper,
-                                    0.78
+                                    0.78,
                                   ),
                                 }}
                               >
@@ -2143,7 +2279,7 @@ export default function EmployeePortal() {
                                       noWrap
                                     >
                                       {minutesToHM(
-                                        Number(r.duration_minutes || 0)
+                                        Number(r.duration_minutes || 0),
                                       )}
                                     </Typography>
                                   </Box>
@@ -2172,13 +2308,13 @@ export default function EmployeePortal() {
                                           fontWeight: 700,
                                           bgcolor: alpha(
                                             theme.palette.primary.main,
-                                            0.12
+                                            0.12,
                                           ),
                                           color: theme.palette.primary.dark,
                                           border: "1px solid",
                                           borderColor: alpha(
                                             theme.palette.primary.main,
-                                            0.24
+                                            0.24,
                                           ),
                                         }}
                                       />
@@ -2229,13 +2365,13 @@ export default function EmployeePortal() {
                               border: "1px solid",
                               borderColor: alpha(
                                 theme.palette.text.primary,
-                                0.1
+                                0.1,
                               ),
                               borderRadius: 3,
                               p: 1.5,
                               bgcolor: alpha(
                                 theme.palette.background.paper,
-                                0.78
+                                0.78,
                               ),
                             }}
                           >
@@ -2307,6 +2443,234 @@ export default function EmployeePortal() {
                 </Box>
               )}
 
+              {tab === 3 && (
+                <Stack spacing={2}>
+                  {payrollLoading ? (
+                    <Stack
+                      direction="row"
+                      spacing={2}
+                      alignItems="center"
+                      sx={{ mb: 2 }}
+                    >
+                      <CircularProgress size={18} />
+                      <Typography variant="body2" color="text.secondary">
+                        Loading payroll data…
+                      </Typography>
+                    </Stack>
+                  ) : payrollError ? (
+                    <Alert severity="error" sx={{ borderRadius: 2 }}>
+                      {payrollError}
+                    </Alert>
+                  ) : (
+                    <>
+                      <Paper elevation={0} sx={{ ...panelCardSx, p: 2 }}>
+                        <Stack
+                          direction={{ xs: "column", sm: "row" }}
+                          spacing={1.5}
+                          alignItems={{ sm: "center" }}
+                          justifyContent="space-between"
+                          sx={{ mb: 2 }}
+                        >
+                          <Typography sx={{ fontWeight: 800 }}>
+                            Payslip History
+                          </Typography>
+                          <TextField
+                            select
+                            size="small"
+                            value={payslipYear}
+                            onChange={(e) =>
+                              setPayslipYear(Number(e.target.value))
+                            }
+                            SelectProps={{ native: true }}
+                            sx={{ width: { xs: "100%", sm: 120 } }}
+                          >
+                            {Array.from(
+                              { length: 5 },
+                              (_, i) => new Date().getFullYear() - i,
+                            ).map((y) => (
+                              <option key={y} value={y}>
+                                {y}
+                              </option>
+                            ))}
+                          </TextField>
+                        </Stack>
+
+                        {payslips.length === 0 ? (
+                          <Typography variant="body2" color="text.secondary">
+                            No payslips found for {payslipYear}.
+                          </Typography>
+                        ) : (
+                          <Stack spacing={1}>
+                            {payslips.map((p) => (
+                              <Paper
+                                key={p.payslip_id}
+                                elevation={0}
+                                sx={{
+                                  border: "1px solid",
+                                  borderColor: "divider",
+                                  borderRadius: 3,
+                                  p: 1.5,
+                                  bgcolor: alpha(
+                                    theme.palette.background.paper,
+                                    0.78,
+                                  ),
+                                }}
+                              >
+                                <Stack
+                                  direction={{ xs: "column", sm: "row" }}
+                                  spacing={1.5}
+                                  alignItems={{ sm: "center" }}
+                                >
+                                  <Box sx={{ flex: 1 }}>
+                                    <Typography sx={{ fontWeight: 800 }}>
+                                      {p.cycle_name}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                    >
+                                      Generated: {p.end_date}
+                                    </Typography>
+                                  </Box>
+                                  <Stack
+                                    direction="row"
+                                    spacing={2}
+                                    alignItems="center"
+                                  >
+                                    <Box sx={{ textAlign: "right" }}>
+                                      <Typography
+                                        variant="body2"
+                                        sx={{ fontWeight: 700 }}
+                                      >
+                                        Net:{" "}
+                                        {Number(p.net_salary).toLocaleString()}
+                                      </Typography>
+                                      <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                      >
+                                        Gross:{" "}
+                                        {Number(
+                                          p.gross_salary,
+                                        ).toLocaleString()}
+                                      </Typography>
+                                    </Box>
+                                    <IconButton
+                                      size="small"
+                                      color="primary"
+                                      component="a"
+                                      href={`${api.defaults.baseURL || ""}/api/payroll/payslip/view?id=${p.payslip_id}`}
+                                      target="_blank"
+                                      sx={{
+                                        bgcolor: alpha(
+                                          theme.palette.primary.main,
+                                          0.1,
+                                        ),
+                                        "&:hover": {
+                                          bgcolor: alpha(
+                                            theme.palette.primary.main,
+                                            0.2,
+                                          ),
+                                        },
+                                      }}
+                                    >
+                                      <DownloadRounded fontSize="small" />
+                                    </IconButton>
+                                  </Stack>
+                                </Stack>
+                              </Paper>
+                            ))}
+                          </Stack>
+                        )}
+                      </Paper>
+
+                      <Paper elevation={0} sx={{ ...panelCardSx, p: 2 }}>
+                        <Stack
+                          direction="row"
+                          justifyContent="space-between"
+                          alignItems="center"
+                          sx={{ mb: 2 }}
+                        >
+                          <Typography sx={{ fontWeight: 800 }}>
+                            Loans & Advances
+                          </Typography>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<AddRounded />}
+                            onClick={() => setLoanApplyOpen(true)}
+                          >
+                            Apply
+                          </Button>
+                        </Stack>
+                        {loans.length === 0 ? (
+                          <Typography variant="body2" color="text.secondary">
+                            No active loans.
+                          </Typography>
+                        ) : (
+                          <Stack spacing={1}>
+                            {loans.map((l) => (
+                              <Paper
+                                key={l.id}
+                                elevation={0}
+                                sx={{
+                                  border: "1px solid",
+                                  borderColor: "divider",
+                                  borderRadius: 3,
+                                  p: 1.5,
+                                  bgcolor: alpha(
+                                    theme.palette.background.paper,
+                                    0.78,
+                                  ),
+                                }}
+                              >
+                                <Stack
+                                  direction={{ xs: "column", sm: "row" }}
+                                  spacing={1.5}
+                                  alignItems={{ sm: "center" }}
+                                >
+                                  <Box sx={{ flex: 1 }}>
+                                    <Typography sx={{ fontWeight: 800 }}>
+                                      {l.type} Loan
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                    >
+                                      Start: {l.start_date} • {l.status}
+                                    </Typography>
+                                  </Box>
+                                  <Box sx={{ textAlign: "right" }}>
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        fontWeight: 700,
+                                        color: theme.palette.error.main,
+                                      }}
+                                    >
+                                      Bal:{" "}
+                                      {Number(
+                                        l.current_balance,
+                                      ).toLocaleString()}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                    >
+                                      Total: {Number(l.amount).toLocaleString()}
+                                    </Typography>
+                                  </Box>
+                                </Stack>
+                              </Paper>
+                            ))}
+                          </Stack>
+                        )}
+                      </Paper>
+                    </>
+                  )}
+                </Stack>
+              )}
+
               {tab === 0 && (
                 <Stack spacing={2}>
                   <Paper elevation={0} sx={{ ...panelCardSx, p: 1.5 }}>
@@ -2322,7 +2686,7 @@ export default function EmployeePortal() {
                           onClick={() =>
                             setMonth(
                               (d) =>
-                                new Date(d.getFullYear(), d.getMonth() - 1, 1)
+                                new Date(d.getFullYear(), d.getMonth() - 1, 1),
                             )
                           }
                           aria-label="Previous month"
@@ -2354,7 +2718,7 @@ export default function EmployeePortal() {
                           onClick={() =>
                             setMonth(
                               (d) =>
-                                new Date(d.getFullYear(), d.getMonth() + 1, 1)
+                                new Date(d.getFullYear(), d.getMonth() + 1, 1),
                             )
                           }
                           aria-label="Next month"
@@ -2415,7 +2779,7 @@ export default function EmployeePortal() {
                               {isMobile ? w.slice(0, 1) : w}
                             </Typography>
                           </Box>
-                        )
+                        ),
                       )}
                     </Box>
 
@@ -2442,7 +2806,7 @@ export default function EmployeePortal() {
                                 borderRadius: { xs: 2.5, sm: 3 },
                                 bgcolor: alpha(
                                   theme.palette.text.primary,
-                                  0.02
+                                  0.02,
                                 ),
                               }}
                             />
@@ -2461,45 +2825,45 @@ export default function EmployeePortal() {
                         const leaveList = leavesByDate.get(d) || [];
                         const approvedLeave = leaveList.find(
                           (l) =>
-                            String(l.status || "").toLowerCase() === "approved"
+                            String(l.status || "").toLowerCase() === "approved",
                         );
                         const pendingLeave = leaveList.find(
                           (l) =>
-                            String(l.status || "").toLowerCase() === "pending"
+                            String(l.status || "").toLowerCase() === "pending",
                         );
                         const rejectedLeave = leaveList.find(
                           (l) =>
-                            String(l.status || "").toLowerCase() === "rejected"
+                            String(l.status || "").toLowerCase() === "rejected",
                         );
 
                         const badge = punch
                           ? { label: "Present", sx: chipSx.ok }
                           : approvedLeave
-                          ? { label: "Leave", sx: chipSx.ok }
-                          : pendingLeave
-                          ? { label: "Pending", sx: chipSx.warn }
-                          : rejectedLeave
-                          ? { label: "Rejected", sx: chipSx.error }
-                          : holiday
-                          ? { label: "Holiday", sx: chipSx.neutral }
-                          : isOffByShift
-                          ? { label: "Off", sx: chipSx.neutral }
-                          : d < todayStr
-                          ? { label: "Absent", sx: chipSx.error }
-                          : { label: "—", sx: chipSx.neutral };
+                            ? { label: "Leave", sx: chipSx.ok }
+                            : pendingLeave
+                              ? { label: "Pending", sx: chipSx.warn }
+                              : rejectedLeave
+                                ? { label: "Rejected", sx: chipSx.error }
+                                : holiday
+                                  ? { label: "Holiday", sx: chipSx.neutral }
+                                  : isOffByShift
+                                    ? { label: "Off", sx: chipSx.neutral }
+                                    : d < todayStr
+                                      ? { label: "Absent", sx: chipSx.error }
+                                      : { label: "—", sx: chipSx.neutral };
 
                         const isToday = d === todayStr;
                         const subtitle = holiday
                           ? holiday.name
                           : badge.label === "Off"
-                          ? "Off"
-                          : punch
-                          ? minutesToHM(punch.minutes)
-                          : leaveList.length > 0
-                          ? `${formatLeaveTypeLabel(
-                              leaveList[0]?.leave_type
-                            )} • ${String(leaveList[0]?.day_part || "full")}`
-                          : "";
+                            ? "Off"
+                            : punch
+                              ? minutesToHM(punch.minutes)
+                              : leaveList.length > 0
+                                ? `${formatLeaveTypeLabel(
+                                    leaveList[0]?.leave_type,
+                                  )} • ${String(leaveList[0]?.day_part || "full")}`
+                                : "";
                         const isAbsent =
                           badge.label === "Absent" &&
                           !holiday &&
@@ -2522,16 +2886,16 @@ export default function EmployeePortal() {
                           | "none" = isHoliday
                           ? "holiday"
                           : isPresent
-                          ? "present"
-                          : badge.label === "Leave"
-                          ? "leave"
-                          : badge.label === "Pending"
-                          ? "pending"
-                          : badge.label === "Rejected"
-                          ? "rejected"
-                          : isAbsent
-                          ? "absent"
-                          : "none";
+                            ? "present"
+                            : badge.label === "Leave"
+                              ? "leave"
+                              : badge.label === "Pending"
+                                ? "pending"
+                                : badge.label === "Rejected"
+                                  ? "rejected"
+                                  : isAbsent
+                                    ? "absent"
+                                    : "none";
 
                         const showCenteredStatus = isMobile
                           ? status === "present" || status === "holiday"
@@ -2539,76 +2903,79 @@ export default function EmployeePortal() {
                         const centeredPrimary = isPresent
                           ? subtitle
                           : isLeave
-                          ? badge.label
-                          : isHoliday
-                          ? badge.label === "Off"
-                            ? "Off"
-                            : "Holiday"
-                          : isAbsent
-                          ? "Absent"
-                          : "";
+                            ? badge.label
+                            : isHoliday
+                              ? badge.label === "Off"
+                                ? "Off"
+                                : "Holiday"
+                              : isAbsent
+                                ? "Absent"
+                                : "";
                         const centeredSecondary = isPresent
                           ? ""
                           : isHoliday
-                          ? holiday?.name || ""
-                          : isLeave
-                          ? subtitle
-                          : "";
+                            ? holiday?.name || ""
+                            : isLeave
+                              ? subtitle
+                              : "";
                         const dayNumberColor =
                           status === "present"
                             ? theme.palette.success.main
                             : status === "absent"
-                            ? theme.palette.error.main
-                            : status === "holiday"
-                            ? alpha(theme.palette.text.primary, 0.45)
-                            : status === "leave"
-                            ? theme.palette.warning.dark
-                            : theme.palette.text.primary;
+                              ? theme.palette.error.main
+                              : status === "holiday"
+                                ? alpha(theme.palette.text.primary, 0.45)
+                                : status === "leave"
+                                  ? theme.palette.warning.dark
+                                  : theme.palette.text.primary;
 
                         const primaryTextColor =
                           status === "present"
                             ? theme.palette.success.dark
                             : status === "absent"
-                            ? theme.palette.error.dark
-                            : status === "holiday"
-                            ? theme.palette.text.secondary
-                            : status === "leave" || status === "pending"
-                            ? theme.palette.warning.dark
-                            : status === "rejected"
-                            ? theme.palette.error.dark
-                            : theme.palette.text.primary;
+                              ? theme.palette.error.dark
+                              : status === "holiday"
+                                ? theme.palette.text.secondary
+                                : status === "leave" || status === "pending"
+                                  ? theme.palette.warning.dark
+                                  : status === "rejected"
+                                    ? theme.palette.error.dark
+                                    : theme.palette.text.primary;
 
                         const dayBg =
                           status === "present"
                             ? alpha(theme.palette.success.main, 0.08)
                             : status === "absent"
-                            ? alpha(theme.palette.error.main, 0.06)
-                            : status === "holiday"
-                            ? alpha(theme.palette.text.primary, 0.03)
-                            : status === "leave"
-                            ? alpha(theme.palette.warning.main, 0.08)
-                            : status === "pending"
-                            ? "transparent"
-                            : status === "rejected"
-                            ? alpha(theme.palette.error.main, 0.06)
-                            : isWeekend
-                            ? alpha(theme.palette.text.primary, 0.02)
-                            : "transparent";
+                              ? alpha(theme.palette.error.main, 0.06)
+                              : status === "holiday"
+                                ? alpha(theme.palette.text.primary, 0.03)
+                                : status === "leave"
+                                  ? alpha(theme.palette.warning.main, 0.08)
+                                  : status === "pending"
+                                    ? "transparent"
+                                    : status === "rejected"
+                                      ? alpha(theme.palette.error.main, 0.06)
+                                      : isWeekend
+                                        ? alpha(
+                                            theme.palette.text.primary,
+                                            0.02,
+                                          )
+                                        : "transparent";
 
                         const statusBorderColor =
                           status === "present"
                             ? alpha(theme.palette.success.main, 0.35)
                             : status === "absent"
-                            ? alpha(theme.palette.error.main, 0.35)
-                            : status === "holiday"
-                            ? alpha(theme.palette.text.primary, 0.2)
-                            : status === "leave"
-                            ? alpha(theme.palette.warning.main, 0.35)
-                            : status === "pending"
-                            ? alpha(theme.palette.warning.main, 0.6)
-                            : status === "rejected"
-                            ? alpha(theme.palette.error.main, 0.55)
-                            : "divider";
+                              ? alpha(theme.palette.error.main, 0.35)
+                              : status === "holiday"
+                                ? alpha(theme.palette.text.primary, 0.2)
+                                : status === "leave"
+                                  ? alpha(theme.palette.warning.main, 0.35)
+                                  : status === "pending"
+                                    ? alpha(theme.palette.warning.main, 0.6)
+                                    : status === "rejected"
+                                      ? alpha(theme.palette.error.main, 0.55)
+                                      : "divider";
 
                         const methodSummary = (() => {
                           const methods = new Set<
@@ -2655,13 +3022,13 @@ export default function EmployeePortal() {
                                 : statusBorderColor,
                               bgcolor: alpha(
                                 theme.palette.background.paper,
-                                0.92
+                                0.92,
                               ),
                               transition: "border-color 140ms ease",
                               "&:hover": {
                                 borderColor: alpha(
                                   theme.palette.primary.main,
-                                  0.2
+                                  0.2,
                                 ),
                               },
                             }}
@@ -2781,7 +3148,7 @@ export default function EmployeePortal() {
                                           fontWeight: 800,
                                           color: alpha(
                                             theme.palette.text.primary,
-                                            0.55
+                                            0.55,
                                           ),
                                           textTransform: "uppercase",
                                           letterSpacing: 0.6,
@@ -2851,7 +3218,7 @@ export default function EmployeePortal() {
                                           fontWeight: 700,
                                           bgcolor: alpha(
                                             theme.palette.text.primary,
-                                            0.06
+                                            0.06,
                                           ),
                                         }}
                                       />
@@ -2864,7 +3231,7 @@ export default function EmployeePortal() {
                                         fontWeight: 700,
                                         bgcolor: alpha(
                                           theme.palette.text.primary,
-                                          0.06
+                                          0.06,
                                         ),
                                       }}
                                     />
@@ -2877,7 +3244,7 @@ export default function EmployeePortal() {
                                         fontWeight: 700,
                                         bgcolor: alpha(
                                           theme.palette.primary.main,
-                                          0.12
+                                          0.12,
                                         ),
                                         color: theme.palette.primary.dark,
                                       }}
@@ -2925,7 +3292,7 @@ export default function EmployeePortal() {
                           onClick={() =>
                             setMonth(
                               (d) =>
-                                new Date(d.getFullYear(), d.getMonth() - 1, 1)
+                                new Date(d.getFullYear(), d.getMonth() - 1, 1),
                             )
                           }
                           sx={{ borderRadius: 2, fontWeight: 700 }}
@@ -2947,7 +3314,7 @@ export default function EmployeePortal() {
                           onClick={() =>
                             setMonth(
                               (d) =>
-                                new Date(d.getFullYear(), d.getMonth() + 1, 1)
+                                new Date(d.getFullYear(), d.getMonth() + 1, 1),
                             )
                           }
                           sx={{ borderRadius: 2, fontWeight: 700 }}
@@ -3066,7 +3433,7 @@ export default function EmployeePortal() {
                             .toLowerCase()
                             .trim();
                           const dayName = new Date(
-                            `${l.date}T00:00:00`
+                            `${l.date}T00:00:00`,
                           ).toLocaleDateString("default", { weekday: "short" });
                           return (
                             <Paper
@@ -3079,13 +3446,13 @@ export default function EmployeePortal() {
                                 p: 1.5,
                                 bgcolor: alpha(
                                   theme.palette.background.paper,
-                                  0.78
+                                  0.78,
                                 ),
                                 transition: "border-color 140ms ease",
                                 "&:hover": {
                                   borderColor: alpha(
                                     theme.palette.primary.main,
-                                    0.2
+                                    0.2,
                                   ),
                                 },
                               }}
@@ -3116,10 +3483,10 @@ export default function EmployeePortal() {
                                     ...(status === "approved"
                                       ? chipSx.ok
                                       : status === "rejected"
-                                      ? chipSx.error
-                                      : status === "pending"
-                                      ? chipSx.warn
-                                      : chipSx.neutral),
+                                        ? chipSx.error
+                                        : status === "pending"
+                                          ? chipSx.warn
+                                          : chipSx.neutral),
                                   }}
                                 >
                                   <Typography
@@ -3155,7 +3522,7 @@ export default function EmployeePortal() {
                               .toLowerCase()
                               .trim();
                             const dayName = new Date(
-                              `${l.date}T00:00:00`
+                              `${l.date}T00:00:00`,
                             ).toLocaleDateString("default", {
                               weekday: "short",
                             });
@@ -3170,13 +3537,13 @@ export default function EmployeePortal() {
                                   p: 1.5,
                                   bgcolor: alpha(
                                     theme.palette.background.paper,
-                                    0.78
+                                    0.78,
                                   ),
                                   transition: "border-color 140ms ease",
                                   "&:hover": {
                                     borderColor: alpha(
                                       theme.palette.primary.main,
-                                      0.2
+                                      0.2,
                                     ),
                                   },
                                 }}
@@ -3207,10 +3574,10 @@ export default function EmployeePortal() {
                                       ...(status === "approved"
                                         ? chipSx.ok
                                         : status === "rejected"
-                                        ? chipSx.error
-                                        : status === "pending"
-                                        ? chipSx.warn
-                                        : chipSx.neutral),
+                                          ? chipSx.error
+                                          : status === "pending"
+                                            ? chipSx.warn
+                                            : chipSx.neutral),
                                     }}
                                   >
                                     <Typography
@@ -3264,9 +3631,9 @@ export default function EmployeePortal() {
                 {leaveList.length > 0 ? (
                   <Alert severity="warning" sx={{ borderRadius: 2 }}>
                     {`Leave • ${formatLeaveTypeLabel(
-                      leaveList[0]?.leave_type
+                      leaveList[0]?.leave_type,
                     )} • ${String(leaveList[0]?.day_part || "full")} • ${String(
-                      leaveList[0]?.status || "pending"
+                      leaveList[0]?.status || "pending",
                     )}`}
                   </Alert>
                 ) : null}
@@ -3418,7 +3785,7 @@ export default function EmployeePortal() {
                                     component="a"
                                     href={mapsUrl(
                                       r.clock_in_lat as number,
-                                      r.clock_in_lng as number
+                                      r.clock_in_lng as number,
                                     )}
                                     target="_blank"
                                     rel="noreferrer"
@@ -3431,7 +3798,7 @@ export default function EmployeePortal() {
                                     IN:{" "}
                                     {formatLatLng(
                                       r.clock_in_lat,
-                                      r.clock_in_lng
+                                      r.clock_in_lng,
                                     )}
                                     {r.clock_in_accuracy_m
                                       ? ` (${r.clock_in_accuracy_m}m)`
@@ -3444,7 +3811,7 @@ export default function EmployeePortal() {
                                     component="a"
                                     href={mapsUrl(
                                       r.clock_out_lat as number,
-                                      r.clock_out_lng as number
+                                      r.clock_out_lng as number,
                                     )}
                                     target="_blank"
                                     rel="noreferrer"
@@ -3457,7 +3824,7 @@ export default function EmployeePortal() {
                                     OUT:{" "}
                                     {formatLatLng(
                                       r.clock_out_lat,
-                                      r.clock_out_lng
+                                      r.clock_out_lng,
                                     )}
                                     {r.clock_out_accuracy_m
                                       ? ` (${r.clock_out_accuracy_m}m)`
@@ -3571,7 +3938,7 @@ export default function EmployeePortal() {
                         component="a"
                         href={mapsUrl(
                           ev.latitude as number,
-                          ev.longitude as number
+                          ev.longitude as number,
                         )}
                         target="_blank"
                         rel="noreferrer"
@@ -3756,7 +4123,7 @@ export default function EmployeePortal() {
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                   <Chip
                     label={`Worked: ${minutesToHM(
-                      reportSummary.workedMinutes
+                      reportSummary.workedMinutes,
                     )}`}
                     sx={{ fontWeight: 800 }}
                   />
@@ -3778,7 +4145,7 @@ export default function EmployeePortal() {
                   />
                   <Chip
                     label={`Overtime: ${minutesToHM(
-                      reportSummary.overtimeMinutes
+                      reportSummary.overtimeMinutes,
                     )}`}
                     sx={{ fontWeight: 800 }}
                   />
@@ -3788,21 +4155,21 @@ export default function EmployeePortal() {
                   <Chip
                     color="success"
                     label={`Leave approved: ${formatDaysAmount(
-                      reportSummary.leaveDaysApproved
+                      reportSummary.leaveDaysApproved,
                     )} day(s)`}
                     sx={{ fontWeight: 800 }}
                   />
                   <Chip
                     color="warning"
                     label={`Leave pending: ${formatDaysAmount(
-                      reportSummary.leaveDaysPending
+                      reportSummary.leaveDaysPending,
                     )} day(s)`}
                     sx={{ fontWeight: 800 }}
                   />
                   <Chip
                     color="error"
                     label={`Leave rejected: ${formatDaysAmount(
-                      reportSummary.leaveDaysRejected
+                      reportSummary.leaveDaysRejected,
                     )} day(s)`}
                     sx={{ fontWeight: 800 }}
                   />
@@ -3850,7 +4217,7 @@ export default function EmployeePortal() {
                         </Box>
                         <Chip
                           label={`Remaining ${formatDaysAmount(
-                            r.remaining_days
+                            r.remaining_days,
                           )}`}
                           color={r.remaining_days > 0 ? "success" : "default"}
                           sx={{ fontWeight: 800, justifySelf: { sm: "end" } }}
@@ -3898,7 +4265,7 @@ export default function EmployeePortal() {
                         </Box>
                         <Chip
                           label={`Total ${formatDaysAmount(
-                            t.approved + t.pending + t.rejected
+                            t.approved + t.pending + t.rejected,
                           )}`}
                           sx={{ fontWeight: 800, justifySelf: { sm: "end" } }}
                         />
@@ -4027,8 +4394,8 @@ export default function EmployeePortal() {
           {biometricAction === "enroll"
             ? "Enroll Biometrics"
             : biometricAction === "clock_in"
-            ? "Check In (Biometric)"
-            : "Check Out (Biometric)"}
+              ? "Check In (Biometric)"
+              : "Check Out (Biometric)"}
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -4060,8 +4427,8 @@ export default function EmployeePortal() {
                     display: biometricImage
                       ? "none"
                       : biometricCameraOn
-                      ? "block"
-                      : "none",
+                        ? "block"
+                        : "none",
                   }}
                 />
                 {biometricImage ? (
@@ -4090,8 +4457,8 @@ export default function EmployeePortal() {
                   {biometricImage
                     ? "Retake picture"
                     : biometricCameraOn
-                    ? "Capture"
-                    : "Take picture"}
+                      ? "Capture"
+                      : "Take picture"}
                 </Button>
               </Stack>
             </Stack>
@@ -4109,10 +4476,10 @@ export default function EmployeePortal() {
             {biometricBusy
               ? "Please wait…"
               : biometricAction === "enroll"
-              ? "Enroll"
-              : biometricAction === "clock_in"
-              ? "Check In"
-              : "Check Out"}
+                ? "Enroll"
+                : biometricAction === "clock_in"
+                  ? "Check In"
+                  : "Check Out"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -4392,6 +4759,94 @@ export default function EmployeePortal() {
             }}
           >
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={loanApplyOpen}
+        onClose={() => !loanApplyBusy && setLoanApplyOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>Apply for Loan</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            {loanApplyError && (
+              <Alert severity="error" sx={{ borderRadius: 2 }}>
+                {loanApplyError}
+              </Alert>
+            )}
+            <TextField
+              label="Amount"
+              type="number"
+              fullWidth
+              required
+              value={loanApplyForm.amount}
+              onChange={(e) =>
+                setLoanApplyForm({ ...loanApplyForm, amount: e.target.value })
+              }
+            />
+            <TextField
+              label="Monthly Installment"
+              type="number"
+              fullWidth
+              required
+              value={loanApplyForm.monthly_installment}
+              onChange={(e) =>
+                setLoanApplyForm({
+                  ...loanApplyForm,
+                  monthly_installment: e.target.value,
+                })
+              }
+              helperText="Amount to be deducted per month"
+            />
+            <TextField
+              label="Start Deduction Date"
+              type="date"
+              fullWidth
+              required
+              InputLabelProps={{ shrink: true }}
+              value={loanApplyForm.start_date}
+              onChange={(e) =>
+                setLoanApplyForm({
+                  ...loanApplyForm,
+                  start_date: e.target.value,
+                })
+              }
+            />
+            <TextField
+              label="Reason"
+              fullWidth
+              multiline
+              rows={3}
+              value={loanApplyForm.reason}
+              onChange={(e) =>
+                setLoanApplyForm({ ...loanApplyForm, reason: e.target.value })
+              }
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setLoanApplyOpen(false)}
+            disabled={loanApplyBusy}
+            sx={{ fontWeight: 700 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleLoanApply}
+            disabled={loanApplyBusy}
+            sx={{ fontWeight: 700 }}
+          >
+            {loanApplyBusy ? (
+              <CircularProgress size={24} color="inherit" />
+            ) : (
+              "Submit Application"
+            )}
           </Button>
         </DialogActions>
       </Dialog>

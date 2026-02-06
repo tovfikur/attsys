@@ -61,6 +61,12 @@ class ZKTecoSync:
         
     def connect(self) -> bool:
         """Connect to the ZKTeco device"""
+        print(f"[INFO] Attempting to connect to ZKTeco device...", file=sys.stderr)
+        print(f"[INFO] IP: {self.ip}", file=sys.stderr)
+        print(f"[INFO] Port: {self.port}", file=sys.stderr)
+        print(f"[INFO] Password: {self.password}", file=sys.stderr)
+        print(f"[INFO] Timeout: {self.timeout}s", file=sys.stderr)
+        
         try:
             self.zk = ZK(
                 self.ip,
@@ -70,10 +76,19 @@ class ZKTecoSync:
                 force_udp=False,
                 omit_ping=True
             )
+            print(f"[INFO] ZK object created, attempting connection...", file=sys.stderr)
             self.conn = self.zk.connect()
+            print(f"[SUCCESS] Connected to device successfully!", file=sys.stderr)
             return True
+        except ZKError as e:
+            print(f"[ERROR] ZKTeco connection error: {e}", file=sys.stderr)
+            print(f"[DEBUG] Error type: {type(e).__name__}", file=sys.stderr)
+            return False
         except Exception as e:
-            print(f"Connection failed: {e}", file=sys.stderr)
+            print(f"[ERROR] Unexpected connection error: {e}", file=sys.stderr)
+            print(f"[DEBUG] Error type: {type(e).__name__}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
             return False
     
     def disconnect(self):
@@ -88,26 +103,42 @@ class ZKTecoSync:
     def get_device_info(self) -> Dict[str, Any]:
         """Get device information"""
         if not self.conn:
+            print(f"[ERROR] Cannot get device info - not connected", file=sys.stderr)
             return {"error": "Not connected"}
         
         try:
+            print(f"[INFO] Retrieving device information...", file=sys.stderr)
+            device_name = self.conn.get_device_name() or "ZKTeco Device"
+            serial = self.conn.get_serialnumber() or "Unknown"
+            firmware = self.conn.get_firmware_version() or "Unknown"
+            platform = self.conn.get_platform() or "Unknown"
+            
+            print(f"[INFO] Device Name: {device_name}", file=sys.stderr)
+            print(f"[INFO] Serial: {serial}", file=sys.stderr)
+            print(f"[INFO] Firmware: {firmware}", file=sys.stderr)
+            print(f"[INFO] Platform: {platform}", file=sys.stderr)
+            
             return {
                 "connected": True,
-                "device_name": self.conn.get_device_name() or "ZKTeco Device",
-                "serial_number": self.conn.get_serialnumber() or "Unknown",
-                "firmware_version": self.conn.get_firmware_version() or "Unknown",
-                "platform": self.conn.get_platform() or "Unknown",
+                "device_name": device_name,
+                "serial_number": serial,
+                "firmware_version": firmware,
+                "platform": platform,
             }
         except Exception as e:
+            print(f"[ERROR] Failed to get device info: {e}", file=sys.stderr)
             return {"connected": True, "error": str(e)}
     
     def get_users(self) -> List[Dict[str, Any]]:
         """Get all users from the device"""
         if not self.conn:
+            print(f"[ERROR] Cannot get users - not connected", file=sys.stderr)
             return []
         
         try:
+            print(f"[INFO] Retrieving users from device...", file=sys.stderr)
             users = self.conn.get_users()
+            print(f"[INFO] Found {len(users)} users on device", file=sys.stderr)
             return [
                 {
                     "uid": u.uid,
@@ -119,7 +150,9 @@ class ZKTecoSync:
                 for u in users
             ]
         except Exception as e:
-            print(f"Failed to get users: {e}", file=sys.stderr)
+            print(f"[ERROR] Failed to get users: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
             return []
     
     def get_attendance(self, since: Optional[datetime] = None) -> List[Dict[str, Any]]:
@@ -252,6 +285,10 @@ class ZKTecoSync:
 
 def test_connection(args) -> Dict[str, Any]:
     """Test connection to ZKTeco device"""
+    print(f"[INFO] ===== ZKTeco Connection Test =====", file=sys.stderr)
+    print(f"[INFO] Device ID: {args.device_id}", file=sys.stderr)
+    print(f"[INFO] Target: {args.ip}:{args.port}", file=sys.stderr)
+    
     sync = ZKTecoSync(
         device_id=args.device_id,
         ip=args.ip,
@@ -262,15 +299,18 @@ def test_connection(args) -> Dict[str, Any]:
     )
     
     if not sync.connect():
-        return {"connected": False, "error": "Connection failed"}
+        print(f"[ERROR] ===== Connection Test FAILED =====", file=sys.stderr)
+        return {"connected": False, "error": "Connection failed - device unreachable or wrong credentials"}
     
     try:
         info = sync.get_device_info()
         users = sync.get_users()
         info["user_count"] = len(users)
+        print(f"[SUCCESS] ===== Connection Test PASSED =====", file=sys.stderr)
         return info
     finally:
         sync.disconnect()
+        print(f"[INFO] Disconnected from device", file=sys.stderr)
 
 
 def sync_logs(args) -> Dict[str, Any]:
