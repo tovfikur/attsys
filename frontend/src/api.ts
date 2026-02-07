@@ -8,11 +8,22 @@ function getToken(): string | null {
 
 function isNativeRuntime(): boolean {
   if (typeof window === "undefined") return false;
-  return (
+  if (
     window.location.protocol === "capacitor:" ||
-    window.location.protocol === "file:" ||
-    "Capacitor" in (window as unknown as Record<string, unknown>)
-  );
+    window.location.protocol === "file:"
+  ) {
+    return true;
+  }
+  const cap = (window as unknown as { Capacitor?: unknown }).Capacitor as
+    | {
+        isNativePlatform?: () => boolean;
+        getPlatform?: () => string;
+      }
+    | undefined;
+  if (!cap) return false;
+  if (typeof cap.isNativePlatform === "function") return !!cap.isNativePlatform();
+  if (typeof cap.getPlatform === "function") return cap.getPlatform() !== "web";
+  return false;
 }
 
 function getDefaultNativeRootDomain(): string {

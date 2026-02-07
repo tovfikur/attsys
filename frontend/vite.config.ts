@@ -23,7 +23,7 @@ export default defineConfig({
             "default-src 'self'; " +
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-            "connect-src 'self' ws: wss: http://localhost:5170 http://demo.localhost:5170 https://khudroo.com; " +
+            "connect-src 'self' ws: wss: http://localhost:* http://127.0.0.1:* http://*.localhost:* https://khudroo.com; " +
             "img-src 'self' data: blob: http: https:; " +
             "font-src 'self' data: https://fonts.gstatic.com; " +
             "object-src 'none'; " +

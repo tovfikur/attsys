@@ -104,49 +104,49 @@ test.describe("docker e2e: superadmin + tenant isolation", () => {
     const tenantEmail = `admin+${now}@tenant.com`;
     const tenantPassword = "secret123";
 
-    await page.goto(`${rootUrl}/login`, { waitUntil: "networkidle" });
+    await page.goto(`${rootUrl}/login`, { waitUntil: "domcontentloaded" });
     await page.getByLabel("Email address").fill("admin@attsys.com");
     await page.getByRole("textbox", { name: "Password" }).fill("secret");
     await page.getByRole("button", { name: /sign in/i }).click();
     await page.waitForURL("**/dashboard", { timeout: 60_000 });
 
-    await expect(
-      page.getByRole("button", { name: "Create tenant" })
-    ).toBeVisible({ timeout: 60_000 });
-
-    await page.getByRole("button", { name: "Create tenant" }).click();
-    const createDialog = page.getByRole("dialog", { name: /create tenant/i });
-    await createDialog.getByLabel("Company name").fill(tenantName);
-    await createDialog.getByLabel("Subdomain").fill(subdomain);
+    await page.getByRole("tab", { name: "Create Tenant" }).click();
+    await page.getByRole("textbox", { name: "Company name" }).fill(tenantName);
+    await page.getByRole("textbox", { name: "Subdomain" }).fill(subdomain);
+    await page.getByRole("textbox", { name: "Tenant Email" }).fill(tenantEmail);
+    await page
+      .getByRole("textbox", { name: "Tenant Password" })
+      .fill(tenantPassword);
 
     const createReq = page.waitForResponse(
       (resp) =>
         resp.request().method() === "POST" &&
         resp.url().includes("/api/tenants"),
-      { timeout: 60_000 }
+      { timeout: 60_000 },
     );
-    await createDialog.getByRole("button", { name: /^create$/i }).click();
+    await page.getByRole("button", { name: /^create tenant$/i }).click();
     const createResp = await createReq;
     const createBody = await createResp.text();
     expect(createResp.status(), createBody).toBe(200);
 
-    await expect(createDialog).toBeHidden({ timeout: 60_000 });
-    await expect(page.getByText(`${subdomain}.`)).toBeVisible({
+    await expect(
+      page.getByText(new RegExp(`${subdomain}\\.localhost`, "i")),
+    ).toBeVisible({
       timeout: 60_000,
     });
 
-    const resetCard = page
-      .getByRole("button", { name: /set tenant password/i })
-      .locator('xpath=ancestor::*[contains(@class,"MuiCard-root")][1]');
-    await resetCard.getByLabel("Subdomain").fill(subdomain);
-    await resetCard.getByLabel("Tenant Email").fill(tenantEmail);
-    await resetCard.getByLabel("New Password").fill(tenantPassword);
+    await page.getByRole("tab", { name: "Set Password" }).click();
+    await page.getByRole("textbox", { name: "Subdomain" }).fill(subdomain);
+    await page.getByRole("textbox", { name: "Tenant Email" }).fill(tenantEmail);
+    await page
+      .getByRole("textbox", { name: "New Password" })
+      .fill(tenantPassword);
 
     const resetReq = page.waitForResponse(
       (resp) =>
         resp.request().method() === "POST" &&
         resp.url().includes("/api/tenant_users/reset_password"),
-      { timeout: 60_000 }
+      { timeout: 60_000 },
     );
     await page.getByRole("button", { name: /set tenant password/i }).click();
     const resetResp = await resetReq;
@@ -156,7 +156,9 @@ test.describe("docker e2e: superadmin + tenant isolation", () => {
     const tenantUrl = `http://${subdomain}.localhost:${webPort}`;
     const tenantPage = await context.newPage();
 
-    await tenantPage.goto(`${tenantUrl}/login`, { waitUntil: "networkidle" });
+    await tenantPage.goto(`${tenantUrl}/login`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(tenantPage.getByText(`Tenant: ${subdomain}`)).toBeVisible({
       timeout: 60_000,
     });
@@ -168,11 +170,129 @@ test.describe("docker e2e: superadmin + tenant isolation", () => {
     await tenantPage.getByRole("button", { name: /sign in/i }).click();
     await tenantPage.waitForURL("**/employees", { timeout: 60_000 });
 
-    await tenantPage.reload({ waitUntil: "networkidle" });
+    await tenantPage.reload({ waitUntil: "load" });
     await tenantPage.waitForURL("**/employees", { timeout: 60_000 });
 
     await expect(tenantPage.getByText(/Employees/i).first()).toBeVisible({
       timeout: 60_000,
     });
+
+    const tenantToken = await tenantPage.evaluate(
+      () => localStorage.getItem("token") || sessionStorage.getItem("token"),
+    );
+    expect(tenantToken).toBeTruthy();
+
+    const apiBase = `http://127.0.0.1:${apiPort}`;
+
+    const empResp = await context.request.post(`${apiBase}/api/employees`, {
+      headers: {
+        Authorization: `Bearer ${tenantToken}`,
+        "Content-Type": "application/json",
+        "X-Tenant-ID": subdomain,
+      },
+      data: {
+        name: "Geo Test Employee",
+        code: `GEO${now}`,
+        gender: "Male",
+        date_of_birth: "1990-01-01",
+        personal_phone: "0123456789",
+        email: `geo+${now}@tenant.com`,
+        present_address: "Dhaka",
+        permanent_address: "Dhaka",
+        department: "IT",
+        designation: "Engineer",
+        employee_type: "Full-time",
+        date_of_joining: "2024-01-01",
+        supervisor_name: "Boss",
+        work_location: "HQ",
+      },
+      timeout: 60_000,
+    });
+    const empBody = await empResp.text();
+    expect(empResp.status(), empBody).toBe(200);
+    const empJson = JSON.parse(empBody) as { employee?: { id?: string } };
+    const employeeId = String(empJson.employee?.id || "");
+    expect(employeeId).toBeTruthy();
+
+    const geoSettingsResp = await context.request.post(
+      `${apiBase}/api/geo/settings`,
+      {
+        headers: {
+          Authorization: `Bearer ${tenantToken}`,
+          "Content-Type": "application/json",
+          "X-Tenant-ID": subdomain,
+        },
+        data: {
+          enabled: 1,
+          require_fence: 1,
+          update_interval_sec: 30,
+          offline_after_sec: 180,
+          min_accuracy_m: null,
+        },
+        timeout: 60_000,
+      },
+    );
+    const geoSettingsBody = await geoSettingsResp.text();
+    expect(geoSettingsResp.status(), geoSettingsBody).toBe(200);
+
+    const fenceResp = await context.request.post(`${apiBase}/api/geo/fences`, {
+      headers: {
+        Authorization: `Bearer ${tenantToken}`,
+        "Content-Type": "application/json",
+        "X-Tenant-ID": subdomain,
+      },
+      data: {
+        name: "Default Fence",
+        type: "circle",
+        active: 1,
+        is_default: 1,
+        center_lat: 0,
+        center_lng: 0,
+        radius_m: 200,
+      },
+      timeout: 60_000,
+    });
+    const fenceBody = await fenceResp.text();
+    expect(fenceResp.status(), fenceBody).toBe(200);
+
+    const outsideResp = await context.request.post(
+      `${apiBase}/api/attendance/clockin`,
+      {
+        headers: {
+          Authorization: `Bearer ${tenantToken}`,
+          "Content-Type": "application/json",
+          "X-Tenant-ID": subdomain,
+        },
+        data: {
+          employee_id: employeeId,
+          latitude: 20,
+          longitude: 20,
+        },
+        timeout: 60_000,
+      },
+    );
+    const outsideBody = await outsideResp.text();
+    expect(outsideResp.status()).toBe(400);
+    expect(outsideBody).toContain("You are outside the authorized work area");
+
+    const insideResp = await context.request.post(
+      `${apiBase}/api/attendance/clockin`,
+      {
+        headers: {
+          Authorization: `Bearer ${tenantToken}`,
+          "Content-Type": "application/json",
+          "X-Tenant-ID": subdomain,
+        },
+        data: {
+          employee_id: employeeId,
+          latitude: 0,
+          longitude: 0,
+        },
+        timeout: 60_000,
+      },
+    );
+    const insideBody = await insideResp.text();
+    expect(insideResp.status()).toBe(400);
+    expect(insideBody).toContain("Biometric modality is required");
   });
 });

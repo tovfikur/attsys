@@ -120,6 +120,18 @@ const navItems: NavItem[] = [
     roles: ["tenant_owner", "hr_admin", "manager"],
   },
   {
+    label: "Tracking",
+    to: "/tracking",
+    icon: <QueryStatsRounded />,
+    roles: ["tenant_owner", "hr_admin", "manager"],
+  },
+  {
+    label: "Geo-Fencing",
+    to: "/geo-fencing",
+    icon: <ApartmentRounded />,
+    roles: ["tenant_owner", "hr_admin"],
+  },
+  {
     label: "Leaves",
     to: "/leaves",
     icon: <EventNoteRounded />,
@@ -180,6 +192,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [messengerUnread, setMessengerUnread] = useState(0);
   const [leavesUnseenPending, setLeavesUnseenPending] = useState(0);
+  const [geoBreachUnseen, setGeoBreachUnseen] = useState(0);
+  const geoBreachUnseenRef = useRef(0);
+  const geoPausedUntilRef = useRef(0);
+  const geoLastSendRef = useRef(0);
 
   const handleLogout = () => {
     setLogoutConfirmOpen(true);
@@ -232,6 +248,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (!user) {
       setMessengerUnread(0);
       setLeavesUnseenPending(0);
+      setGeoBreachUnseen(0);
+      geoBreachUnseenRef.current = 0;
       return;
     }
 
@@ -243,6 +261,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       role === "employee";
 
     const wantsLeaves = role === "tenant_owner";
+    const wantsGeo =
+      role === "tenant_owner" || role === "hr_admin" || role === "manager";
 
     try {
       if (wantsMessenger) {
@@ -270,6 +290,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       }
     } catch {
       setLeavesUnseenPending(0);
+    }
+
+    try {
+      if (wantsGeo) {
+        const res = await api.get("/api/geo/breaches/unseen_count", {
+          timeout: 8000,
+          headers: { "X-Toast-Skip": "1" },
+        });
+        const next = Math.max(0, Number(res.data?.count || 0) || 0);
+        if (next > geoBreachUnseenRef.current) {
+          setToast({
+            open: true,
+            message: "Geo-fence breach detected",
+            severity: "warning",
+          });
+        }
+        geoBreachUnseenRef.current = next;
+        setGeoBreachUnseen(next);
+      } else {
+        geoBreachUnseenRef.current = 0;
+        setGeoBreachUnseen(0);
+      }
+    } catch {
+      geoBreachUnseenRef.current = 0;
+      setGeoBreachUnseen(0);
     }
   }, [role, user]);
 
@@ -316,6 +361,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [location.pathname, refreshIndicators, role, user]);
 
   useEffect(() => {
+    if (!user) return;
+    if (!(role === "tenant_owner" || role === "hr_admin" || role === "manager"))
+      return;
+    if (!location.pathname.startsWith("/tracking")) return;
+    void (async () => {
+      try {
+        await api.post(
+          "/api/geo/breaches/mark_seen",
+          {},
+          { headers: { "X-Toast-Skip": "1" }, timeout: 8000 },
+        );
+      } finally {
+        void refreshIndicators();
+      }
+    })();
+  }, [location.pathname, refreshIndicators, role, user]);
+
+  useEffect(() => {
     if (role !== "employee") {
       setEmployeeId("");
       setEmployeeOpenShift(null);
@@ -338,6 +401,68 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       alive = false;
     };
   }, [role]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (role !== "employee") return;
+    if (!employeeId) return;
+
+    let alive = true;
+
+    const send = async () => {
+      if (!alive) return;
+      const now = Date.now();
+      if (now < geoPausedUntilRef.current) return;
+      if (!("geolocation" in navigator)) return;
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (!alive) return;
+          const coords = pos.coords;
+          const payload = {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            accuracy_m:
+              typeof coords.accuracy === "number"
+                ? Math.round(coords.accuracy)
+                : null,
+            speed_mps: typeof coords.speed === "number" ? coords.speed : null,
+            device_status: document.hidden ? "background" : "foreground",
+          };
+
+          void (async () => {
+            try {
+              geoLastSendRef.current = Date.now();
+              const res = await api.post("/api/geo/location/update", payload, {
+                headers: { "X-Toast-Skip": "1" },
+                timeout: 8000,
+              });
+              if (Number(res.data?.enabled || 0) === 0) {
+                geoPausedUntilRef.current = Date.now() + 5 * 60_000;
+              }
+            } catch {
+              geoPausedUntilRef.current = Date.now() + 60_000;
+            }
+          })();
+        },
+        () => {
+          geoPausedUntilRef.current = Date.now() + 60_000;
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 15_000,
+          timeout: 10_000,
+        },
+      );
+    };
+
+    void send();
+    const id = window.setInterval(send, 30_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [employeeId, role, user]);
 
   const refreshEmployeeOpenShift = useCallback(async () => {
     if (role !== "employee" || !employeeId) {
@@ -604,11 +729,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const to = String(item.to || "");
       const isMessenger = to === "/messenger";
       const isLeaves = to === "/leaves";
+      const isTracking = to === "/tracking";
       const badgeCount = isMessenger
         ? messengerUnread
         : isLeaves
           ? leavesUnseenPending
-          : 0;
+          : isTracking
+            ? geoBreachUnseen
+            : 0;
       if (badgeCount <= 0) return item.icon;
       return (
         <Badge
@@ -619,7 +747,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </Badge>
       );
     },
-    [leavesUnseenPending, messengerUnread],
+    [geoBreachUnseen, leavesUnseenPending, messengerUnread],
   );
 
   const title = useMemo(() => {
@@ -633,6 +761,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return "Employee Portal";
     if (location.pathname.startsWith("/devices")) return "Devices";
     if (location.pathname.startsWith("/sites")) return "Sites";
+    if (location.pathname.startsWith("/tracking")) return "Tracking";
+    if (location.pathname.startsWith("/geo-fencing")) return "Geo-Fencing";
     return role === "superadmin" ? "Super Admin" : "Workspace";
   }, [location.pathname, role]);
 

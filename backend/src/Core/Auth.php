@@ -82,6 +82,8 @@ class Auth
                 'attendance.clock',
                 'devices.manage',
                 'sites.manage',
+                'geo.manage',
+                'geo.read',
                 'leaves.read',
                 'leaves.apply',
                 'leaves.approve',
@@ -100,12 +102,14 @@ class Auth
                 'leaves.read',
                 'leaves.approve',
                 'payroll.read',
+                'geo.read',
             ],
             'employee' => [
                 'attendance.clock',
                 'attendance.read',
                 'leaves.read',
                 'leaves.apply',
+                'geo.track',
             ],
             'payroll_admin' => [
                 'payroll.read',

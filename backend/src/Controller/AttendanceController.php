@@ -289,6 +289,103 @@ class AttendanceController
         return [$lat, $lng, $acc];
     }
 
+    private function loadGeoSettings($pdo, int $tenantId): array
+    {
+        try {
+            $pdo->prepare('INSERT IGNORE INTO geo_settings(tenant_id) VALUES (?)')->execute([(int)$tenantId]);
+            $stmt = $pdo->prepare('SELECT enabled, update_interval_sec, min_accuracy_m, offline_after_sec, require_fence FROM geo_settings WHERE tenant_id=? LIMIT 1');
+            $stmt->execute([(int)$tenantId]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC) ?: [];
+            return [
+                'enabled' => (int)($row['enabled'] ?? 0),
+                'min_accuracy_m' => isset($row['min_accuracy_m']) ? (int)$row['min_accuracy_m'] : null,
+                'require_fence' => (int)($row['require_fence'] ?? 0),
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'enabled' => 0,
+                'min_accuracy_m' => null,
+                'require_fence' => 0,
+            ];
+        }
+    }
+
+    private function loadApplicableFence($pdo, int $tenantId, int $employeeId, \DateTimeInterface $now): array
+    {
+        try {
+            $stmt = $pdo->prepare('SELECT gf.id, gf.type, gf.active, gf.is_default, gf.center_lat, gf.center_lng, gf.radius_m, gf.time_start, gf.time_end FROM geo_user_fences guf JOIN geo_fences gf ON gf.id=guf.fence_id AND gf.tenant_id=guf.tenant_id WHERE guf.tenant_id=? AND guf.employee_id=? LIMIT 1');
+            $stmt->execute([(int)$tenantId, (int)$employeeId]);
+            $f = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+            if (!$f) {
+                $d = $pdo->prepare('SELECT id, type, active, is_default, center_lat, center_lng, radius_m, time_start, time_end FROM geo_fences WHERE tenant_id=? AND is_default=1 AND active=1 ORDER BY id DESC LIMIT 1');
+                $d->execute([(int)$tenantId]);
+                $f = $d->fetch(\PDO::FETCH_ASSOC);
+            }
+
+            if (!$f) return [null, []];
+            if (!\App\Core\Geo::fenceAppliesAt($f, $now)) return [null, []];
+
+            $vertices = [];
+            if (strtolower((string)($f['type'] ?? '')) === 'polygon') {
+                $v = $pdo->prepare('SELECT seq, latitude, longitude FROM geo_fence_vertices WHERE tenant_id=? AND fence_id=? ORDER BY seq ASC');
+                $v->execute([(int)$tenantId, (int)$f['id']]);
+                $vertices = $v->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+            }
+            return [$f, $vertices];
+        } catch (\Throwable $e) {
+            return [null, []];
+        }
+    }
+
+    private function decideAttendanceGeo($pdo, int $tenantId, int $employeeId, ?float $lat, ?float $lng, ?int $acc, string $action): array
+    {
+        $settings = $this->loadGeoSettings($pdo, (int)$tenantId);
+        if (!(int)$settings['enabled']) return ['enabled' => 0, 'allowed' => 1, 'reason' => null, 'user_error' => null];
+
+        if ($lat === null || $lng === null) {
+            return ['enabled' => 1, 'allowed' => 0, 'reason' => 'missing_location', 'user_error' => 'Location is required for attendance'];
+        }
+
+        $now = new \DateTimeImmutable('now');
+        [$fence, $vertices] = $this->loadApplicableFence($pdo, (int)$tenantId, (int)$employeeId, $now);
+        if (!$fence) {
+            if ((int)$settings['require_fence']) {
+                return ['enabled' => 1, 'allowed' => 0, 'reason' => 'no_fence_configured', 'user_error' => 'You are outside the authorized work area'];
+            }
+            return ['enabled' => 1, 'allowed' => 1, 'reason' => 'no_fence', 'user_error' => null];
+        }
+
+        [$inside, $distOutside] = \App\Core\Geo::isInsideFence($fence, $vertices, (float)$lat, (float)$lng);
+        if ($inside) return ['enabled' => 1, 'allowed' => 1, 'reason' => 'inside', 'user_error' => null];
+
+        $d = $distOutside !== null ? (int)$distOutside : null;
+        $reason = $d !== null ? ('outside:' . $d) : 'outside';
+        return ['enabled' => 1, 'allowed' => 0, 'reason' => $reason, 'user_error' => 'You are outside the authorized work area'];
+    }
+
+    private function logAttendanceAttempt($pdo, int $tenantId, int $employeeId, string $action, int $allowed, ?string $reason, ?float $lat, ?float $lng, ?int $acc, ?array $user): void
+    {
+        try {
+            $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+            $stmt = $pdo->prepare('INSERT INTO attendance_attempt_logs(tenant_id, employee_id, action, allowed, reason, latitude, longitude, accuracy_m, user_id, user_role, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([
+                (int)$tenantId,
+                (int)$employeeId,
+                $action,
+                (int)$allowed,
+                $reason,
+                $lat,
+                $lng,
+                $acc,
+                $user['id'] ?? null,
+                $user['role'] ?? null,
+                $ip,
+            ]);
+        } catch (\Throwable $e) {
+        }
+    }
+
     private function hammingDistanceHex(string $a, string $b): int
     {
         $a = strtolower(trim($a));
@@ -913,11 +1010,15 @@ class AttendanceController
             $employeeId = (int)($in['employee_id'] ?? 0);
             if ($employeeId <= 0) throw new \Exception('employee_id is required');
 
+            [$lat, $lng, $acc] = $this->extractGeo($in);
+            $geoDecision = $this->decideAttendanceGeo($pdo, (int)$tenantId, (int)$employeeId, $lat, $lng, $acc, 'clock_in');
+            $this->logAttendanceAttempt($pdo, (int)$tenantId, (int)$employeeId, 'clock_in', (int)$geoDecision['allowed'], $geoDecision['reason'], $lat, $lng, $acc, $user);
+            if (!(int)$geoDecision['allowed']) throw new \Exception((string)($geoDecision['user_error'] ?? 'Forbidden'));
+
             $modality = $this->normalizeBiometricModality($in['biometric_modality'] ?? ($in['modality'] ?? null));
             if (!$modality) throw new \Exception('Biometric modality is required');
             [$mime, $bytes] = $this->decodeBiometricImage($in['biometric_image'] ?? ($in['image'] ?? null));
             $hash = $this->requireBiometricMatch($pdo, (int)$tenantId, (int)$employeeId, $modality, $bytes);
-            [$lat, $lng, $acc] = $this->extractGeo($in);
 
             $r = $this->store->clockIn($employeeId, $tenantId);
             $rid = isset($r['id']) ? (int)$r['id'] : null;
@@ -964,11 +1065,15 @@ class AttendanceController
             $employeeId = (int)($in['employee_id'] ?? 0);
             if ($employeeId <= 0) throw new \Exception('employee_id is required');
 
+            [$lat, $lng, $acc] = $this->extractGeo($in);
+            $geoDecision = $this->decideAttendanceGeo($pdo, (int)$tenantId, (int)$employeeId, $lat, $lng, $acc, 'clock_out');
+            $this->logAttendanceAttempt($pdo, (int)$tenantId, (int)$employeeId, 'clock_out', (int)$geoDecision['allowed'], $geoDecision['reason'], $lat, $lng, $acc, $user);
+            if (!(int)$geoDecision['allowed']) throw new \Exception((string)($geoDecision['user_error'] ?? 'Forbidden'));
+
             $modality = $this->normalizeBiometricModality($in['biometric_modality'] ?? ($in['modality'] ?? null));
             if (!$modality) throw new \Exception('Biometric modality is required');
             [$mime, $bytes] = $this->decodeBiometricImage($in['biometric_image'] ?? ($in['image'] ?? null));
             $hash = $this->requireBiometricMatch($pdo, (int)$tenantId, (int)$employeeId, $modality, $bytes);
-            [$lat, $lng, $acc] = $this->extractGeo($in);
 
             $r = $this->store->clockOut($employeeId, $tenantId);
             $rid = isset($r['id']) ? (int)$r['id'] : null;

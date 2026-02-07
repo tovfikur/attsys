@@ -22,6 +22,8 @@ import Reports from "./Reports";
 import Payroll from "./payroll/Payroll";
 import EmployeePortal from "./EmployeePortal";
 import Messenger from "./Messenger";
+import GeoFences from "./GeoFences";
+import TrackingDashboard from "./TrackingDashboard";
 import AppShell from "./layout/AppShell";
 import "./App.css";
 import { clearSession, getToken, getUser } from "./utils/session";
@@ -205,6 +207,22 @@ function App() {
           element={
             <DenyRoleRoute deny={["superadmin"]}>
               <Sites />
+            </DenyRoleRoute>
+          }
+        />
+        <Route
+          path="/geo-fencing"
+          element={
+            <DenyRoleRoute deny={["employee", "superadmin", "manager", "payroll_admin"]}>
+              <GeoFences />
+            </DenyRoleRoute>
+          }
+        />
+        <Route
+          path="/tracking"
+          element={
+            <DenyRoleRoute deny={["employee", "superadmin"]}>
+              <TrackingDashboard />
             </DenyRoleRoute>
           }
         />

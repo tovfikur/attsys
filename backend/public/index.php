@@ -134,6 +134,22 @@ $router->postAuth('/api/devices/zk/sync', ['App\Controller\DeviceController', 's
 $router->getAuth('/api/sites', ['App\Controller\SiteController', 'list'], 'perm:sites.manage');
 $router->postAuth('/api/sites', ['App\Controller\SiteController', 'create'], 'perm:sites.manage');
 
+// Geo-Fencing & Location Tracking
+$router->getAuth('/api/geo/fences', ['App\Controller\GeoController', 'fencesList'], 'perm:geo.manage');
+$router->postAuth('/api/geo/fences', ['App\Controller\GeoController', 'fencesCreate'], 'perm:geo.manage');
+$router->postAuth('/api/geo/fences/update', ['App\Controller\GeoController', 'fencesUpdate'], 'perm:geo.manage');
+$router->postAuth('/api/geo/fences/delete', ['App\Controller\GeoController', 'fencesDelete'], 'perm:geo.manage');
+$router->postAuth('/api/geo/fences/set_default', ['App\Controller\GeoController', 'fencesSetDefault'], 'perm:geo.manage');
+$router->getAuth('/api/geo/assignments', ['App\Controller\GeoController', 'assignmentsList'], 'perm:geo.manage');
+$router->postAuth('/api/geo/assignments', ['App\Controller\GeoController', 'assignmentsSet'], 'perm:geo.manage');
+$router->getAuth('/api/geo/settings', ['App\Controller\GeoController', 'settingsGet'], 'perm:geo.manage');
+$router->postAuth('/api/geo/settings', ['App\Controller\GeoController', 'settingsSet'], 'perm:geo.manage');
+$router->postAuth('/api/geo/location/update', ['App\Controller\LocationController', 'update'], 'perm:geo.track');
+$router->getAuth('/api/geo/location/latest', ['App\Controller\LocationController', 'latest'], 'perm:geo.read');
+$router->getAuth('/api/geo/location/history', ['App\Controller\LocationController', 'history'], 'perm:geo.read');
+$router->getAuth('/api/geo/breaches/unseen_count', ['App\Controller\LocationController', 'breachesUnseenCount'], 'perm:geo.read');
+$router->postAuth('/api/geo/breaches/mark_seen', ['App\Controller\LocationController', 'breachesMarkSeen'], 'perm:geo.read');
+
 // Tenant Management Routes (Superadmin Only - mocked protection)
 $router->getAuth('/api/tenants', ['App\Controller\TenantController', 'index'], 'superadmin');
 $router->postAuth('/api/tenants', ['App\Controller\TenantController', 'create'], 'superadmin');
