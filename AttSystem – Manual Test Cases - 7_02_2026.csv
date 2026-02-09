@@ -1,0 +1,44 @@
+Test Case ID,Module,Test Case Title,Step Description,Step Data,Preconditions,Expected Result,Actual Result,Status,Attachments
+TC-PAY-001,Payroll Settings,Verify salary currency consistency,"1. Navigate to Payroll Settings 
+2. Set currency to BDT
+3. Navigate to Manage Salary Structure
+4. Enter basic salary with $ symbol","Currency: BDT, Salary: $30000",Payroll currency set to BDT,System should restrict or auto-convert salary currency to BDT,"Salary is fixed to $, and accepts $ without validation",Fail,currency_icon.png
+TC-PAY-002,Salary Structure,Validate salary amount unit (monthly/yearly),Enter basic salary and save structure,Salary: 30000,User on Manage Salary Structure page,System should show salary period (Monthly/Yearly) or ask user to select,No salary period shown,Fail,currency_icon.png
+TC-PAY-003,Salary Structure,Validate empty allowance/deduction components,Save salary structure without adding components,No allowances/deductions,User creating salary structure,System should warn about missing components,Structure saved successfully,Fail,currency_icon.png
+TC-PAY-004,Salary Structure,Validate bank account number format,Enter invalid or random account number,Account No: 100200300400,Payment Method = Bank Transfer,System should validate length/format,No validation applied,Fail,currency_icon.png
+TC-PAY-005,Salary Structure,Validate branch code format,Enter short branch code,Branch Code: 500,Bank details section visible,System should enforce correct format or show hint,No validation shown,Fail,currency_icon.png
+TC-PAY-006,Salary Structure,Validate encryption key availability for bank data,"1. Navigate to Manage Salary Structure 
+2. Enter bank details
+3. Click Add","Bank Name: Prime Bank, Account No: 100200300400",APP_ENC_KEY not configured in environment,System should show user-friendly error or prevent access to bank section,System throws technical error message and Technical key name exposed to user,Fail,technical_error.png
+TC-PAY-007,Salary Structure,Mandatory bank details for bank transfer,Select Bank Transfer and remove bank details,Payment Method: Bank Transfer,User on salary structure page,Bank fields should be mandatory,Save allowed without validation,Fail,
+TC-PAY-008,Salary Structure,Verify saving salary structure without bank details when Cheque is selected,"1. Select Payment Method as Cheque 
+2. Do not enter any bank details 
+3. Click Save Structure","Payment Method: Cheque, Bank Details: Empty",User is on Manage Salary Structure page,System should block save and show validation message for missing bank details,Salary structure is saved successfully without bank details,Fail,
+TC-PAY-009,Salary Structure,Verify correctness of bank account primary field naming,Navigate to Bank Accounts section and observe Primary dropdown field,"Dropdown options: Primary, Secondary",User on Manage Salary Structure page,"Field name should describe purpose, not value",Field name is same as dropdown value,Fail,
+TC-PAY-010,Salary Structure,Validate Add bank account action failure handling,Click Add after filling bank details,Valid bank inputs,Encryption config missing,System should block add with proper validation message,Add fails silently; no account added,Fail,
+TC-PAY-011,Salary Structure,Validate bank account persistence after error,"1. Enter bank details
+2. Error appears
+3. Check bank table",Valid bank data,Encryption error occurred,Data should not be partially saved,No account shown but fields still editable,Pass,
+TC-PAY-012,Salary Structure,Validate reset action after encryption error,"1. Enter bank details
+2. Click Reset",Any valid bank data,Encryption error visible,Form should clear and error should disappear,Error remains visible,Fail,
+TC-PAY-013,Salary Structure,Validate error message clarity,Trigger encryption error,Same data,Encryption key missing,Error should guide admin to configuration steps,Error message is developer-centric,Fail,
+TC-PAY-014,Salary Structure,Verify allowance & deduction configuration availability,Navigate to Allowances & Deductions (Fixed) section,N/A,User on Manage Salary Structure page,System should provide option or guidance to define components,No option or guidance provided,Fail,
+TC-PAY-015,Payroll Permissions,Validate saving empty permission table,Click Save without selecting any checkbox,None selected,Payroll Permissions page loaded,System should block save or show warning,Save allowed,Fail,
+TC-PAY-016,Payroll Permissions,Validate permission conflicts,Assign manager to Approve but not Read,Manager role,Payroll exists,System should prevent permission conflict,Allowed,Fail,
+TC-PAY-017,Payroll Permissions,Verify Settings permission restriction,Try giving employee Settings permission,Employee role,Payroll exists,Only admin roles should have Settings permission,Allowed,Fail,
+TC-PAY-018,Payroll Permissions,Verify role names hidden on user portal,Check Payroll Permissions,Employee login,Permissions page exists,No internal role names visible; only friendly task labels,Internal role names shown,Fail,internal_name.png
+TC-PAY-019,Payroll Cycles,Verify rejection of cycle,"1. Create Cycle 
+2. Start process",Employee login,Payroll exists,After rejecting the status should change to Rejected,"After rejecting, status changes to processsing",Fail,
+TC-PAY-020,Payroll Cycle,Validate salary for zero attendance,"1. Create payroll cycle Feb 2026 
+2. Employee salary 30,000 
+3. No attendance recorded 
+4. Process payroll","Salary: 30,000, Attendance: 0",Attendance missing,Payroll should pay 0 or show warning,"8,571.43 (unexpected partial pay)",Fail,payslip_review.png
+TC-PAY-021,Payroll Cycle,Validate payroll calculation before attendance approval,Process payroll before attendance approved,"Salary: 30,000, Attendance: pending",Attendance approval pending,System should block or show pending warning,Payroll processed with partial amount,Fail,
+TC-PAY-022,Variable Pay,Verify edit functionality for PENDING variable pay,"1. Navigate to Payroll Management (Variable Pay)
+2. Cycle 2, Employee 001 , Click Edit icon on bonus row","Employee: EMP001, Bonus: 2000",Variable Pay entry exists with status PENDING,Pen icon should be active and allow editing OR tooltip should explain why it’s not editable,Pen icon shown but click does nothing,Fail,variable_pay.png
+TC-PAY-023,Employee Loan,Validate loan amount limit,Try creating loan > employee monthly salary,"Employee salary: 30,000, Loan: 50,000",Employee exists,System should block / warn: “Loan exceeds allowable limit”,"System allowed 50,000 loan",Fail,
+TC-PAY-024,Tenant Audit Logs,Verify user-friendly display of audit log entries,"1. Navigate to Tenant Audit Logs 
+2. Check actions, users, and meta","Audit log entries for loans, payroll, variable pay, etc.",Tenant Owner / HR admin is logged in,"Meta should display human-readable information: employee name/code, amount, status, cycle instead of raw JSON","Meta shows raw JSON with IDs (employee_id, tenant_id, loan_id)",Fail,audit_logs.png
+TC-PAY-025,Tenant Audit Logs,Verify action translation,Check action column for audit entries,"Actions like payroll.loan.create, payroll.variable_pay.save, payroll.run",Audit logs exist,"Actions should be translated to readable text: “Loan Created”, “Variable Pay Added”, “Payroll Run”",Actions show backend technical names,Fail,audit_logs.png
+TC-PAY-026,Tenant Audit Logs,Verify employee mapping,Check employee_id mapping in meta,Any entry with employee_id,Audit logs exist,employee_id should map to employee name/code for readability,Shows employee_id only,Fail,audit_logs.png
+TC-PAY-027,Tenant Audit Logs,Verify search/filter,Search logs by employee name or action,"Employee: EMP001, Action: Loan Created",Audit logs exist,"Search should return correct user-friendly entries, not JSON",Search works on JSON IDs only,Fail,audit_logs.png

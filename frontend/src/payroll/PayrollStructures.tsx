@@ -21,14 +21,23 @@ import {
   InputAdornment,
   Grid,
   Chip,
+  AlertTitle,
+  Tooltip,
+  IconButton,
+  FormHelperText,
+  FormControl,
+  InputLabel,
+  Select,
 } from "@mui/material";
 import {
   Edit as EditIcon,
   Save as SaveIcon,
   History as HistoryIcon,
+  HelpOutline as HelpOutlineIcon,
 } from "@mui/icons-material";
 import api from "../api";
 import { getErrorMessage } from "../utils/errors";
+import { getCurrencySymbol } from "../utils/payrollHelpers";
 
 interface Employee {
   id: number;
@@ -60,6 +69,7 @@ interface StructureHistoryItem extends StructureItem {
 interface SalaryStructure {
   effective_from: string;
   base_salary: number | string;
+  salary_period?: "monthly" | "yearly";
   payment_method: string;
   items: StructureItem[];
 }
@@ -99,6 +109,7 @@ export default function PayrollStructures() {
   const [components, setComponents] = useState<SalaryComponent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [currencyCode, setCurrencyCode] = useState("USD");
 
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [structure, setStructure] = useState<SalaryStructure>({
@@ -127,12 +138,14 @@ export default function PayrollStructures() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [empRes, compRes] = await Promise.all([
+      const [empRes, compRes, settingsRes] = await Promise.all([
         api.get("/api/employees"),
         api.get("/api/payroll/components"),
+        api.get("/api/payroll/settings"),
       ]);
       setEmployees(empRes.data.employees || []);
       setComponents(compRes.data.components || []);
+      setCurrencyCode(settingsRes.data.settings?.currency_code || "USD");
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load payroll structure data"));
     } finally {
@@ -180,6 +193,7 @@ export default function PayrollStructures() {
         setStructure({
           effective_from: s.effective_from,
           base_salary: s.base_salary,
+          salary_period: s.salary_period || "monthly",
           payment_method: s.payment_method || "bank_transfer",
           items: mergedItems,
         });
@@ -187,6 +201,7 @@ export default function PayrollStructures() {
         setStructure({
           effective_from: new Date().toISOString().split("T")[0],
           base_salary: "",
+          salary_period: "monthly",
           payment_method: "bank_transfer",
           items: initialItems,
         });
@@ -206,22 +221,33 @@ export default function PayrollStructures() {
 
   const handleSave = async () => {
     if (!selectedEmp) return;
+    
+    // Warn if no components added
+    const filteredItems = structure.items
+      .map((i) => ({
+        component_id: i.component_id,
+        amount: Number(i.amount),
+        is_percentage: Boolean(i.is_percentage),
+        percentage: Number(i.percentage),
+      }))
+      .filter((i) => (i.is_percentage ? i.percentage > 0 : i.amount > 0));
+    
+    if (filteredItems.length === 0) {
+      if (!confirm(
+        'No allowances or deductions have been added. Are you sure you want to save a basic salary-only structure?'
+      )) {
+        return;
+      }
+    }
+    
     setSaving(true);
     try {
-      // Filter out zero amount items to keep DB clean, or keep them?
-      // Keeping them ensures we know it's explicitly 0.
       const payload = {
         effective_from: structure.effective_from,
         base_salary: Number(structure.base_salary),
+        salary_period: structure.salary_period || "monthly",
         payment_method: structure.payment_method,
-        items: structure.items
-          .map((i) => ({
-            component_id: i.component_id,
-            amount: Number(i.amount),
-            is_percentage: Boolean(i.is_percentage),
-            percentage: Number(i.percentage),
-          }))
-          .filter((i) => (i.is_percentage ? i.percentage > 0 : i.amount > 0)),
+        items: filteredItems,
       };
 
       await api.post(
@@ -475,29 +501,70 @@ export default function PayrollStructures() {
               >
                 Base Salary
               </Typography>
-              <TextField
-                label="Basic Salary"
-                type="number"
-                fullWidth
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">$</InputAdornment>
-                  ),
-                }}
-                value={structure.base_salary}
-                onChange={(e) =>
-                  setStructure({ ...structure, base_salary: e.target.value })
-                }
-              />
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 8 }}>
+                  <TextField
+                    label={`Basic Salary (${structure.salary_period === 'yearly' ? 'Annual' : 'Monthly'})`}
+                    type="number"
+                    fullWidth
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">{getCurrencySymbol(currencyCode)}</InputAdornment>
+                      ),
+                    }}
+                    value={structure.base_salary}
+                    onChange={(e) =>
+                      setStructure({ ...structure, base_salary: e.target.value })
+                    }
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <FormControl fullWidth>
+                    <InputLabel>Salary Period</InputLabel>
+                    <Select
+                      value={structure.salary_period || "monthly"}
+                      onChange={(e) =>
+                        setStructure({ ...structure, salary_period: e.target.value as "monthly" | "yearly" })
+                      }
+                      label="Salary Period"
+                    >
+                      <MenuItem value="monthly">Monthly</MenuItem>
+                      <MenuItem value="yearly">Yearly</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
             </Grid>
 
             <Grid size={{ xs: 12 }}>
-              <Typography
-                variant="subtitle2"
-                sx={{ mb: 2, mt: 2, color: "text.secondary" }}
-              >
-                Allowances & Deductions (Fixed)
-              </Typography>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, mt: 2 }}>
+                <Typography variant="subtitle2" sx={{ color: "text.secondary" }}>
+                  Allowances & Deductions
+                </Typography>
+                <Tooltip title="Add allowances (HRA, Travel, Medical) or deductions (PF, Insurance) below. Use Fixed amount or % of Base salary.">
+                  <IconButton size="small">
+                    <HelpOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+              
+              {structure.items.filter(i => {
+                const isPercentage = Boolean(i.is_percentage);
+                return isPercentage ? Number(i.percentage || 0) > 0 : Number(i.amount || 0) > 0;
+              }).length === 0 && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  <AlertTitle>Getting Started</AlertTitle>
+                  Add allowances or deductions using the fields below.
+                  <br/>
+                  <strong>Common examples:</strong>
+                  <ul style={{ marginBottom: 0, paddingLeft: 20 }}>
+                    <li>House Rent Allowance (HRA) - 40% of base</li>
+                    <li>Medical Allowance - Fixed {getCurrencySymbol(currencyCode)}5,000</li>
+                    <li>Provident Fund (PF) - 10% of base</li>
+                  </ul>
+                </Alert>
+              )}
+              
               <Stack spacing={2}>
                 {components.length === 0 && (
                   <Typography variant="body2">
@@ -572,7 +639,7 @@ export default function PayrollStructures() {
                           InputProps={{
                             startAdornment: isPercentage ? undefined : (
                               <InputAdornment position="start">
-                                $
+                                {getCurrencySymbol(currencyCode)}
                               </InputAdornment>
                             ),
                             endAdornment: isPercentage ? (
@@ -651,22 +718,25 @@ export default function PayrollStructures() {
                     />
                   </Grid>
                   <Grid size={{ xs: 12, md: 3 }}>
-                    <TextField
-                      select
-                      label="Primary"
-                      fullWidth
-                      size="small"
-                      value={bankForm.is_primary ? "yes" : "no"}
-                      onChange={(e) =>
-                        setBankForm({
-                          ...bankForm,
-                          is_primary: e.target.value === "yes",
-                        })
-                      }
-                    >
-                      <MenuItem value="yes">Primary</MenuItem>
-                      <MenuItem value="no">Secondary</MenuItem>
-                    </TextField>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Account Priority</InputLabel>
+                      <Select
+                        value={bankForm.is_primary ? "yes" : "no"}
+                        onChange={(e) =>
+                          setBankForm({
+                            ...bankForm,
+                            is_primary: e.target.value === "yes",
+                          })
+                        }
+                        label="Account Priority"
+                      >
+                        <MenuItem value="yes">Primary Account</MenuItem>
+                        <MenuItem value="no">Secondary Account</MenuItem>
+                      </Select>
+                      <FormHelperText>
+                        Primary account will be used for salary payments
+                      </FormHelperText>
+                    </FormControl>
                   </Grid>
                 </Grid>
                 <Stack direction="row" spacing={1}>

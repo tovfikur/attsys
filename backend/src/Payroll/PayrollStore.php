@@ -799,7 +799,7 @@ class PayrollStore
 
     public function rejectCycle(int $cycleId, int $userId, string $userRole, string $userName, ?string $note)
     {
-        $stmt = $this->pdo->prepare("UPDATE payroll_cycles SET status = 'draft', approved_by = NULL, approved_at = NULL WHERE id = ? AND tenant_id = ?");
+        $stmt = $this->pdo->prepare("UPDATE payroll_cycles SET status = 'rejected', approved_by = NULL, approved_at = NULL WHERE id = ? AND tenant_id = ?");
         $stmt->execute([$cycleId, $this->tenantId]);
         $this->addCycleApprovalHistory($cycleId, 'rejected', $userId, $userRole, $userName, $note);
     }

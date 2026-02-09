@@ -225,6 +225,23 @@ class PayrollController
             return;
         }
 
+        // Validate bank details required for bank_transfer and cheque
+        $paymentMethod = strtolower(trim($input['payment_method'] ?? 'bank_transfer'));
+        if (in_array($paymentMethod, ['bank_transfer', 'cheque'], true)) {
+            $store = new PayrollStore($this->tenantId);
+            $bankAccounts = $store->getEmployeeBankAccounts((int)$empId);
+            
+            if (empty($bankAccounts)) {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Bank details required',
+                    'message' => 'Payment method "' . ucfirst(str_replace('_', ' ', $paymentMethod)) . '" requires bank account details. Please add bank account first.',
+                    'payment_method' => $paymentMethod
+                ]);
+                return;
+            }
+        }
+
         $store = new PayrollStore($this->tenantId);
         try {
             $id = $store->saveSalaryStructure((int)$empId, $input);
@@ -279,6 +296,37 @@ class PayrollController
         }
 
         try {
+            // Validate loan amount against employee salary
+            $empId = (int)$input['employee_id'];
+            $loanAmount = (float)$input['amount'];
+            
+            // Get employee's current salary structure
+            $store = new PayrollStore($this->tenantId);
+            $structure = $store->getActiveSalaryStructure($empId);
+            
+            if ($structure) {
+                $baseSalary = (float)($structure['base_salary'] ?? 0);
+                $maxLoanMultiplier = (float)$store->getSetting('max_loan_multiplier', 3.0);
+                $maxLoanAmount = $baseSalary * $maxLoanMultiplier;
+                
+                if ($loanAmount > $maxLoanAmount) {
+                    http_response_code(400);
+                    echo json_encode([
+                        'error' => "Loan amount exceeds allowable limit",
+                        'max_allowed' => $maxLoanAmount,
+                        'employee_salary' => $baseSalary,
+                        'multiplier' => $maxLoanMultiplier,
+                        'message' => sprintf(
+                            'Loan amount ($%.2f) exceeds maximum allowed ($%.2f = %.1fx monthly salary)',
+                            $loanAmount,
+                            $maxLoanAmount,
+                            $maxLoanMultiplier
+                        )
+                    ]);
+                    return;
+                }
+            }
+            
             // Default type to 'loan' if not set
             $input['type'] = $input['type'] ?? 'loan';
             $id = $this->service->addLoan($input);
