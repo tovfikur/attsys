@@ -4,6 +4,27 @@ namespace App\Core;
 
 class AttendanceProcessor
 {
+    /**
+     * Get roster assignment for an employee on a specific date
+     * Returns roster assignment data if exists, null otherwise
+     */
+    private function getRosterAssignmentForDate($pdo, int $tenantId, int $employeeId, string $date): ?array
+    {
+        $stmt = $pdo->prepare('
+            SELECT ra.id, ra.start_time, ra.end_time, rt.name AS roster_type_name, rt.color_code
+            FROM roster_assignments ra
+            JOIN roster_types rt ON rt.id = ra.roster_type_id
+            WHERE ra.tenant_id = ? 
+            AND ra.employee_id = ? 
+            AND ra.duty_date = ? 
+            AND ra.status = ?
+            LIMIT 1
+        ');
+        $stmt->execute([$tenantId, $employeeId, $date, 'scheduled']);
+        $roster = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $roster ?: null;
+    }
+
     public function processRange(int $tenantId, string $startDate, string $endDate): array
     {
         $pdo = Database::get();
@@ -136,7 +157,7 @@ class AttendanceProcessor
         }
 
         $result = [];
-        $up = $pdo->prepare('INSERT INTO attendance_days(tenant_id, employee_id, date, in_time, out_time, worked_minutes, late_minutes, early_leave_minutes, overtime_minutes, status) VALUES (?,?,?,?,?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE in_time=VALUES(in_time), out_time=VALUES(out_time), worked_minutes=VALUES(worked_minutes), late_minutes=VALUES(late_minutes), early_leave_minutes=VALUES(early_leave_minutes), overtime_minutes=VALUES(overtime_minutes), status=VALUES(status)');
+        $up = $pdo->prepare('INSERT INTO attendance_days(tenant_id, employee_id, date, in_time, out_time, worked_minutes, late_minutes, early_leave_minutes, overtime_minutes, status, roster_assignment_id, is_roster_duty) VALUES (?,?,?,?,?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE in_time=VALUES(in_time), out_time=VALUES(out_time), worked_minutes=VALUES(worked_minutes), late_minutes=VALUES(late_minutes), early_leave_minutes=VALUES(early_leave_minutes), overtime_minutes=VALUES(overtime_minutes), status=VALUES(status), roster_assignment_id=VALUES(roster_assignment_id), is_roster_duty=VALUES(is_roster_duty)');
         foreach ($byEmpDate as $k => $v) {
             [$emp, $date] = explode('|', $k);
             $in = $v['in'];
@@ -151,7 +172,27 @@ class AttendanceProcessor
             }
 
             $empId = (int)$emp;
-            $shift = $shiftsByEmployee[$empId] ?? $defaultShift;
+            
+            // ROSTER INTEGRATION: Check if employee has roster assignment on this date
+            $rosterAssignment = $this->getRosterAssignmentForDate($pdo, $tenantId, $empId, $date);
+            $rosterAssignmentId = null;
+            $isRosterDuty = 0;
+            
+            // Use roster times if available, otherwise fall back to shift
+            if ($rosterAssignment && $rosterAssignment['start_time'] && $rosterAssignment['end_time']) {
+                $shift = [
+                    'start_time' => $rosterAssignment['start_time'],
+                    'end_time' => $rosterAssignment['end_time'],
+                    'late_tolerance_minutes' => 0, // Roster duties typically have stricter punctuality
+                    'early_exit_tolerance_minutes' => 0,
+                    'break_duration_minutes' => 0
+                ];
+                $rosterAssignmentId = (int)$rosterAssignment['id'];
+                $isRosterDuty = 1;
+            } else {
+                $shift = $shiftsByEmployee[$empId] ?? $defaultShift;
+            }
+            
             $lateMinutes = 0;
             $earlyLeaveMinutes = 0;
             $overtimeMinutes = 0;
@@ -187,8 +228,9 @@ class AttendanceProcessor
             }
             $status = ($statusBase === 'Present' && $tags) ? implode(', ', $tags) : $statusBase;
 
-            $up->execute([$tenantId, $empId, $date, $in, $out, $worked, $lateMinutes, $earlyLeaveMinutes, $overtimeMinutes, $status]);
-            $result[] = ['employee_id' => $empId, 'date' => $date, 'in_time' => $in, 'out_time' => $out, 'worked_minutes' => $worked, 'late_minutes' => $lateMinutes, 'early_leave_minutes' => $earlyLeaveMinutes, 'overtime_minutes' => $overtimeMinutes, 'status' => $status];
+            // Update database with roster tracking
+            $up->execute([$tenantId, $empId, $date, $in, $out, $worked, $lateMinutes, $earlyLeaveMinutes, $overtimeMinutes, $status, $rosterAssignmentId, $isRosterDuty]);
+            $result[] = ['employee_id' => $empId, 'date' => $date, 'in_time' => $in, 'out_time' => $out, 'worked_minutes' => $worked, 'late_minutes' => $lateMinutes, 'early_leave_minutes' => $earlyLeaveMinutes, 'overtime_minutes' => $overtimeMinutes, 'status' => $status, 'is_roster_duty' => $isRosterDuty];
         }
 
         return $result;

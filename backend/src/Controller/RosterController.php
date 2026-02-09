@@ -431,6 +431,26 @@ class RosterController
             return;
         }
 
+        // LEAVE INTEGRATION: Check for leave conflicts
+        $leaveStmt = $pdo->prepare('SELECT id, status FROM leaves WHERE tenant_id = ? AND employee_id = ? AND date = ?');
+        $leaveStmt->execute([$tenantId, $employeeId, $dutyDate]);
+        $leave = $leaveStmt->fetch();
+        
+        if ($leave) {
+            $leaveStatus = strtolower(trim($leave['status'] ?? ''));
+            if ($leaveStatus === 'approved') {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Cannot assign roster duty: Employee has approved leave on this date',
+                    'conflict_type' => 'approved_leave'
+                ]);
+                return;
+            } elseif ($leaveStatus === 'pending') {
+                // Allow assignment but include warning
+                $warning = 'Employee has pending leave request on this date';
+            }
+        }
+
         // Check for duplicate assignment
         $dupStmt = $pdo->prepare('SELECT id FROM roster_assignments WHERE tenant_id = ? AND employee_id = ? AND duty_date = ? AND roster_type_id = ?');
         $dupStmt->execute([$tenantId, $employeeId, $dutyDate, $rosterTypeId]);
@@ -448,7 +468,11 @@ class RosterController
         $getStmt->execute([$id]);
         $assignment = $getStmt->fetch();
 
-        echo json_encode(['roster_assignment' => $assignment]);
+        $response = ['roster_assignment' => $assignment];
+        if (isset($warning)) {
+            $response['warning'] = $warning;
+        }
+        echo json_encode($response);
     }
 
     public function updateAssignment()

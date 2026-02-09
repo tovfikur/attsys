@@ -624,6 +624,87 @@ class PayrollService
             }
         }
 
+        // ROSTER DUTY ALLOWANCES INTEGRATION
+        // Fetch roster assignments for this employee during the payroll cycle
+        $rosterAllowanceTotal = 0;
+        $stmtRoster = $this->db->prepare('
+            SELECT ra.id, ra.duty_date, ra.start_time, ra.end_time, 
+                   rt.name AS roster_type_name, rt.allowance_type, 
+                   rt.allowance_amount, rt.hourly_rate_multiplier
+            FROM roster_assignments ra
+            JOIN roster_types rt ON rt.id = ra.roster_type_id
+            WHERE ra.tenant_id = ? 
+              AND ra.employee_id = ? 
+              AND ra.duty_date BETWEEN ? AND ?
+              AND ra.status = ?
+              AND rt.allowance_type != ?
+        ');
+        $stmtRoster->execute([$this->tenantId, $empId, $startDate, $endDate, 'scheduled', 'none']);
+        $rosterDuties = $stmtRoster->fetchAll(\PDO::FETCH_ASSOC);
+        
+        foreach ($rosterDuties as $roster) {
+            $allowanceType = strtolower(trim($roster['allowance_type'] ?? ''));
+            $amount = 0;
+            
+            if ($allowanceType === 'fixed') {
+                // Fixed allowance: flat amount per duty
+                $amount = (float)($roster['allowance_amount'] ?? 0);
+                if ($amount > 0) {
+                    $dutyDateFormatted = date('M d', strtotime($roster['duty_date']));
+                    $earnings[] = [
+                        'name' => "Roster Duty: {$roster['roster_type_name']} ({$dutyDateFormatted})",
+                        'type' => 'earning',
+                        'amount' => round($amount, 2),
+                        'is_variable' => 1
+                    ];
+                    $rosterAllowanceTotal += $amount;
+                    $grossEarning += $amount;
+                }
+            } elseif ($allowanceType === 'hourly') {
+                // Hourly allowance: calculate hours × multiplier × base rate
+                $multiplier = (float)($roster['hourly_rate_multiplier'] ?? 1.0);
+                
+                // Calculate duty hours from start_time and end_time
+                $startTime = $roster['start_time'] ?? null;
+                $endTime = $roster['end_time'] ?? null;
+                
+                if ($startTime && $endTime) {
+                    $start = new \DateTimeImmutable($roster['duty_date'] . ' ' . $startTime);
+                    $end = new \DateTimeImmutable($roster['duty_date'] . ' ' . $endTime);
+                    
+                    // Handle overnight duties
+                    if ($end <= $start) {
+                        $end = $end->modify('+1 day');
+                    }
+                    
+                    $durationMinutes = ($end->getTimestamp() - $start->getTimestamp()) / 60;
+                    $durationHours = $durationMinutes / 60;
+                    
+                    // Use the same hourly rate calculation as overtime
+                    $workHoursPerDay = (float)$this->store->getSetting('work_hours_per_day', 8);
+                    $daysPerMonth = (float)$this->store->getSetting('days_per_month', 30);
+                    $hourlyRate = ($daysPerMonth > 0 && $workHoursPerDay > 0) ? ($baseSalary / $daysPerMonth) / $workHoursPerDay : 0;
+                    
+                    // Calculate allowance: hours × hourly rate × multiplier
+                    // For example: 8 hours × $10/hr × 1.5 = $120
+                    $amount = round($durationHours * $hourlyRate * $multiplier, 2);
+                    
+                    if ($amount > 0) {
+                        $dutyDateFormatted = date('M d', strtotime($roster['duty_date']));
+                        $hoursFormatted = number_format($durationHours, 1);
+                        $earnings[] = [
+                            'name' => "Roster Duty: {$roster['roster_type_name']} ({$dutyDateFormatted}, {$hoursFormatted}h × {$multiplier}x)",
+                            'type' => 'earning',
+                            'amount' => $amount,
+                            'is_variable' => 1
+                        ];
+                        $rosterAllowanceTotal += $amount;
+                        $grossEarning += $amount;
+                    }
+                }
+            }
+        }
+
         // 6. Loans & Advances Deduction
         $loans = $this->store->getActiveLoans($empId);
         $totalLoanDeduction = 0;
