@@ -144,6 +144,12 @@ const navItems: NavItem[] = [
     roles: ["tenant_owner", "hr_admin", "manager"],
   },
   {
+    label: "Roster Duty",
+    to: "/roster",
+    icon: <EventNoteRounded />,
+    roles: ["tenant_owner", "hr_admin", "manager"],
+  },
+  {
     label: "Reports",
     to: "/reports",
     icon: <AssessmentRounded />,

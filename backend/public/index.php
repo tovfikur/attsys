@@ -299,6 +299,19 @@ $router->postAuth('/api/shifts/update', ['App\Controller\ShiftController', 'upda
 $router->postAuth('/api/shifts/delete', ['App\Controller\ShiftController', 'delete'], 'perm:attendance.write');
 $router->postAuth('/api/shifts/assign', ['App\Controller\ShiftController', 'assign'], 'perm:attendance.write');
 
+// Roster Duty Management
+$router->getAuth('/api/roster/types', ['App\Controller\RosterController', 'listTypes'], 'perm:roster.read');
+$router->postAuth('/api/roster/types', ['App\Controller\RosterController', 'createType'], 'perm:roster.manage');
+$router->postAuth('/api/roster/types/update', ['App\Controller\RosterController', 'updateType'], 'perm:roster.manage');
+$router->postAuth('/api/roster/types/delete', ['App\Controller\RosterController', 'deleteType'], 'perm:roster.manage');
+$router->getAuth('/api/roster/assignments', ['App\Controller\RosterController', 'listAssignments'], 'perm:roster.read');
+$router->getAuth('/api/roster/assignments/calendar', ['App\Controller\RosterController', 'calendar'], 'perm:roster.read');
+$router->getAuth('/api/roster/assignments/employee', ['App\Controller\RosterController', 'employeeAssignments'], 'perm:roster.read');
+$router->postAuth('/api/roster/assignments', ['App\Controller\RosterController', 'createAssignment'], 'perm:roster.assign');
+$router->postAuth('/api/roster/assignments/update', ['App\Controller\RosterController', 'updateAssignment'], 'perm:roster.assign');
+$router->postAuth('/api/roster/assignments/delete', ['App\Controller\RosterController', 'deleteAssignment'], 'perm:roster.assign');
+
+
 $router->getAuth('/api/me', ['App\Controller\ProfileController', 'me'], 'any');
 $router->postAuth('/api/me/update', ['App\Controller\ProfileController', 'updateMe'], 'any');
 $router->postAuth('/api/change_password', ['App\Controller\ProfileController', 'changePassword'], 'any');
