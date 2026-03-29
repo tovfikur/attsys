@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "./api";
 import { getErrorMessage } from "./utils/errors";
 import {
@@ -87,15 +87,16 @@ export default function Roster() {
 
   // Calendar state
   const [currentMonth, setCurrentMonth] = useState(
-    new Date().toISOString().slice(0, 7)
+    new Date().toISOString().slice(0, 7),
   );
 
   // Modal States
   const [openTypeForm, setOpenTypeForm] = useState(false);
   const [openAssignmentForm, setOpenAssignmentForm] = useState(false);
   const [currentType, setCurrentType] = useState<Partial<RosterType>>({});
-  const [currentAssignment, setCurrentAssignment] =
-    useState<Partial<RosterAssignment>>({});
+  const [currentAssignment, setCurrentAssignment] = useState<
+    Partial<RosterAssignment>
+  >({});
 
   // Filters
   const [filterEmployee, setFilterEmployee] = useState<string>("");
@@ -112,7 +113,7 @@ export default function Roster() {
     }
   };
 
-  const fetchAssignments = async () => {
+  const fetchAssignments = useCallback(async () => {
     try {
       const params: Record<string, string> = {};
       if (filterStartDate) params.start_date = filterStartDate;
@@ -125,7 +126,7 @@ export default function Roster() {
     } catch (err) {
       console.error("Failed to fetch assignments", err);
     }
-  };
+  }, [filterEmployee, filterEndDate, filterRosterType, filterStartDate]);
 
   const fetchEmployees = async () => {
     try {
@@ -139,15 +140,17 @@ export default function Roster() {
   useEffect(() => {
     const t = window.setTimeout(() => {
       void fetchRosterTypes();
-      void fetchAssignments();
       void fetchEmployees();
     }, 0);
     return () => window.clearTimeout(t);
   }, []);
 
   useEffect(() => {
-    void fetchAssignments();
-  }, [filterEmployee, filterRosterType, filterStartDate, filterEndDate]);
+    const id = window.setTimeout(() => {
+      void fetchAssignments();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [fetchAssignments]);
 
   // ==================== ROSTER TYPE HANDLERS ====================
 
@@ -166,7 +169,11 @@ export default function Roster() {
   };
 
   const handleDeleteType = async (id: number) => {
-    if (!window.confirm("Delete this roster type? This will fail if it has assignments."))
+    if (
+      !window.confirm(
+        "Delete this roster type? This will fail if it has assignments.",
+      )
+    )
       return;
     try {
       await api.post("/api/roster/types/delete", { id });
@@ -257,7 +264,7 @@ export default function Roster() {
 
     const getDayAssignments = (day: number) => {
       const date = `${year}-${String(month).padStart(2, "0")}-${String(
-        day
+        day,
       ).padStart(2, "0")}`;
       return assignments.filter((a) => a.duty_date === date);
     };
@@ -269,9 +276,10 @@ export default function Roster() {
           sx={{
             p: 3,
             mb: 3,
-            background: theme.palette.mode === 'dark' 
-              ? 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)'
-              : 'linear-gradient(135deg, #2563eb 0%, #60a5fa 100%)',
+            background:
+              theme.palette.mode === "dark"
+                ? "linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)"
+                : "linear-gradient(135deg, #2563eb 0%, #60a5fa 100%)",
             borderRadius: 3,
           }}
         >
@@ -287,10 +295,10 @@ export default function Roster() {
                 d.setMonth(d.getMonth() - 1);
                 setCurrentMonth(d.toISOString().slice(0, 7));
               }}
-              sx={{ 
-                bgcolor: 'rgba(255,255,255,0.2)', 
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
-                color: 'white',
+              sx={{
+                bgcolor: "rgba(255,255,255,0.2)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.3)" },
+                color: "white",
                 fontWeight: 600,
                 px: 3,
               }}
@@ -310,10 +318,10 @@ export default function Roster() {
                 d.setMonth(d.getMonth() + 1);
                 setCurrentMonth(d.toISOString().slice(0, 7));
               }}
-              sx={{ 
-                bgcolor: 'rgba(255,255,255,0.2)', 
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
-                color: 'white',
+              sx={{
+                bgcolor: "rgba(255,255,255,0.2)",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.3)" },
+                color: "white",
                 fontWeight: 600,
                 px: 3,
               }}
@@ -323,23 +331,31 @@ export default function Roster() {
           </Stack>
         </Paper>
 
-        <Paper elevation={3} sx={{ p: 3, borderRadius: 3, overflow: 'hidden' }}>
+        <Paper elevation={3} sx={{ p: 3, borderRadius: 3, overflow: "hidden" }}>
           {/* Day Headers */}
-          <Box 
-            sx={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(7, 1fr)', 
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
               gap: 1,
               mb: 2,
             }}
           >
-            {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day) => (
+            {[
+              "Sunday",
+              "Monday",
+              "Tuesday",
+              "Wednesday",
+              "Thursday",
+              "Friday",
+              "Saturday",
+            ].map((day) => (
               <Box
                 key={day}
                 sx={{
                   py: 1.5,
-                  textAlign: 'center',
-                  bgcolor: 'primary.main',
+                  textAlign: "center",
+                  bgcolor: "primary.main",
                   borderRadius: 1,
                 }}
               >
@@ -356,20 +372,28 @@ export default function Roster() {
           </Box>
 
           {/* Calendar Grid */}
-          <Box 
-            sx={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(7, 1fr)', 
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
               gap: 1.5,
             }}
           >
             {calendarDays.map((day, idx) => {
               const dayAssignments = day ? getDayAssignments(day) : [];
               const today = new Date();
-              const isToday = day === today.getDate() && 
-                             currentMonth === today.toISOString().slice(0, 7);
-              const isPastDay = day && new Date(year, month - 1, day) < new Date(today.getFullYear(), today.getMonth(), today.getDate());
-              
+              const isToday =
+                day === today.getDate() &&
+                currentMonth === today.toISOString().slice(0, 7);
+              const isPastDay =
+                day &&
+                new Date(year, month - 1, day) <
+                  new Date(
+                    today.getFullYear(),
+                    today.getMonth(),
+                    today.getDate(),
+                  );
+
               return (
                 <Paper
                   key={idx}
@@ -377,29 +401,36 @@ export default function Roster() {
                   sx={{
                     minHeight: 120,
                     p: 1.5,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    backgroundColor: !day 
-                      ? 'transparent'
-                      : isToday 
-                        ? 'primary.main'
+                    display: "flex",
+                    flexDirection: "column",
+                    backgroundColor: !day
+                      ? "transparent"
+                      : isToday
+                        ? "primary.main"
                         : isPastDay
-                          ? 'action.disabledBackground'
-                          : dayAssignments.length > 0 
-                            ? 'background.paper'
-                            : 'grey.50',
-                    border: day ? '2px solid' : 'none',
-                    borderColor: isToday ? 'primary.dark' : dayAssignments.length > 0 ? 'primary.light' : 'divider',
+                          ? "action.disabledBackground"
+                          : dayAssignments.length > 0
+                            ? "background.paper"
+                            : "grey.50",
+                    border: day ? "2px solid" : "none",
+                    borderColor: isToday
+                      ? "primary.dark"
+                      : dayAssignments.length > 0
+                        ? "primary.light"
+                        : "divider",
                     borderRadius: 2,
-                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    cursor: day ? 'pointer' : 'default',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    '&:hover': day && !isPastDay ? {
-                      transform: 'translateY(-4px)',
-                      boxShadow: 4,
-                      borderColor: 'primary.main',
-                    } : {},
+                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                    cursor: day ? "pointer" : "default",
+                    position: "relative",
+                    overflow: "hidden",
+                    "&:hover":
+                      day && !isPastDay
+                        ? {
+                            transform: "translateY(-4px)",
+                            boxShadow: 4,
+                            borderColor: "primary.main",
+                          }
+                        : {},
                   }}
                   onClick={() => {
                     if (day && !isPastDay) {
@@ -420,13 +451,24 @@ export default function Roster() {
                 >
                   {day && (
                     <>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                        <Typography 
-                          variant="h6" 
+                      <Box
+                        sx={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          mb: 1,
+                        }}
+                      >
+                        <Typography
+                          variant="h6"
                           fontWeight="700"
                           sx={{
-                            color: isToday ? 'white' : isPastDay ? 'text.disabled' : 'text.primary',
-                            fontSize: '1.25rem',
+                            color: isToday
+                              ? "white"
+                              : isPastDay
+                                ? "text.disabled"
+                                : "text.primary",
+                            fontSize: "1.25rem",
                           }}
                         >
                           {day}
@@ -438,16 +480,16 @@ export default function Roster() {
                             sx={{
                               height: 20,
                               minWidth: 20,
-                              fontSize: '0.7rem',
+                              fontSize: "0.7rem",
                               fontWeight: 700,
-                              bgcolor: 'primary.main',
-                              color: 'white',
+                              bgcolor: "primary.main",
+                              color: "white",
                             }}
                           />
                         )}
                       </Box>
-                      
-                      <Stack spacing={0.5} sx={{ flex: 1, overflowY: 'auto' }}>
+
+                      <Stack spacing={0.5} sx={{ flex: 1, overflowY: "auto" }}>
                         {dayAssignments.slice(0, 3).map((a) => (
                           <Box
                             key={a.id}
@@ -460,32 +502,42 @@ export default function Roster() {
                               py: 0.5,
                               borderRadius: 1,
                               backgroundColor: a.color_code,
-                              color: 'white',
-                              fontSize: '0.75rem',
+                              color: "white",
+                              fontSize: "0.75rem",
                               fontWeight: 600,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                              '&:hover': {
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                              "&:hover": {
                                 opacity: 0.85,
-                                transform: 'scale(1.02)',
+                                transform: "scale(1.02)",
                               },
                             }}
                           >
-                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'white' }}>
+                            <Typography
+                              variant="caption"
+                              sx={{ fontWeight: 600, color: "white" }}
+                            >
                               {a.employee_name}
                             </Typography>
-                            <Typography variant="caption" sx={{ display: 'block', opacity: 0.9, color: 'white' }}>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                display: "block",
+                                opacity: 0.9,
+                                color: "white",
+                              }}
+                            >
                               {a.roster_type_name}
                             </Typography>
                           </Box>
                         ))}
                         {dayAssignments.length > 3 && (
-                          <Typography 
-                            variant="caption" 
-                            sx={{ 
-                              color: isToday ? 'white' : 'primary.main',
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: isToday ? "white" : "primary.main",
                               fontWeight: 600,
-                              textAlign: 'center',
+                              textAlign: "center",
                               pt: 0.5,
                             }}
                           >
@@ -510,7 +562,12 @@ export default function Roster() {
     return (
       <Box>
         <Paper elevation={1} sx={{ p: 2, mb: 3, borderRadius: 2 }}>
-          <Typography variant="subtitle2" fontWeight="600" mb={2} color="text.secondary">
+          <Typography
+            variant="subtitle2"
+            fontWeight="600"
+            mb={2}
+            color="text.secondary"
+          >
             Filter Assignments
           </Typography>
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
@@ -566,15 +623,15 @@ export default function Roster() {
         </Paper>
 
         {!isMobile ? (
-          <TableContainer 
-            component={Paper} 
-            elevation={2} 
-            sx={{ 
+          <TableContainer
+            component={Paper}
+            elevation={2}
+            sx={{
               borderRadius: 2,
-              '& .MuiTableHead-root': {
-                bgcolor: 'primary.main',
-                '& .MuiTableCell-head': {
-                  color: 'white',
+              "& .MuiTableHead-root": {
+                bgcolor: "primary.main",
+                "& .MuiTableCell-head": {
+                  color: "white",
                   fontWeight: 700,
                 },
               },
@@ -594,11 +651,11 @@ export default function Roster() {
               </TableHead>
               <TableBody>
                 {assignments.map((assignment) => (
-                  <TableRow 
+                  <TableRow
                     key={assignment.id}
                     sx={{
-                      '&:hover': {
-                        bgcolor: 'action.hover',
+                      "&:hover": {
+                        bgcolor: "action.hover",
                       },
                     }}
                   >
@@ -629,7 +686,7 @@ export default function Roster() {
                       {assignment.start_time && assignment.end_time
                         ? `${assignment.start_time.slice(
                             0,
-                            5
+                            5,
                           )} - ${assignment.end_time.slice(0, 5)}`
                         : "—"}
                     </TableCell>
@@ -742,32 +799,39 @@ export default function Roster() {
 
         <Grid container spacing={3}>
           {rosterTypes.map((type) => (
-            <Grid item xs={12} sm={6} md={4} key={type.id}>
+            <Grid key={type.id} size={{ xs: 12, sm: 6, md: 4 }}>
               <Card
                 elevation={3}
-                sx={{ 
+                sx={{
                   borderLeft: `5px solid ${type.color_code}`,
-                  transition: 'all 0.3s',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
+                  transition: "all 0.3s",
+                  "&:hover": {
+                    transform: "translateY(-4px)",
                     boxShadow: 6,
                   },
                 }}
               >
                 <CardContent sx={{ pb: 1 }}>
-                  <Stack direction="row" spacing={1} alignItems="center" mb={1.5}>
+                  <Stack
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    mb={1.5}
+                  >
                     <Box
                       sx={{
                         width: 12,
                         height: 12,
-                        borderRadius: '50%',
+                        borderRadius: "50%",
                         bgcolor: type.color_code,
                       }}
                     />
-                    <Typography variant="h6" fontWeight="600">{type.name}</Typography>
+                    <Typography variant="h6" fontWeight="600">
+                      {type.name}
+                    </Typography>
                   </Stack>
-                  <Typography 
-                    variant="body2" 
+                  <Typography
+                    variant="body2"
                     color="text.secondary"
                     sx={{ mb: 2, minHeight: 40 }}
                   >
@@ -775,8 +839,16 @@ export default function Roster() {
                   </Typography>
                   <Divider sx={{ my: 1.5 }} />
                   <Stack spacing={1}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center">
-                      <Typography variant="caption" color="text.secondary" fontWeight="500">
+                    <Stack
+                      direction="row"
+                      justifyContent="space-between"
+                      alignItems="center"
+                    >
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        fontWeight="500"
+                      >
                         Default Time:
                       </Typography>
                       <Typography variant="caption" fontWeight="600">
@@ -789,12 +861,12 @@ export default function Roster() {
                       label={type.is_active ? "Active" : "Inactive"}
                       size="small"
                       color={type.is_active ? "success" : "default"}
-                      sx={{ fontWeight: 600, alignSelf: 'flex-start' }}
+                      sx={{ fontWeight: 600, alignSelf: "flex-start" }}
                     />
                   </Stack>
                 </CardContent>
                 <Divider />
-                <CardActions sx={{ justifyContent: 'flex-end', p: 1.5 }}>
+                <CardActions sx={{ justifyContent: "flex-end", p: 1.5 }}>
                   <Button
                     size="small"
                     variant="outlined"
@@ -845,12 +917,12 @@ export default function Roster() {
         </Button>
       </Stack>
 
-      <Paper 
-        elevation={2} 
-        sx={{ 
-          mb: 4, 
+      <Paper
+        elevation={2}
+        sx={{
+          mb: 4,
           borderRadius: 2,
-          overflow: 'hidden',
+          overflow: "hidden",
         }}
       >
         <Tabs
@@ -858,26 +930,18 @@ export default function Roster() {
           onChange={(_, newValue) => setTabIndex(newValue)}
           variant="fullWidth"
           sx={{
-            '& .MuiTab-root': {
+            "& .MuiTab-root": {
               fontWeight: 600,
-              fontSize: '0.95rem',
+              fontSize: "0.95rem",
               py: 2,
             },
           }}
         >
-          <Tab 
-            icon={<CalendarIcon />} 
-            label="Calendar" 
-            iconPosition="start"
-          />
-          <Tab 
-            icon={<ListIcon />} 
-            label="List" 
-            iconPosition="start"
-          />
-          <Tab 
-            icon={<CategoryIcon />} 
-            label="Duty Types" 
+          <Tab icon={<CalendarIcon />} label="Calendar" iconPosition="start" />
+          <Tab icon={<ListIcon />} label="List" iconPosition="start" />
+          <Tab
+            icon={<CategoryIcon />}
+            label="Duty Types"
             iconPosition="start"
           />
         </Tabs>

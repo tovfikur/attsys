@@ -21,7 +21,8 @@ function isNativeRuntime(): boolean {
       }
     | undefined;
   if (!cap) return false;
-  if (typeof cap.isNativePlatform === "function") return !!cap.isNativePlatform();
+  if (typeof cap.isNativePlatform === "function")
+    return !!cap.isNativePlatform();
   if (typeof cap.getPlatform === "function") return cap.getPlatform() !== "web";
   return false;
 }
@@ -34,11 +35,6 @@ function getTenantHint(): string | null {
   return (
     localStorage.getItem("tenant") || sessionStorage.getItem("tenant") || null
   );
-}
-
-function isMobileViewport(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.matchMedia("(max-width: 900px)").matches;
 }
 
 function getRootDomain(): string {
@@ -88,6 +84,18 @@ function getEffectiveRootDomain(): string {
   return "";
 }
 
+function getLocalDevApiBaseUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const host = (window.location.hostname || "").toLowerCase();
+  if (!isLocalHost(host)) return null;
+  const v = (import.meta as unknown as { env?: Record<string, string> }).env
+    ?.VITE_API_PORT;
+  const port = String(v || "5170").trim();
+  if (!/^\d+$/.test(port)) return null;
+  const protocol = window.location.protocol || "http:";
+  return `${protocol}//${host}:${port}`;
+}
+
 function getRequestBaseUrl(): string | undefined {
   if (typeof window === "undefined") return getApiBaseUrl() || undefined;
 
@@ -98,7 +106,11 @@ function getRequestBaseUrl(): string | undefined {
     return `https://${root}`;
   }
 
-  return getApiBaseUrl() || undefined;
+  const apiBase = getApiBaseUrl();
+  if (apiBase) return apiBase;
+  const localBase = getLocalDevApiBaseUrl();
+  if (localBase) return localBase;
+  return undefined;
 }
 
 const TWO_PART_PUBLIC_SUFFIXES = new Set<string>([
@@ -147,6 +159,15 @@ function isIpHost(host: string): boolean {
   if (!h) return false;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true;
   return h.includes(":");
+}
+
+function isLocalHost(host: string): boolean {
+  const h = (host || "").toLowerCase();
+  if (!h) return false;
+  if (h === "localhost") return true;
+  if (isIpHost(h)) return true;
+  if (h.endsWith(".localhost")) return true;
+  return false;
 }
 
 function inferRootDomainFromHost(host: string): string {
@@ -243,8 +264,9 @@ api.interceptors.request.use((config) => {
     config.headers = config.headers || {};
     config.headers["X-Tenant-ID"] = tenantFromHost;
   } else {
+    const host = typeof window !== "undefined" ? window.location.hostname : "";
     const tenantHint =
-      isNativeRuntime() || isMobileViewport() ? getTenantHint() : null;
+      isNativeRuntime() || isLocalHost(host) ? getTenantHint() : null;
     if (tenantHint) {
       config.headers = config.headers || {};
       config.headers["X-Tenant-ID"] = tenantHint;
@@ -260,7 +282,7 @@ api.interceptors.response.use(
       const url = String(response.config?.url || "");
       const skip = Boolean(
         response.config?.headers &&
-          (response.config.headers as Record<string, unknown>)["X-Toast-Skip"]
+        (response.config.headers as Record<string, unknown>)["X-Toast-Skip"],
       );
       if (!skip && !url.includes("/login")) {
         const message =
@@ -286,7 +308,7 @@ api.interceptors.response.use(
       const url = String(error.config?.url || "");
       const skip = Boolean(
         error.config?.headers &&
-          (error.config.headers as Record<string, unknown>)["X-Toast-Skip"]
+        (error.config.headers as Record<string, unknown>)["X-Toast-Skip"],
       );
       if (!skip && !url.includes("/login")) {
         emitToast({
@@ -296,7 +318,7 @@ api.interceptors.response.use(
       }
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;

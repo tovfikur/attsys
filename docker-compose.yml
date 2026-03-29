@@ -3,6 +3,8 @@ services:
     image: mysql:8.0
     container_name: attendance_mysql
     restart: unless-stopped
+    # Use mysql_native_password to avoid slow RSA key exchange on first PHP PDO connect
+    command: --default-authentication-plugin=mysql_native_password
     environment:
       MYSQL_DATABASE: attendance_saas
       MYSQL_ROOT_PASSWORD: attroot
@@ -13,6 +15,7 @@ services:
     volumes:
       - db_data:/var/lib/mysql
       - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/perf.cnf:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "db", "-u", "root", "-pattroot"]
       interval: 5s
@@ -46,6 +49,9 @@ services:
       DB_USER: attendance
       DB_PASS: attpass
       FACE_API_URL: "http://face_api:5000"
+      # PHP built-in server workers — allows SSE to run concurrently with API requests.
+      # Without this, the SSE while-loop blocks the single-threaded server.
+      PHP_CLI_SERVER_WORKERS: "4"
     working_dir: /app
     command: sh -lc "php run_migration.php && exec php -S 0.0.0.0:8000 -t public public/index.php"
     volumes:
@@ -74,7 +80,11 @@ services:
     environment:
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
-      VITE_API_BASE_URL: "http://127.0.0.1:${ATT_API_PORT:-5170}"
+      # Leave VITE_API_BASE_URL empty so the browser uses relative /api/ paths
+      # that are proxied server-side by Vite → no cross-origin (CORS) issue.
+      VITE_API_BASE_URL: ""
+      # Vite proxy target — internal Docker service name:port
+      VITE_BACKEND_URL: "http://backend:8000"
       VITE_HMR_PROTOCOL: "${VITE_HMR_PROTOCOL:-}"
       VITE_HMR_CLIENT_PORT: "${VITE_HMR_CLIENT_PORT:-}"
       VITE_HMR_HOST: "${VITE_HMR_HOST:-}"

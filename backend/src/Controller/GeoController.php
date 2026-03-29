@@ -23,7 +23,7 @@ class GeoController
 
     private function ensureSettings(\PDO $pdo, int $tenantId): void
     {
-        $stmt = $pdo->prepare('INSERT IGNORE INTO geo_settings(tenant_id) VALUES (?)');
+        $stmt = $pdo->prepare('INSERT IGNORE INTO geo_settings(tenant_id, enabled) VALUES (?, 1)');
         $stmt->execute([(int)$tenantId]);
     }
 
@@ -471,4 +471,3 @@ class GeoController
         echo json_encode(['ok' => true]);
     }
 }
-

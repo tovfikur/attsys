@@ -82,7 +82,7 @@ function MapAutoFit(props: {
 
     const b = L.latLngBounds(props.bounds);
     map.fitBounds(b, { padding: [24, 24] });
-  }, [boundsKey, map, props.followCenter]);
+  }, [boundsKey, map, props.followCenter, props.bounds]);
 
   useEffect(() => {
     if (!props.followCenter) return;
@@ -90,6 +90,53 @@ function MapAutoFit(props: {
   }, [followKey, map, props.followCenter]);
 
   return null;
+}
+
+function MapView(props: {
+  height: number | string;
+  borderRadius?: number;
+  bounds: [number, number][];
+  followCenter: [number, number] | null;
+  rows: LatestRow[];
+  trail: [number, number][];
+  onSelectEmployeeId: (employeeId: string) => void;
+}) {
+  const br = props.borderRadius ?? 2;
+  return (
+    <Box sx={{ height: props.height, borderRadius: br, overflow: "hidden" }}>
+      <MapContainer
+        bounds={props.bounds}
+        style={{ height: "100%", width: "100%" }}
+      >
+        <TileLayer
+          attribution="&copy; OpenStreetMap contributors"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <MapAutoFit bounds={props.bounds} followCenter={props.followCenter} />
+        {props.rows.map((r) => (
+          <CircleMarker
+            key={r.employee_id}
+            center={[r.latitude, r.longitude]}
+            radius={8}
+            pathOptions={{
+              color: statusColor(r.status),
+              fillColor: statusColor(r.status),
+              fillOpacity: 0.9,
+            }}
+            eventHandlers={{
+              click: () => props.onSelectEmployeeId(r.employee_id),
+            }}
+          />
+        ))}
+        {props.trail.length >= 2 && (
+          <Polyline
+            positions={props.trail}
+            pathOptions={{ color: "#1976d2", weight: 4, opacity: 0.85 }}
+          />
+        )}
+      </MapContainer>
+    </Box>
+  );
 }
 
 const statusColor = (status: string) => {
@@ -125,7 +172,7 @@ export default function TrackingDashboard() {
   const [followSelected, setFollowSelected] = useState(true);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [nextRefreshAt, setNextRefreshAt] = useState<number | null>(null);
-  const [nowTick, setNowTick] = useState<number>(Date.now());
+  const [nowTick, setNowTick] = useState<number>(0);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -176,8 +223,10 @@ export default function TrackingDashboard() {
   );
 
   useEffect(() => {
-    setError("");
-    void loadLatest();
+    const id = window.setTimeout(() => {
+      void loadLatest();
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [loadLatest]);
 
   const refreshAll = useCallback(async () => {
@@ -187,7 +236,6 @@ export default function TrackingDashboard() {
 
   useEffect(() => {
     if (!allowed) return;
-    setNextRefreshAt(Date.now() + refreshMs);
     const id = window.setInterval(() => {
       void refreshAll();
     }, refreshMs);
@@ -195,7 +243,10 @@ export default function TrackingDashboard() {
   }, [allowed, refreshAll, refreshMs]);
 
   useEffect(() => {
-    void loadHistory(selectedEmployeeId);
+    const id = window.setTimeout(() => {
+      void loadHistory(selectedEmployeeId);
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [loadHistory, selectedEmployeeId]);
 
   useEffect(() => {
@@ -233,6 +284,7 @@ export default function TrackingDashboard() {
 
   const refreshInSec = useMemo(() => {
     if (!nextRefreshAt) return null;
+    if (nowTick === 0) return null;
     const diff = nextRefreshAt - nowTick;
     return Math.max(0, Math.ceil(diff / 1000));
   }, [nextRefreshAt, nowTick]);
@@ -241,45 +293,6 @@ export default function TrackingDashboard() {
     if (!lastUpdatedAt) return "—";
     return new Date(lastUpdatedAt).toLocaleTimeString();
   }, [lastUpdatedAt]);
-
-  const MapView = useCallback(
-    (props: { height: number | string; borderRadius?: number }) => {
-      const br = props.borderRadius ?? 2;
-      return (
-        <Box sx={{ height: props.height, borderRadius: br, overflow: "hidden" }}>
-          <MapContainer bounds={mapBounds} style={{ height: "100%", width: "100%" }}>
-            <TileLayer
-              attribution="&copy; OpenStreetMap contributors"
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            <MapAutoFit bounds={mapBounds} followCenter={followCenter} />
-            {rows.map((r) => (
-              <CircleMarker
-                key={r.employee_id}
-                center={[r.latitude, r.longitude]}
-                radius={8}
-                pathOptions={{
-                  color: statusColor(r.status),
-                  fillColor: statusColor(r.status),
-                  fillOpacity: 0.9,
-                }}
-                eventHandlers={{
-                  click: () => setSelectedEmployeeId(r.employee_id),
-                }}
-              />
-            ))}
-            {trail.length >= 2 && (
-              <Polyline
-                positions={trail}
-                pathOptions={{ color: "#1976d2", weight: 4, opacity: 0.85 }}
-              />
-            )}
-          </MapContainer>
-        </Box>
-      );
-    },
-    [followCenter, mapBounds, rows, trail],
-  );
 
   if (!allowed) {
     return (
@@ -297,8 +310,8 @@ export default function TrackingDashboard() {
             Live Tracking
           </Typography>
           <Typography color="text.secondary">
-            Auto-refreshes every 30 seconds. Offline after {offlineAfter}s. Last update:{" "}
-            {lastUpdatedLabel}
+            Auto-refreshes every 30 seconds. Offline after {offlineAfter}s. Last
+            update: {lastUpdatedLabel}
             {refreshInSec !== null ? ` · Next refresh in ${refreshInSec}s` : ""}
           </Typography>
         </Box>
@@ -346,7 +359,10 @@ export default function TrackingDashboard() {
               />
             </Stack>
             <Stack direction="row" spacing={1.5} alignItems="center">
-              <Button variant="outlined" onClick={() => setFullScreenMapOpen(true)}>
+              <Button
+                variant="outlined"
+                onClick={() => setFullScreenMapOpen(true)}
+              >
                 Full Screen
               </Button>
               <Button variant="contained" onClick={() => void refreshAll()}>
@@ -355,7 +371,14 @@ export default function TrackingDashboard() {
             </Stack>
           </Stack>
 
-          <MapView height={420} />
+          <MapView
+            height={420}
+            bounds={mapBounds}
+            followCenter={followCenter}
+            rows={rows}
+            trail={trail}
+            onSelectEmployeeId={setSelectedEmployeeId}
+          />
         </Paper>
 
         <Paper sx={{ p: 2.5 }}>
@@ -438,18 +461,31 @@ export default function TrackingDashboard() {
             >
               <Typography color="text.secondary">
                 Last update: {lastUpdatedLabel}
-                {refreshInSec !== null ? ` · Next refresh in ${refreshInSec}s` : ""}
+                {refreshInSec !== null
+                  ? ` · Next refresh in ${refreshInSec}s`
+                  : ""}
               </Typography>
               <Stack direction="row" spacing={1.5}>
                 <Button variant="outlined" onClick={() => void refreshAll()}>
                   Refresh now
                 </Button>
-                <Button variant="contained" onClick={() => setFullScreenMapOpen(false)}>
+                <Button
+                  variant="contained"
+                  onClick={() => setFullScreenMapOpen(false)}
+                >
                   Close
                 </Button>
               </Stack>
             </Stack>
-            <MapView height="80vh" borderRadius={2} />
+            <MapView
+              height="80vh"
+              borderRadius={2}
+              bounds={mapBounds}
+              followCenter={followCenter}
+              rows={rows}
+              trail={trail}
+              onSelectEmployeeId={setSelectedEmployeeId}
+            />
           </Stack>
         </DialogContent>
       </Dialog>

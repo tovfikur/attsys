@@ -38,6 +38,10 @@ import {
 import api from "../api";
 import { getErrorMessage } from "../utils/errors";
 import PayslipListDialog from "./PayslipListDialog";
+import {
+  formatCurrency,
+  usePayrollCurrencyCode,
+} from "../utils/payrollHelpers";
 
 type PayrollCycle = {
   id: number;
@@ -118,6 +122,7 @@ type PayslipPayment = {
 };
 
 export default function PayrollCycles() {
+  const currencyCode = usePayrollCurrencyCode();
   const [cycles, setCycles] = useState<PayrollCycle[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -372,10 +377,31 @@ export default function PayrollCycles() {
   };
 
   const handleDownloadBank = async (id: number) => {
-    window.open(
-      `${api.defaults.baseURL || ""}/api/payroll/cycles/bank-export?cycle_id=${id}&token=${localStorage.getItem("token")}`,
-      "_blank",
-    );
+    setError("");
+    try {
+      const res = await api.get(
+        `/api/payroll/cycles/bank-export?cycle_id=${id}`,
+        { responseType: "blob" },
+      );
+      const blob = res.data as Blob;
+      if (!blob.size) {
+        setError("Bank export file is empty");
+        return;
+      }
+      const disposition = String(res.headers?.["content-disposition"] || "");
+      const match = /filename="([^"]+)"/.exec(disposition);
+      const filename = match?.[1] || `bank_transfer_cycle_${id}.csv`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to download bank export"));
+    }
   };
 
   const handleOpenBonuses = async (cycle: PayrollCycle) => {
@@ -544,7 +570,7 @@ export default function PayrollCycles() {
                 </TableCell>
                 <TableCell align="right">{cycle.processed_count}</TableCell>
                 <TableCell align="right">
-                  {cycle.total_net?.toLocaleString()}
+                  {formatCurrency(Number(cycle.total_net || 0), currencyCode)}
                 </TableCell>
                 <TableCell align="right">
                   <Stack direction="row" spacing={1} justifyContent="flex-end">
@@ -813,13 +839,13 @@ export default function PayrollCycles() {
                         {p.employee_name} ({p.employee_code})
                       </TableCell>
                       <TableCell align="right">
-                        {Number(p.net_salary).toLocaleString()}
+                        {formatCurrency(Number(p.net_salary), currencyCode)}
                       </TableCell>
                       <TableCell align="right">
-                        {Number(p.paid_amount).toLocaleString()}
+                        {formatCurrency(Number(p.paid_amount), currencyCode)}
                       </TableCell>
                       <TableCell align="right">
-                        {Number(p.balance).toLocaleString()}
+                        {formatCurrency(Number(p.balance), currencyCode)}
                       </TableCell>
                       <TableCell align="center">
                         <Chip
@@ -886,7 +912,7 @@ export default function PayrollCycles() {
                       <TableRow key={pp.id}>
                         <TableCell>{pp.payment_date}</TableCell>
                         <TableCell align="right">
-                          {Number(pp.amount).toLocaleString()}
+                          {formatCurrency(Number(pp.amount), currencyCode)}
                         </TableCell>
                         <TableCell>{pp.method}</TableCell>
                         <TableCell>{pp.reference || "-"}</TableCell>
@@ -1077,7 +1103,10 @@ export default function PayrollCycles() {
                       </TableCell>
                       <TableCell>{bonus.title}</TableCell>
                       <TableCell align="right">
-                        {bonus.amount?.toLocaleString()}
+                        {formatCurrency(
+                          Number(bonus.amount || 0),
+                          currencyCode,
+                        )}
                       </TableCell>
                       <TableCell align="center">
                         {bonus.taxable ? "Yes" : "No"}

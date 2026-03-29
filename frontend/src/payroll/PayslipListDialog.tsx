@@ -27,6 +27,7 @@ import {
 import api from "../api";
 import { getErrorMessage } from "../utils/errors";
 import PayslipEditorDialog from "./PayslipEditorDialog";
+import { formatCurrency, usePayrollCurrencyCode } from "../utils/payrollHelpers";
 
 interface PayslipSummary {
   id: number;
@@ -52,6 +53,7 @@ export default function PayslipListDialog({
   cycleName,
   status,
 }: PayslipListDialogProps) {
+  const currencyCode = usePayrollCurrencyCode();
   const [payslips, setPayslips] = useState<PayslipSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -183,13 +185,16 @@ export default function PayslipListDialog({
                         </Typography>
                       </TableCell>
                       <TableCell align="right">
-                        {Number(p.gross_salary).toLocaleString()}
+                        {formatCurrency(Number(p.gross_salary), currencyCode)}
                       </TableCell>
                       <TableCell align="right" sx={{ color: "error.main" }}>
-                        {Number(p.total_deductions).toLocaleString()}
+                        {formatCurrency(
+                          Number(p.total_deductions),
+                          currencyCode,
+                        )}
                       </TableCell>
                       <TableCell align="right" sx={{ fontWeight: "bold" }}>
-                        {Number(p.net_salary).toLocaleString()}
+                        {formatCurrency(Number(p.net_salary), currencyCode)}
                       </TableCell>
                       <TableCell align="right">
                         <IconButton

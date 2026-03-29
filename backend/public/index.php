@@ -105,6 +105,9 @@ try {
 $router = new Router();
 
 // Define Routes
+// --- Server-Sent Events Stream ---
+$router->get('/api/events', ['App\Core\EventController', 'stream']);
+
 $router->get('/api/health', ['App\Controller\HealthController', 'check']);
 $router->get('/api/tenant', ['App\Controller\HealthController', 'tenantInfo']);
 $router->post('/api/login', ['App\Controller\AuthController', 'login']);
@@ -222,6 +225,9 @@ $router->postAuth('/api/payroll/structure', ['App\Payroll\PayrollController', 's
 $router->getAuth('/api/payroll/structure', ['App\Payroll\PayrollController', 'getStructure'], 'perm:employees.write');
 $router->getAuth('/api/payroll/structure/history', ['App\Payroll\PayrollController', 'getStructureHistory'], 'perm:employees.write');
 $router->getAuth('/api/payroll/components', ['App\Payroll\PayrollController', 'getComponents'], 'perm:employees.write');
+$router->postAuth('/api/payroll/components', ['App\\Payroll\\PayrollController', 'createComponent'], 'perm:payroll.settings');
+$router->postAuth('/api/payroll/components/update', ['App\\Payroll\\PayrollController', 'updateComponent'], 'perm:payroll.settings');
+$router->postAuth('/api/payroll/components/delete', ['App\\Payroll\\PayrollController', 'deleteComponent'], 'perm:payroll.settings');
 $router->getAuth('/api/payroll/bank_accounts', ['App\Payroll\PayrollController', 'getBankAccounts'], 'perm:employees.write');
 $router->postAuth('/api/payroll/bank_accounts', ['App\Payroll\PayrollController', 'upsertBankAccount'], 'perm:employees.write');
 $router->postAuth('/api/payroll/bank_accounts/delete', ['App\Payroll\PayrollController', 'deleteBankAccount'], 'perm:employees.write');

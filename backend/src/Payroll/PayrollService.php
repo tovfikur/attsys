@@ -1087,6 +1087,7 @@ class PayrollService
 
     private function postPaymentToLedger(int $cycleId, array $cycle)
     {
+        $this->ensureChartAccounts();
         // Get Totals
         $totals = $this->store->getCycleTotals($cycleId);
         $totalNet = $totals['total_net'];
@@ -1128,6 +1129,7 @@ class PayrollService
     private function postPayslipPaymentToLedger(int $cycleId, array $payslip, float $amount, string $paymentDate): void
     {
         if ($amount <= 0) return;
+        $this->ensureChartAccounts();
         $accPayable = $this->store->getAccountByCode('2001'); // Salary Payable
         $accBank = $this->store->getAccountByCode('1001'); // Bank Account
 
@@ -1179,6 +1181,7 @@ class PayrollService
 
     private function postPayrollToLedger(int $cycleId, array $cycle)
     {
+        $this->ensureChartAccounts();
         // Aggregate Totals
         $payslips = $this->store->getPayslips($cycleId);
         if (empty($payslips)) throw new \Exception("No payslips generated for this cycle");
@@ -1298,6 +1301,33 @@ class PayrollService
         ];
 
         $this->store->createJournalEntry($header, $items);
+    }
+
+    private function ensureChartAccounts(): void
+    {
+        if (!$this->isLocalDev()) return;
+        $this->store->ensureDefaultAccounts([
+            ['code' => '5001', 'name' => 'Salary Expense', 'type' => 'expense'],
+            ['code' => '2001', 'name' => 'Salary Payable', 'type' => 'liability'],
+            ['code' => '2002', 'name' => 'Tax Payable', 'type' => 'liability'],
+            ['code' => '2003', 'name' => 'Provident Fund Payable', 'type' => 'liability'],
+            ['code' => '1001', 'name' => 'Bank Account', 'type' => 'asset'],
+            ['code' => '1002', 'name' => 'Employee Loans', 'type' => 'asset'],
+        ]);
+    }
+
+    private function isLocalDev(): bool
+    {
+        $env = strtolower(trim((string)(getenv('APP_ENV') ?: '')));
+        if (in_array($env, ['local', 'development', 'dev', 'testing'], true)) return true;
+        $devFlag = strtolower(trim((string)(getenv('DEV_MODE') ?: '')));
+        if (in_array($devFlag, ['1', 'true', 'yes', 'on'], true)) return true;
+        $host = strtolower(trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? ''))));
+        if ($host === '') return false;
+        $host = preg_replace('/:\d+$/', '', $host);
+        if ($host === 'localhost' || $host === '127.0.0.1' || $host === '::1') return true;
+        if (str_ends_with($host, '.localhost')) return true;
+        return false;
     }
 
     public function generateBankTransferCsv(int $cycleId)

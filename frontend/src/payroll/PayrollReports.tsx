@@ -33,6 +33,10 @@ import {
 } from "@mui/icons-material";
 import api from "../api";
 import { getErrorMessage } from "../utils/errors";
+import {
+  formatCurrency,
+  usePayrollCurrencyCode,
+} from "../utils/payrollHelpers";
 
 type MonthlyReport = {
   month: number;
@@ -122,6 +126,7 @@ type AuditRow = {
 };
 
 export default function PayrollReports() {
+  const currencyCode = usePayrollCurrencyCode();
   const [viewMode, setViewMode] = useState<"yearly" | "cycle" | "audit">(
     "yearly",
   );
@@ -177,6 +182,76 @@ export default function PayrollReports() {
     } finally {
       setEmailing(false);
     }
+  };
+
+  const extractFilename = (
+    headers: Record<string, unknown> | undefined,
+    fallback: string,
+  ) => {
+    const disposition = String(headers?.["content-disposition"] || "");
+    const match = /filename="([^"]+)"/.exec(disposition);
+    return match?.[1] || fallback;
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadReport = async (path: string, fallbackName: string) => {
+    setCycleError("");
+    try {
+      const res = await api.get(path, { responseType: "blob" });
+      const blob = res.data as Blob;
+      if (!blob.size) {
+        setCycleError("Report file is empty");
+        return;
+      }
+      const filename = extractFilename(res.headers, fallbackName);
+      downloadBlob(blob, filename);
+    } catch (err) {
+      setCycleError(getErrorMessage(err, "Failed to download report"));
+    }
+  };
+
+  const handleDownloadBankExport = async () => {
+    if (!selectedCycleId) return;
+    await downloadReport(
+      `/api/payroll/cycles/bank-export?cycle_id=${selectedCycleId}`,
+      `bank_transfer_cycle_${selectedCycleId}.csv`,
+    );
+  };
+
+  const handleDownloadTaxSummary = async () => {
+    if (!selectedCycleId) return;
+    await downloadReport(
+      `/api/payroll/reports/tax-export?cycle_id=${selectedCycleId}`,
+      `tax_summary_cycle_${selectedCycleId}.csv`,
+    );
+  };
+
+  const handleDownloadCycleReport = async () => {
+    if (!selectedCycleId) return;
+    const kind =
+      cycleTab === 0
+        ? "department_cost"
+        : cycleTab === 1
+          ? "tax"
+          : cycleTab === 2
+            ? "overtime"
+            : cycleTab === 3
+              ? "deductions"
+              : "journal";
+    await downloadReport(
+      `/api/payroll/reports/export?cycle_id=${selectedCycleId}&kind=${kind}`,
+      `payroll_${kind}_cycle_${selectedCycleId}.csv`,
+    );
   };
 
   // Fetch Yearly Report
@@ -357,7 +432,7 @@ export default function PayrollReports() {
                     Total Gross Salary
                   </Typography>
                   <Typography variant="h4">
-                    {yearlyTotals.gross.toLocaleString()}
+                    {formatCurrency(Number(yearlyTotals.gross), currencyCode)}
                   </Typography>
                 </CardContent>
               </Card>
@@ -369,7 +444,7 @@ export default function PayrollReports() {
                     Total Net Payable
                   </Typography>
                   <Typography variant="h4">
-                    {yearlyTotals.net.toLocaleString()}
+                    {formatCurrency(Number(yearlyTotals.net), currencyCode)}
                   </Typography>
                 </CardContent>
               </Card>
@@ -381,7 +456,7 @@ export default function PayrollReports() {
                     Total Tax Deducted
                   </Typography>
                   <Typography variant="h4">
-                    {yearlyTotals.tax.toLocaleString()}
+                    {formatCurrency(Number(yearlyTotals.tax), currencyCode)}
                   </Typography>
                 </CardContent>
               </Card>
@@ -412,13 +487,13 @@ export default function PayrollReports() {
                       <TableCell>{getMonthName(row.month)}</TableCell>
                       <TableCell align="right">{row.employee_count}</TableCell>
                       <TableCell align="right">
-                        {Number(row.total_gross).toLocaleString()}
+                        {formatCurrency(Number(row.total_gross), currencyCode)}
                       </TableCell>
                       <TableCell align="right">
-                        {Number(row.total_tax).toLocaleString()}
+                        {formatCurrency(Number(row.total_tax), currencyCode)}
                       </TableCell>
                       <TableCell align="right">
-                        {Number(row.total_net).toLocaleString()}
+                        {formatCurrency(Number(row.total_net), currencyCode)}
                       </TableCell>
                     </TableRow>
                   ))
@@ -470,34 +545,21 @@ export default function PayrollReports() {
                 <Button
                   variant="outlined"
                   startIcon={<DownloadRounded />}
-                  href={`/api/payroll/cycles/bank-export?cycle_id=${selectedCycleId}`}
-                  target="_blank"
+                  onClick={handleDownloadBankExport}
                 >
                   Export Bank CSV
                 </Button>
                 <Button
                   variant="outlined"
                   startIcon={<DownloadRounded />}
-                  href={`/api/payroll/reports/tax-export?cycle_id=${selectedCycleId}`}
-                  target="_blank"
+                  onClick={handleDownloadTaxSummary}
                 >
                   Export Tax Summary
                 </Button>
                 <Button
                   variant="outlined"
                   startIcon={<DownloadRounded />}
-                  href={`/api/payroll/reports/export?cycle_id=${selectedCycleId}&kind=${
-                    cycleTab === 0
-                      ? "department_cost"
-                      : cycleTab === 1
-                        ? "tax"
-                        : cycleTab === 2
-                          ? "overtime"
-                          : cycleTab === 3
-                            ? "deductions"
-                            : "journal"
-                  }`}
-                  target="_blank"
+                  onClick={handleDownloadCycleReport}
                 >
                   Export Report CSV
                 </Button>
@@ -517,7 +579,10 @@ export default function PayrollReports() {
                       Total Gross
                     </Typography>
                     <Typography variant="h6">
-                      {Number(cycleData.totals.total_gross).toLocaleString()}
+                      {formatCurrency(
+                        Number(cycleData.totals.total_gross),
+                        currencyCode,
+                      )}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, md: 3 }}>
@@ -525,7 +590,10 @@ export default function PayrollReports() {
                       Total Net
                     </Typography>
                     <Typography variant="h6" color="primary.main">
-                      {Number(cycleData.totals.total_net).toLocaleString()}
+                      {formatCurrency(
+                        Number(cycleData.totals.total_net),
+                        currencyCode,
+                      )}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, md: 3 }}>
@@ -533,7 +601,10 @@ export default function PayrollReports() {
                       Total Tax
                     </Typography>
                     <Typography variant="h6">
-                      {Number(cycleData.totals.total_tax).toLocaleString()}
+                      {formatCurrency(
+                        Number(cycleData.totals.total_tax),
+                        currencyCode,
+                      )}
                     </Typography>
                   </Grid>
                   <Grid size={{ xs: 6, md: 3 }}>
@@ -583,10 +654,16 @@ export default function PayrollReports() {
                               {row.employee_count}
                             </TableCell>
                             <TableCell align="right">
-                              {Number(row.total_gross).toLocaleString()}
+                              {formatCurrency(
+                                Number(row.total_gross),
+                                currencyCode,
+                              )}
                             </TableCell>
                             <TableCell align="right">
-                              {Number(row.total_net).toLocaleString()}
+                              {formatCurrency(
+                                Number(row.total_net),
+                                currencyCode,
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -622,10 +699,16 @@ export default function PayrollReports() {
                             </TableCell>
                             <TableCell>{row.department}</TableCell>
                             <TableCell align="right">
-                              {Number(row.gross_salary).toLocaleString()}
+                              {formatCurrency(
+                                Number(row.gross_salary),
+                                currencyCode,
+                              )}
                             </TableCell>
                             <TableCell align="right">
-                              {Number(row.tax_deducted).toLocaleString()}
+                              {formatCurrency(
+                                Number(row.tax_deducted),
+                                currencyCode,
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -671,7 +754,10 @@ export default function PayrollReports() {
                               {row.overtime_hours}
                             </TableCell>
                             <TableCell align="right">
-                              {Number(row.overtime_pay).toLocaleString()}
+                              {formatCurrency(
+                                Number(row.overtime_pay),
+                                currencyCode,
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -713,7 +799,7 @@ export default function PayrollReports() {
                             </TableCell>
                             <TableCell>{row.deduction_name}</TableCell>
                             <TableCell align="right">
-                              {Number(row.amount).toLocaleString()}
+                              {formatCurrency(Number(row.amount), currencyCode)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -756,12 +842,18 @@ export default function PayrollReports() {
                                     </TableCell>
                                     <TableCell align="right">
                                       {Number(item.debit) > 0
-                                        ? Number(item.debit).toLocaleString()
+                                        ? formatCurrency(
+                                            Number(item.debit),
+                                            currencyCode,
+                                          )
                                         : "-"}
                                     </TableCell>
                                     <TableCell align="right">
                                       {Number(item.credit) > 0
-                                        ? Number(item.credit).toLocaleString()
+                                        ? formatCurrency(
+                                            Number(item.credit),
+                                            currencyCode,
+                                          )
                                         : "-"}
                                     </TableCell>
                                   </TableRow>

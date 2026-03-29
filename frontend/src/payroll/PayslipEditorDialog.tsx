@@ -23,6 +23,11 @@ import {
 } from "@mui/material";
 import api from "../api";
 import { getErrorMessage } from "../utils/errors";
+import {
+  formatCurrency,
+  getCurrencySymbol,
+  usePayrollCurrencyCode,
+} from "../utils/payrollHelpers";
 
 interface PayslipItem {
   id: number;
@@ -53,6 +58,7 @@ export default function PayslipEditorDialog({
   onClose,
   payslipId,
 }: PayslipEditorDialogProps) {
+  const currencyCode = usePayrollCurrencyCode();
   const [payslip, setPayslip] = useState<Payslip | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -133,7 +139,7 @@ export default function PayslipEditorDialog({
                     GROSS EARNINGS
                   </Typography>
                   <Typography variant="h6" color="success.main">
-                    {Number(payslip.gross_salary).toLocaleString()}
+                    {formatCurrency(Number(payslip.gross_salary), currencyCode)}
                   </Typography>
                 </Grid>
                 <Grid size={{ xs: 4 }}>
@@ -141,7 +147,10 @@ export default function PayslipEditorDialog({
                     TOTAL DEDUCTIONS
                   </Typography>
                   <Typography variant="h6" color="error.main">
-                    {Number(payslip.total_deductions).toLocaleString()}
+                    {formatCurrency(
+                      Number(payslip.total_deductions),
+                      currencyCode,
+                    )}
                   </Typography>
                 </Grid>
                 <Grid size={{ xs: 4 }}>
@@ -149,7 +158,7 @@ export default function PayslipEditorDialog({
                     NET SALARY
                   </Typography>
                   <Typography variant="h6" fontWeight="bold">
-                    {Number(payslip.net_salary).toLocaleString()}
+                    {formatCurrency(Number(payslip.net_salary), currencyCode)}
                   </Typography>
                 </Grid>
               </Grid>
@@ -184,7 +193,7 @@ export default function PayslipEditorDialog({
                         </Typography>
                       </TableCell>
                       <TableCell align="right">
-                        {Number(item.amount).toLocaleString()}
+                        {formatCurrency(Number(item.amount), currencyCode)}
                       </TableCell>
                       <TableCell align="right">
                         {item.is_variable ? "Manual/Var" : "Fixed"}
@@ -246,7 +255,9 @@ export default function PayslipEditorDialog({
                     }
                     InputProps={{
                       startAdornment: (
-                        <InputAdornment position="start">$</InputAdornment>
+                        <InputAdornment position="start">
+                          {getCurrencySymbol(currencyCode)}
+                        </InputAdornment>
                       ),
                     }}
                   />

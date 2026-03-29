@@ -21,6 +21,7 @@ import {
 import { DeleteRounded, EditRounded } from "@mui/icons-material";
 import api from "../api";
 import { getErrorMessage } from "../utils/errors";
+import { setCachedPayrollCurrencyCode } from "../utils/payrollHelpers";
 
 type PayrollSettingsForm = {
   overtime_rate_multiplier: string;
@@ -52,6 +53,22 @@ type TaxSlabForm = {
   min_salary: string;
   max_salary: string;
   tax_percent: string;
+};
+
+type SalaryComponent = {
+  id: number;
+  name: string;
+  type: 'earning' | 'deduction';
+  is_taxable: number;
+  is_recurring: number;
+};
+
+type SalaryComponentForm = {
+  id?: number;
+  name: string;
+  type: 'earning' | 'deduction';
+  is_taxable: boolean;
+  is_recurring: boolean;
 };
 
 type RolePermissions = {
@@ -90,6 +107,15 @@ export default function PayrollSettings() {
   const [rolesSaving, setRolesSaving] = useState(false);
   const [rolesError, setRolesError] = useState("");
   const [rolesOk, setRolesOk] = useState("");
+
+  // Salary Components
+  const [components, setComponents] = useState<SalaryComponent[]>([]);
+  const [compsLoading, setCompsLoading] = useState(false);
+  const [compsSaving, setCompsSaving] = useState(false);
+  const [compsError, setCompsError] = useState("");
+  const emptyCompForm: SalaryComponentForm = { name: '', type: 'earning', is_taxable: true, is_recurring: true };
+  const [compForm, setCompForm] = useState<SalaryComponentForm>(emptyCompForm);
+
   const emptySlabForm: TaxSlabForm = {
     name: "",
     min_salary: "",
@@ -104,6 +130,9 @@ export default function PayrollSettings() {
     try {
       const res = await api.get("/api/payroll/settings");
       const settings = res.data?.settings || {};
+      if (settings.currency_code) {
+        setCachedPayrollCurrencyCode(String(settings.currency_code));
+      }
       setForm({
         overtime_rate_multiplier: String(
           settings.overtime_rate_multiplier ??
@@ -204,11 +233,25 @@ export default function PayrollSettings() {
     }
   }, []);
 
+  const fetchComponents = useCallback(async () => {
+    setCompsLoading(true);
+    setCompsError("");
+    try {
+      const res = await api.get('/api/payroll/components');
+      setComponents(Array.isArray(res.data?.components) ? res.data.components : []);
+    } catch (err) {
+      setCompsError(getErrorMessage(err, 'Failed to load salary components'));
+    } finally {
+      setCompsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSettings();
     fetchTaxSlabs();
     fetchPayrollPermissions();
-  }, [fetchSettings, fetchTaxSlabs, fetchPayrollPermissions]);
+    fetchComponents();
+  }, [fetchSettings, fetchTaxSlabs, fetchPayrollPermissions, fetchComponents]);
 
   const handleChange = (field: keyof PayrollSettingsForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -286,6 +329,7 @@ export default function PayrollSettings() {
         scheduler_auto_run: form.scheduler_auto_run ? 1 : 0,
         scheduler_auto_email: form.scheduler_auto_email ? 1 : 0,
       });
+      setCachedPayrollCurrencyCode(form.currency_code);
       setOk("Settings updated successfully.");
     } catch (err) {
       setError(getErrorMessage(err, "Failed to update settings"));
@@ -356,6 +400,39 @@ export default function PayrollSettings() {
       fetchTaxSlabs();
     } catch (err) {
       setSlabsError(getErrorMessage(err, "Failed to delete tax slab"));
+    }
+  };
+
+  const handleSaveComponent = async () => {
+    const name = compForm.name.trim();
+    if (!name) { setCompsError('Name is required'); return; }
+    setCompsSaving(true);
+    setCompsError("");
+    try {
+      const url = compForm.id ? '/api/payroll/components/update' : '/api/payroll/components';
+      await api.post(url, {
+        id: compForm.id,
+        name,
+        type: compForm.type,
+        is_taxable: compForm.is_taxable ? 1 : 0,
+        is_recurring: compForm.is_recurring ? 1 : 0,
+      });
+      setCompForm(emptyCompForm);
+      fetchComponents();
+    } catch (err) {
+      setCompsError(getErrorMessage(err, 'Failed to save component'));
+    } finally {
+      setCompsSaving(false);
+    }
+  };
+
+  const handleDeleteComponent = async (id: number) => {
+    if (!confirm('Delete this salary component? This cannot be undone and may affect existing salary structures.')) return;
+    try {
+      await api.post('/api/payroll/components/delete', { id });
+      fetchComponents();
+    } catch (err) {
+      setCompsError(getErrorMessage(err, 'Failed to delete component'));
     }
   };
 
@@ -724,6 +801,84 @@ export default function PayrollSettings() {
                 : slabForm.id
                   ? "Update Slab"
                   : "Add Slab"}
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>
+
+      <Paper sx={{ p: 3 }}>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={1}>
+            <Typography variant="h6">Salary Components</Typography>
+            <Button onClick={fetchComponents} disabled={compsLoading}>Reload</Button>
+          </Stack>
+
+          {compsError && <Alert severity="error">{compsError}</Alert>}
+
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell align="center">Taxable</TableCell>
+                  <TableCell align="right">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {components.map((c) => (
+                  <TableRow key={c.id} hover>
+                    <TableCell>{c.name}</TableCell>
+                    <TableCell>
+                      <Chip size="small" label={c.type} color={c.type === 'earning' ? 'success' : 'error'} variant="outlined" />
+                    </TableCell>
+                    <TableCell align="center">{c.is_taxable ? 'Yes' : 'No'}</TableCell>
+                    <TableCell align="right">
+                      <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        <Button size="small" startIcon={<EditRounded />} variant="outlined"
+                          onClick={() => setCompForm({ id: c.id, name: c.name, type: c.type, is_taxable: !!c.is_taxable, is_recurring: !!c.is_recurring })}>
+                          Edit
+                        </Button>
+                        <Button size="small" color="error" startIcon={<DeleteRounded />} variant="outlined"
+                          onClick={() => handleDeleteComponent(c.id)}>
+                          Delete
+                        </Button>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {components.length === 0 && !compsLoading && (
+                  <TableRow><TableCell colSpan={4} align="center">No salary components defined yet.</TableCell></TableRow>
+                )}
+                {compsLoading && (
+                  <TableRow><TableCell colSpan={4} align="center"><CircularProgress size={20} /></TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField label="Component Name" fullWidth value={compForm.name}
+              onChange={(e) => setCompForm({ ...compForm, name: e.target.value })} />
+            <TextField select label="Type" sx={{ minWidth: 160 }} value={compForm.type}
+              onChange={(e) => setCompForm({ ...compForm, type: e.target.value as 'earning' | 'deduction' })}>
+              <MenuItem value="earning">Earning (Allowance)</MenuItem>
+              <MenuItem value="deduction">Deduction</MenuItem>
+            </TextField>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Checkbox checked={compForm.is_taxable} onChange={(e) => setCompForm({ ...compForm, is_taxable: e.target.checked })} />
+              <Typography>Taxable</Typography>
+            </Stack>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Checkbox checked={compForm.is_recurring} onChange={(e) => setCompForm({ ...compForm, is_recurring: e.target.checked })} />
+              <Typography>Recurring</Typography>
+            </Stack>
+          </Stack>
+
+          <Stack direction="row" spacing={2} justifyContent="flex-end">
+            <Button onClick={() => setCompForm(emptyCompForm)} disabled={compsSaving}>Clear</Button>
+            <Button variant="contained" onClick={handleSaveComponent} disabled={compsSaving}>
+              {compsSaving ? 'Saving...' : compForm.id ? 'Update Component' : 'Add Component'}
             </Button>
           </Stack>
         </Stack>

@@ -39,6 +39,26 @@ class PayrollStore
         return $this->pdo->lastInsertId();
     }
 
+    public function updateComponent(int $id, array $data): void
+    {
+        $stmt = $this->pdo->prepare("UPDATE salary_components SET name = ?, type = ?, is_taxable = ?, is_recurring = ?, gl_code = ? WHERE id = ? AND tenant_id = ?");
+        $stmt->execute([
+            $data['name'],
+            $data['type'],
+            $data['is_taxable'] ?? 1,
+            $data['is_recurring'] ?? 1,
+            $data['gl_code'] ?? null,
+            $id,
+            $this->tenantId,
+        ]);
+    }
+
+    public function deleteComponent(int $id): void
+    {
+        $stmt = $this->pdo->prepare("DELETE FROM salary_components WHERE id = ? AND tenant_id = ?");
+        $stmt->execute([$id, $this->tenantId]);
+    }
+
     // --- Employee Salary Structure ---
     public function getSalaryStructure(int $employeeId)
     {
@@ -560,6 +580,26 @@ class PayrollStore
         $stmt = $this->pdo->prepare("SELECT * FROM chart_of_accounts WHERE tenant_id = ? AND code = ?");
         $stmt->execute([$this->tenantId, $code]);
         return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function ensureDefaultAccounts(array $accounts): array
+    {
+        $out = [];
+        foreach ($accounts as $acc) {
+            $code = (string)($acc['code'] ?? '');
+            if ($code === '') continue;
+            $existing = $this->getAccountByCode($code);
+            if ($existing) {
+                $out[$code] = $existing;
+                continue;
+            }
+            $name = (string)($acc['name'] ?? $code);
+            $type = (string)($acc['type'] ?? 'liability');
+            $stmt = $this->pdo->prepare("INSERT INTO chart_of_accounts (tenant_id, code, name, type) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$this->tenantId, $code, $name, $type]);
+            $out[$code] = $this->getAccountByCode($code);
+        }
+        return $out;
     }
 
     public function createJournalEntry(array $header, array $items)

@@ -10,6 +10,9 @@ const hmrPort = process.env.VITE_HMR_PORT
   ? Number(process.env.VITE_HMR_PORT)
   : undefined;
 
+// Backend API base URL — override via VITE_BACKEND_URL env if needed
+const backendUrl = process.env.VITE_BACKEND_URL || "http://127.0.0.1:5170";
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -48,5 +51,26 @@ export default defineConfig({
             port: hmrPort,
           }
         : undefined,
+    proxy: {
+      // SSE endpoint — dedicated entry with unlimited timeout so the stream stays open
+      '/api/events': {
+        target: backendUrl,
+        changeOrigin: true,
+        secure: false,
+        proxyTimeout: 0,
+        timeout: 0,
+      },
+      '/api': {
+        target: backendUrl,
+        changeOrigin: true,
+        secure: false,
+      },
+      '/uploads': {
+        target: backendUrl,
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
 });
+

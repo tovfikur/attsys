@@ -48,6 +48,11 @@ final class Crypto
             $raw = getenv('APP_KEY');
         }
         if ($raw === false || trim((string)$raw) === '') {
+            if (self::isLocalDev()) {
+                $raw = self::generateAndPersistKey();
+            }
+        }
+        if ($raw === false || trim((string)$raw) === '') {
             throw new \RuntimeException('APP_ENC_KEY (or APP_KEY) is required for encryption');
         }
 
@@ -59,5 +64,78 @@ final class Crypto
         }
         return substr($key, 0, 32);
     }
-}
 
+    private static function isLocalDev(): bool
+    {
+        $env = strtolower(trim((string)(getenv('APP_ENV') ?: '')));
+        if (in_array($env, ['local', 'development', 'dev', 'testing'], true)) return true;
+        $devFlag = strtolower(trim((string)(getenv('DEV_MODE') ?: '')));
+        if (in_array($devFlag, ['1', 'true', 'yes', 'on'], true)) return true;
+        $host = strtolower(trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? ''))));
+        if ($host === '') return false;
+        $host = preg_replace('/:\d+$/', '', $host);
+        if ($host === 'localhost' || $host === '127.0.0.1' || $host === '::1') return true;
+        if (str_ends_with($host, '.localhost')) return true;
+        return false;
+    }
+
+    private static function generateAndPersistKey(): ?string
+    {
+        $candidates = [
+            __DIR__ . '/../../.env',
+            __DIR__ . '/../../../.env',
+        ];
+        $target = null;
+        $existingValue = null;
+        $existingKeyName = null;
+        foreach ($candidates as $path) {
+            if (file_exists($path)) {
+                $contents = file_get_contents($path);
+                $contents = $contents === false ? '' : $contents;
+                if (preg_match('/^\s*(APP_ENC_KEY|APP_KEY)\s*=\s*(.*)\s*$/m', $contents, $m)) {
+                    $existingKeyName = $m[1] ?? null;
+                    $existingValue = isset($m[2]) ? trim((string)$m[2]) : '';
+                    $target = $path;
+                    break;
+                }
+                $target = $path;
+                break;
+            }
+        }
+        if (is_string($existingValue) && $existingValue !== '') {
+            putenv("APP_ENC_KEY={$existingValue}");
+            return $existingValue;
+        }
+        $key = base64_encode(random_bytes(32));
+        if ($target === null) {
+            foreach ($candidates as $path) {
+                $dir = dirname($path);
+                if (is_dir($dir) && is_writable($dir)) {
+                    $target = $path;
+                    break;
+                }
+            }
+        }
+        if ($target === null) {
+            putenv("APP_ENC_KEY={$key}");
+            return $key;
+        }
+        if (is_writable($target)) {
+            $contents = file_get_contents($target);
+            $contents = $contents === false ? '' : $contents;
+            if (preg_match('/^\s*(APP_ENC_KEY|APP_KEY)\s*=\s*(.*)\s*$/m', $contents)) {
+                $contents = preg_replace(
+                    '/^\s*(APP_ENC_KEY|APP_KEY)\s*=.*$/m',
+                    "APP_ENC_KEY={$key}",
+                    $contents,
+                );
+                file_put_contents($target, rtrim($contents) . "\n", LOCK_EX);
+            } else {
+                $line = "APP_ENC_KEY={$key}\n";
+                file_put_contents($target, $line, FILE_APPEND | LOCK_EX);
+            }
+        }
+        putenv("APP_ENC_KEY={$key}");
+        return $key;
+    }
+}

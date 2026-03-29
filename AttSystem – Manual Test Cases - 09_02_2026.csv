@@ -1,0 +1,62 @@
+Test Case ID,Module,Test Case Title,Step Description,Step Data,Preconditions,Expected Result,Actual Result,Status,Attachments
+TC_001,Attendance System,Add New Roster- Duty Type,"1. Login to the system
+2. Navigate to ""Roster Management"" section
+3. Click ""Add New Roster"" button
+4. Enter valid roster details and save","Name: ""Roster Duty"", 
+Description: ""Test""","User is on the ""Roster Management"" page",New roster should be saved and displayed in the list,An error message appears,Fail,roster.png
+TC_002,Roster Duty,Duty Type should be selectable when creating an assignment,"1. Navigate to ""Roster Duty"" section. 
+2. Click on ""Create Assignment"" button. 
+3. Verify ""Duty Type"" dropdown is populated with values. 
+4. Select a valid ""Duty Type"".
+5. Fill other required fields. 
+6. Click ""Save"" button. 
+7. Verify the ""Duty Type"" is correctly displayed in the roster list.","User is logged in and on the ""Roster Duty"" page","""Duty Type"" dropdown should be populated, the selected duty type should be saved successfully and displayed in the roster list.","Duty Type is selected, assignment saved successfully, and Duty Type displayed correctly.","Duty Type dropdown not selectable, no values are displayed as it was not created because of above issue",Fail,duty_type_create_assignment.png
+TC_003,Roster Duty,Location field should be a selectable dropdown when creating an assignment,"1. Navigate to ""Roster Duty"" section. 
+2. Click on ""Create Assignment"" button. 
+3. Verify ""Location"" field is displayed as a dropdown. 
+4. Check if the ""Location"" dropdown is populated with available location values. 
+5. Select a valid location from the dropdown. 
+6. Fill other required fields. 
+7. Verify the selected ""Location"" is saved and displayed correctly in the roster list.","User is logged in and on the ""Roster Duty"" page",N/A,"""Location"" field should be a dropdown with available location values, and a valid location should be selectable.","Error: Location field is not a dropdown, it's a text field. Location cannot be selected.",Fail,
+TC_004,Geo-Fencing,Create a new geofence,"1. Navigate to Geo-Fencing
+2. Click “Add Fence” and Save","Name: Test, Type: Circle, Default: No, Active: Yes, Time Window: 09:00-17:00",Admin logged in,New fence created and visible in fence list,Fence appears in list,Pass,
+TC_005,Geo-Fencing,Assign employee to geofence,"1. Select fence 
+2. Click Assign 
+3. Select Employee and Save","Employee: EMP001, Fence: Test",Fence exists,Employee assignment saved and visible in assignment list,Employee assignment appears,Pass,
+TC_006,Geo-Fencing,Restrict attendance outside fence,Attempt attendance check-in/out outside fence radius,Employee outside geofence,"Employee assigned to fence, fence active",System should block check-in/out and show warning,Attendance blocked,Pass,
+TC_007,Geo-Fencing,Allow attendance inside fence,Attempt check-in/out within fence radius,Employee inside geofence,"Employee assigned to fence, fence active",Attendance successful,Attendance recorded,Pass,
+TC_008,Tracking,Verify Live Tracking page loads,"1. Navigate to Tracking
+2. Open map 
+3. Check employee list and map",N/A,Tracking enabled for employees,"Map shows employees’ live location with status, last seen, and distance",Map shows “No live locations yet”,Fail,live_tracking.png
+TC_009,Tracking,Verify auto-refresh updates,Keep Live Tracking open for >30 seconds,N/A,Employee app sending GPS,Map auto-refreshes every 30s and updates location,Map empty,Fail,live_tracking.png
+TC_010,Tracking,Verify offline detection,Stop sending GPS updates for >180s,N/A,Employee previously tracked,Status changes to “Offline after 180s”,Status shows offline correctly,Fail,live_tracking.png
+TC_011,Tracking,Verify date range filter,"Select From and To dates, click filter","From: 02/09/2026 12:00 AM, To: 02/09/2026 11:59 PM",Employees have tracked data,Map shows historical positions within range,Map shows empty,Fail,live_tracking.png
+TC_012,Tracking,Verify “Follow selected employee”,Select an employee from dropdown → Map centers on employee,Employee: EMP001,Employee has live data,Map zooms and centers on selected employee,Map empty,Fail,live_tracking.png
+TC_013,Geo-Fencing,Verify settings applied,Enable “Require Fence” and “Enable Tracking” → Save settings,"Update interval: 30s, Min accuracy: 5m, Offline after: 180s",Admin logged in,Geo-Fencing and Tracking enforced according to settings,Settings saved but no live tracking,Fail,live_tracking.png
+,,,,,,,,,
+,,,,,,,,,
+,,,,,,,,,
+Re-Test Payroll,,,,,,,,,
+,,,,,,,,,
+Test Case ID,Module,Test Case Title,Step Description,Step Data,Preconditions,Expected Result,Actual Result,Status,Attachments
+RT-PAY-001,Payroll Settings,Retest currency symbol consistency,"1. Set payroll currency to BDT
+2. Open salary structure page",Currency: BDT,Payroll settings configured,Salary fields display ৳ instead of $,As Expected,Solved,
+RT-PAY-002,Salary Structure,Retest salary period indicator,"1. Open salary structure
+2. Observe salary field
+3. Change salary period","Salary: 30,000",Salary structure page open,Salary structure page open,There's a dropdown to choose monthly or yearly,Solved,
+RT-PAY-003,Salary Structure,Retest empty allowance warning,Save structure without allowances/deductions,None added,Salary structure open,Warning should appear before saving,Warning shown before saving structure,Solved,
+RT-PAY-006,Salary Structure / Security,Retest encryption error message,"1. Disable encryption key or simulate failure
+2. Add bank details","Bank Name: Test National Bank
+Account Number: 123456789012
+Branch Code: 001122
+Account Name: Employee 002
+Account Type: Primary",Encryption not configured,"User sees friendly error message, not technical variable names",System still shows technical message mentioning APP_ENC_KEY / APP_KEY,Fail,retest_encryption.png
+RT-PAY-007,Salary Structure,Retest bank transfer without bank details,Save structure with Bank Transfer and no bank account,Payment Method = Bank Transfer,No bank account exists,Save blocked with validation,"Bocked with ""Bank details required"" message",Solved,
+RT-PAY-008,Salary Structure,Retest cheque payment without bank details,"1. Select Cheque payment
+2. Keep bank details empty
+3. Save",Payment Method: Cheque,Salary structure page open,System should block save until bank details added,"Bocked with ""Bank details required"" message",Solved,
+RT-PAY-009,Salary Structure,Retest bank account field labeling,Navigate to bank account form and inspect priority field,N/A,Salary structure page open,Field label shows Account Priority with clear values,"Label shows ""Account Priority""",Solved,
+RT-PAY-014,Salary Structure,Retest allowance guidance availability,Open Allowances & Deductions section,N/A,Salary structure page open,User should be able to add allowance/deduction components,"Only guidance shown, no option to add components",Fail,components.png
+RT-PAY-018,Payroll Permissions,Retest permission label readability,Navigate to Payroll Permissions page,N/A,Permissions configured,"Permissions displayed in user-friendly names, not technical keys",,Fail,internal_name.png
+RT-PAY-019,Payroll Cycle,Retest payroll cycle rejection status,"Create and process payroll cycle, then reject",Sample cycle,Payroll cycle exists,Status becomes Rejected,Payroll cycle processing fails due to missing table roster_assignments,Blocked,cycle_error.png
+RT-PAY-023,Employee Loan,Retest loan amount validation limit,Create loan request exceeding allowed limit,"Salary 30,000, Loan 200,000",Employee salary structure exists,System should block loan and show validation message,System crashes with error: Call to undefined method PayrollStore::getActiveSalaryStructure(),Blocked,loan_retest_error.png

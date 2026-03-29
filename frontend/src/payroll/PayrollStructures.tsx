@@ -21,7 +21,6 @@ import {
   InputAdornment,
   Grid,
   Chip,
-  AlertTitle,
   Tooltip,
   IconButton,
   FormHelperText,
@@ -37,7 +36,11 @@ import {
 } from "@mui/icons-material";
 import api from "../api";
 import { getErrorMessage } from "../utils/errors";
-import { getCurrencySymbol } from "../utils/payrollHelpers";
+import {
+  formatCurrency,
+  getCurrencySymbol,
+  setCachedPayrollCurrencyCode,
+} from "../utils/payrollHelpers";
 
 interface Employee {
   id: number;
@@ -145,7 +148,9 @@ export default function PayrollStructures() {
       ]);
       setEmployees(empRes.data.employees || []);
       setComponents(compRes.data.components || []);
-      setCurrencyCode(settingsRes.data.settings?.currency_code || "USD");
+      const code = settingsRes.data.settings?.currency_code || "USD";
+      setCachedPayrollCurrencyCode(String(code));
+      setCurrencyCode(code);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load payroll structure data"));
     } finally {
@@ -221,7 +226,7 @@ export default function PayrollStructures() {
 
   const handleSave = async () => {
     if (!selectedEmp) return;
-    
+
     // Warn if no components added
     const filteredItems = structure.items
       .map((i) => ({
@@ -231,15 +236,17 @@ export default function PayrollStructures() {
         percentage: Number(i.percentage),
       }))
       .filter((i) => (i.is_percentage ? i.percentage > 0 : i.amount > 0));
-    
+
     if (filteredItems.length === 0) {
-      if (!confirm(
-        'No allowances or deductions have been added. Are you sure you want to save a basic salary-only structure?'
-      )) {
+      if (
+        !confirm(
+          "No allowances or deductions have been added. Are you sure you want to save a basic salary-only structure?",
+        )
+      ) {
         return;
       }
     }
-    
+
     setSaving(true);
     try {
       const payload = {
@@ -398,6 +405,9 @@ export default function PayrollStructures() {
     bankForm.bank_name.trim() !== "" &&
     bankForm.account_number.trim() !== "" &&
     bankForm.account_holder_name.trim() !== "";
+  const bankEncryptionBlocked = bankError
+    .toLowerCase()
+    .includes("encryption is not configured");
 
   return (
     <Stack spacing={3}>
@@ -504,17 +514,22 @@ export default function PayrollStructures() {
               <Grid container spacing={2}>
                 <Grid size={{ xs: 12, md: 8 }}>
                   <TextField
-                    label={`Basic Salary (${structure.salary_period === 'yearly' ? 'Annual' : 'Monthly'})`}
+                    label={`Basic Salary (${structure.salary_period === "yearly" ? "Annual" : "Monthly"})`}
                     type="number"
                     fullWidth
                     InputProps={{
                       startAdornment: (
-                        <InputAdornment position="start">{getCurrencySymbol(currencyCode)}</InputAdornment>
+                        <InputAdornment position="start">
+                          {getCurrencySymbol(currencyCode)}
+                        </InputAdornment>
                       ),
                     }}
                     value={structure.base_salary}
                     onChange={(e) =>
-                      setStructure({ ...structure, base_salary: e.target.value })
+                      setStructure({
+                        ...structure,
+                        base_salary: e.target.value,
+                      })
                     }
                   />
                 </Grid>
@@ -524,7 +539,10 @@ export default function PayrollStructures() {
                     <Select
                       value={structure.salary_period || "monthly"}
                       onChange={(e) =>
-                        setStructure({ ...structure, salary_period: e.target.value as "monthly" | "yearly" })
+                        setStructure({
+                          ...structure,
+                          salary_period: e.target.value as "monthly" | "yearly",
+                        })
                       }
                       label="Salary Period"
                     >
@@ -537,8 +555,16 @@ export default function PayrollStructures() {
             </Grid>
 
             <Grid size={{ xs: 12 }}>
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, mt: 2 }}>
-                <Typography variant="subtitle2" sx={{ color: "text.secondary" }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={1}
+                sx={{ mb: 2, mt: 2 }}
+              >
+                <Typography
+                  variant="subtitle2"
+                  sx={{ color: "text.secondary" }}
+                >
                   Allowances & Deductions
                 </Typography>
                 <Tooltip title="Add allowances (HRA, Travel, Medical) or deductions (PF, Insurance) below. Use Fixed amount or % of Base salary.">
@@ -547,24 +573,7 @@ export default function PayrollStructures() {
                   </IconButton>
                 </Tooltip>
               </Stack>
-              
-              {structure.items.filter(i => {
-                const isPercentage = Boolean(i.is_percentage);
-                return isPercentage ? Number(i.percentage || 0) > 0 : Number(i.amount || 0) > 0;
-              }).length === 0 && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  <AlertTitle>Getting Started</AlertTitle>
-                  Add allowances or deductions using the fields below.
-                  <br/>
-                  <strong>Common examples:</strong>
-                  <ul style={{ marginBottom: 0, paddingLeft: 20 }}>
-                    <li>House Rent Allowance (HRA) - 40% of base</li>
-                    <li>Medical Allowance - Fixed {getCurrencySymbol(currencyCode)}5,000</li>
-                    <li>Provident Fund (PF) - 10% of base</li>
-                  </ul>
-                </Alert>
-              )}
-              
+
               <Stack spacing={2}>
                 {components.length === 0 && (
                   <Typography variant="body2">
@@ -661,7 +670,14 @@ export default function PayrollStructures() {
               >
                 Bank Accounts
               </Typography>
-              {bankError && <Alert severity="error">{bankError}</Alert>}
+              {bankEncryptionBlocked ? (
+                <Alert severity="warning">
+                  Bank accounts are disabled until encryption is configured.
+                  Please contact the system administrator.
+                </Alert>
+              ) : (
+                bankError && <Alert severity="error">{bankError}</Alert>
+              )}
               <Stack spacing={2}>
                 <Grid container spacing={2}>
                   <Grid size={{ xs: 12, md: 3 }}>
@@ -670,6 +686,7 @@ export default function PayrollStructures() {
                       fullWidth
                       size="small"
                       value={bankForm.bank_name}
+                      disabled={bankEncryptionBlocked}
                       onChange={(e) =>
                         setBankForm({ ...bankForm, bank_name: e.target.value })
                       }
@@ -681,6 +698,7 @@ export default function PayrollStructures() {
                       fullWidth
                       size="small"
                       value={bankForm.account_number}
+                      disabled={bankEncryptionBlocked}
                       onChange={(e) =>
                         setBankForm({
                           ...bankForm,
@@ -695,6 +713,7 @@ export default function PayrollStructures() {
                       fullWidth
                       size="small"
                       value={bankForm.branch_code}
+                      disabled={bankEncryptionBlocked}
                       onChange={(e) =>
                         setBankForm({
                           ...bankForm,
@@ -709,6 +728,7 @@ export default function PayrollStructures() {
                       fullWidth
                       size="small"
                       value={bankForm.account_holder_name}
+                      disabled={bankEncryptionBlocked}
                       onChange={(e) =>
                         setBankForm({
                           ...bankForm,
@@ -722,6 +742,7 @@ export default function PayrollStructures() {
                       <InputLabel>Account Priority</InputLabel>
                       <Select
                         value={bankForm.is_primary ? "yes" : "no"}
+                        disabled={bankEncryptionBlocked}
                         onChange={(e) =>
                           setBankForm({
                             ...bankForm,
@@ -744,11 +765,17 @@ export default function PayrollStructures() {
                     variant="contained"
                     size="small"
                     onClick={handleBankSave}
-                    disabled={bankSaving || !bankFormValid}
+                    disabled={
+                      bankSaving || !bankFormValid || bankEncryptionBlocked
+                    }
                   >
                     {bankSaving ? "Saving..." : bankForm.id ? "Update" : "Add"}
                   </Button>
-                  <Button size="small" onClick={handleBankReset}>
+                  <Button
+                    size="small"
+                    onClick={handleBankReset}
+                    disabled={bankEncryptionBlocked}
+                  >
                     Reset
                   </Button>
                 </Stack>
@@ -806,6 +833,7 @@ export default function PayrollStructures() {
                                 {!acc.is_primary && (
                                   <Button
                                     size="small"
+                                    disabled={bankEncryptionBlocked}
                                     onClick={() => handleSetPrimaryBank(acc.id)}
                                   >
                                     Set Primary
@@ -813,6 +841,7 @@ export default function PayrollStructures() {
                                 )}
                                 <Button
                                   size="small"
+                                  disabled={bankEncryptionBlocked}
                                   onClick={() => handleBankEdit(acc)}
                                 >
                                   Edit
@@ -820,6 +849,7 @@ export default function PayrollStructures() {
                                 <Button
                                   size="small"
                                   color="error"
+                                  disabled={bankEncryptionBlocked}
                                   onClick={() => handleBankDelete(acc.id)}
                                 >
                                   Delete
@@ -892,13 +922,13 @@ export default function PayrollStructures() {
                       <TableCell>{h.effective_from}</TableCell>
                       <TableCell>{h.status || "active"}</TableCell>
                       <TableCell align="right">
-                        {Number(h.base_salary).toFixed(2)}
+                        {formatCurrency(Number(h.base_salary), currencyCode)}
                       </TableCell>
                       <TableCell align="right">
-                        {allowances.toFixed(2)}
+                        {formatCurrency(Number(allowances), currencyCode)}
                       </TableCell>
                       <TableCell align="right">
-                        {deductions.toFixed(2)}
+                        {formatCurrency(Number(deductions), currencyCode)}
                       </TableCell>
                     </TableRow>
                   );

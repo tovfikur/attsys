@@ -12,21 +12,23 @@ class Database
     public static function get(): ?PDO
     {
         if (self::$pdo) return self::$pdo;
-        // Load .env from project root
-        $envPaths = [
-            __DIR__ . '/../../.env',       // backend/.env
-            __DIR__ . '/../../../.env'     // project root .env
-        ];
 
-        foreach ($envPaths as $envPath) {
-            if (file_exists($envPath)) {
-                $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-                foreach ($lines as $line) {
-                    if (str_starts_with($line, '#')) continue;
-                    [$k, $v] = array_map('trim', explode('=', $line, 2));
-                    if ($k && $v && !getenv($k)) putenv("$k=$v");
+        // Only parse .env file if Docker hasn't already injected the vars
+        if (!getenv('DB_HOST')) {
+            $envPaths = [
+                __DIR__ . '/../../.env',
+                __DIR__ . '/../../../.env'
+            ];
+            foreach ($envPaths as $envPath) {
+                if (file_exists($envPath)) {
+                    $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                    foreach ($lines as $line) {
+                        if (str_starts_with($line, '#')) continue;
+                        [$k, $v] = array_map('trim', explode('=', $line, 2));
+                        if ($k && $v && !getenv($k)) putenv("$k=$v");
+                    }
+                    break;
                 }
-                break; // Found and loaded
             }
         }
 
@@ -39,14 +41,14 @@ class Database
         $dsn = "mysql:host=$host;port=$port;dbname=$db;charset=utf8mb4";
         try {
             self::$pdo = new PDO($dsn, $user, $pass, [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
-                PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+06:00'",
             ]);
             return self::$pdo;
         } catch (PDOException $e) {
-            return null; // Fallback allowed in dev
+            error_log("DB connection failed: " . $e->getMessage());
+            return null;
         }
     }
 }

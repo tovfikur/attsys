@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNotificationStream } from "../hooks/useNotificationStream";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -52,6 +53,10 @@ import {
   PhotoCameraRounded,
   VpnKeyRounded,
 } from "@mui/icons-material";
+import { Capacitor } from "@capacitor/core";
+import { Camera } from "@capacitor/camera";
+import { Filesystem } from "@capacitor/filesystem";
+import { Geolocation } from "@capacitor/geolocation";
 import { clearSession, getUser } from "../utils/session";
 import api from "../api";
 import axios from "axios";
@@ -250,102 +255,82 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("app:toast", onToast);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!Capacitor.isNativePlatform()) return;
+    const key = "native_permissions_requested_v1";
+    if (localStorage.getItem(key) === "1") return;
+    localStorage.setItem(key, "1");
+    void (async () => {
+      await Camera.requestPermissions({
+        permissions: ["camera", "photos"] as unknown as never[],
+      }).catch(() => {});
+      await Geolocation.requestPermissions().catch(() => {});
+      const fs = Filesystem as unknown as {
+        requestPermissions?: () => Promise<unknown>;
+      };
+      if (typeof fs.requestPermissions === "function") {
+        await fs.requestPermissions().catch(() => {});
+      }
+    })();
+  }, []);
+
+  // SSE now delivers all badge counts; this function exists only to zero them on logout.
   const refreshIndicators = useCallback(async () => {
     if (!user) {
       setMessengerUnread(0);
       setLeavesUnseenPending(0);
       setGeoBreachUnseen(0);
       geoBreachUnseenRef.current = 0;
-      return;
     }
+  }, [user]);
 
-    const wantsMessenger =
-      role === "tenant_owner" ||
-      role === "hr_admin" ||
-      role === "payroll_admin" ||
-      role === "manager" ||
-      role === "employee";
+  // SSE: receive live badge counts from the server (replaces 15s polling)
+  const sseToken = user ? (localStorage.getItem("token") || sessionStorage.getItem("token")) : null;
+  const sseRoleOk = !!user && role !== "superadmin";
+  const sseTenant = typeof window !== "undefined"
+    ? (localStorage.getItem("tenant") || sessionStorage.getItem("tenant") || null)
+    : null;
 
-    const wantsLeaves = role === "tenant_owner";
-    const wantsGeo =
-      role === "tenant_owner" || role === "hr_admin" || role === "manager";
-
-    try {
-      if (wantsMessenger) {
-        const res = await api.get("/api/messenger/unread_count", {
-          timeout: 8000,
-        });
-        setMessengerUnread(Math.max(0, Number(res.data?.unread || 0) || 0));
-      } else {
-        setMessengerUnread(0);
+  const handleSseCounts = useCallback((counts: { messenger_unread?: number; leaves_pending?: number; geo_breaches?: number }) => {
+    if (counts.messenger_unread !== undefined) {
+      setMessengerUnread(Math.max(0, counts.messenger_unread));
+    }
+    if (counts.leaves_pending !== undefined) {
+      setLeavesUnseenPending(Math.max(0, counts.leaves_pending));
+    }
+    if (counts.geo_breaches !== undefined) {
+      const next = Math.max(0, counts.geo_breaches);
+      if (next > geoBreachUnseenRef.current) {
+        setToast({ open: true, message: "Geo-fence breach detected", severity: "warning" });
       }
-    } catch {
-      setMessengerUnread(0);
+      geoBreachUnseenRef.current = next;
+      setGeoBreachUnseen(next);
     }
+  }, []);
 
-    try {
-      if (wantsLeaves) {
-        const res = await api.get("/api/leaves/pending_unseen", {
-          timeout: 8000,
-        });
-        setLeavesUnseenPending(
-          Math.max(0, Number(res.data?.unseen_pending || 0) || 0),
-        );
-      } else {
-        setLeavesUnseenPending(0);
-      }
-    } catch {
-      setLeavesUnseenPending(0);
-    }
+  useNotificationStream({
+    token: sseToken,
+    tenantHint: sseTenant,
+    enabled: sseRoleOk,
+    onCounts: handleSseCounts,
+  });
 
-    try {
-      if (wantsGeo) {
-        const res = await api.get("/api/geo/breaches/unseen_count", {
-          timeout: 8000,
-          headers: { "X-Toast-Skip": "1" },
-        });
-        const next = Math.max(0, Number(res.data?.count || 0) || 0);
-        if (next > geoBreachUnseenRef.current) {
-          setToast({
-            open: true,
-            message: "Geo-fence breach detected",
-            severity: "warning",
-          });
-        }
-        geoBreachUnseenRef.current = next;
-        setGeoBreachUnseen(next);
-      } else {
-        geoBreachUnseenRef.current = 0;
-        setGeoBreachUnseen(0);
-      }
-    } catch {
-      geoBreachUnseenRef.current = 0;
-      setGeoBreachUnseen(0);
-    }
-  }, [role, user]);
-
+  // Keep manual triggers — run once on mount and on focus/visibility/events
   useEffect(() => {
     void refreshIndicators();
 
-    const triggerRefresh = () => {
-      void refreshIndicators();
-    };
-
-    const onVisibilityChange = () => {
-      if (!document.hidden) triggerRefresh();
-    };
+    const triggerRefresh = () => { void refreshIndicators(); };
+    const onVisibilityChange = () => { if (!document.hidden) triggerRefresh(); };
 
     window.addEventListener("attendance:updated", triggerRefresh);
     window.addEventListener("focus", triggerRefresh);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
-    const pollId = window.setInterval(triggerRefresh, 15_000);
-
     return () => {
       window.removeEventListener("attendance:updated", triggerRefresh);
       window.removeEventListener("focus", triggerRefresh);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.clearInterval(pollId);
     };
   }, [refreshIndicators]);
 
@@ -842,80 +827,102 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [role, tenantLogoUrl]);
 
   const drawerWidth = 280;
+  const isDark = theme.palette.mode === "dark";
+  const drawerBg = isDark ? "#0b0f19" : "#ffffff";
+  const borderColor = isDark ? "rgba(148, 163, 184, 0.12)" : "rgba(15, 23, 42, 0.08)";
 
   const drawer = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <Box sx={{ p: 2.5 }}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
+      <Box sx={{ p: 3, pb: 2 }}>
+        <Stack direction="row" spacing={1.8} alignItems="center">
           <Avatar
             src={brandLogoSrc}
             sx={{
               bgcolor: "primary.main",
-              width: 40,
-              height: 40,
-              boxShadow: "0 12px 30px rgba(0,0,0,0.16)",
+              width: 44,
+              height: 44,
+              boxShadow: isDark ? "0 8px 24px rgba(0,0,0,0.4)" : "0 8px 24px rgba(59,130,246,0.3)",
             }}
           >
-            <ApartmentRounded fontSize="small" />
+            <ApartmentRounded fontSize="medium" />
           </Avatar>
           <Box>
-            <Typography sx={{ fontWeight: 800, letterSpacing: "-0.02em" }}>
-              Attendance
+            <Typography sx={{ fontWeight: 900, fontSize: '1.2rem', letterSpacing: "-0.03em" }}>
+              KHR
             </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {role === "superadmin" ? "Platform Control" : "Tenant Console"}
+            <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 600, letterSpacing: 0.5 }}>
+              {role === "superadmin" ? "PLATFORM ADMIN" : "WORKSPACE"}
             </Typography>
           </Box>
         </Stack>
       </Box>
-      <Divider />
-      <List sx={{ px: 1.5, pt: 1.5 }}>
-        {items.map((item) => (
-          <ListItemButton
-            key={item.to}
-            component={Link}
-            to={item.to}
-            selected={location.pathname === item.to}
-            onClick={() => setMobileOpen(false)}
-            sx={{
-              borderRadius: 2,
-              mb: 0.5,
-              "&.Mui-selected": {
-                bgcolor: "action.selected",
-                "&:hover": { bgcolor: "action.selected" },
-              },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 40 }}>
-              {renderNavIcon(item)}
-            </ListItemIcon>
-            <ListItemText
-              primary={item.label}
-              primaryTypographyProps={{ fontWeight: 700 }}
-            />
-          </ListItemButton>
-        ))}
+      <Box sx={{ px: 2, pb: 1 }}><Divider sx={{ borderColor }} /></Box>
+      <List sx={{ px: 2, pt: 1 }}>
+        {items.map((item) => {
+          const isSelected = item.to === '/' || item.to === '/dashboard' 
+            ? location.pathname === item.to 
+            : location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+          return (
+            <ListItemButton
+              key={item.to}
+              component={Link}
+              to={item.to}
+              selected={isSelected}
+              onClick={() => setMobileOpen(false)}
+              sx={{
+                borderRadius: 2,
+                mb: 0.6,
+                py: 1,
+                position: "relative",
+                "&.Mui-selected": {
+                  bgcolor: alpha(theme.palette.primary.main, 0.12),
+                  color: theme.palette.primary.main,
+                  "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.18) },
+                  "&::before": {
+                    content: '""',
+                    position: "absolute",
+                    left: -16,
+                    top: "15%",
+                    height: "70%",
+                    width: 4,
+                    bgcolor: theme.palette.primary.main,
+                    borderRadius: "0 4px 4px 0",
+                  }
+                },
+                "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)" }
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 42, color: isSelected ? 'inherit' : 'text.secondary' }}>
+                {renderNavIcon(item)}
+              </ListItemIcon>
+              <ListItemText
+                primary={item.label}
+                primaryTypographyProps={{ fontWeight: isSelected ? 800 : 600, fontSize: '0.95rem' }}
+              />
+            </ListItemButton>
+          );
+        })}
       </List>
-      <Box sx={{ mt: "auto", p: 2 }}>
+      <Box sx={{ mt: "auto", p: 2, pb: 3 }}>
         <Paper
-          variant="outlined"
+          elevation={0}
           sx={{
             p: 1.5,
-            borderRadius: 3,
-            bgcolor: "background.paper",
-            boxShadow: "0 18px 50px rgba(0,0,0,0.08)",
+            borderRadius: 4,
+            bgcolor: isDark ? "rgba(30, 41, 59, 0.4)" : "rgba(241, 245, 249, 0.6)",
+            border: `1px solid ${borderColor}`,
           }}
         >
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Avatar
               src={profilePhotoUrl || undefined}
               sx={{
-                width: 36,
-                height: 36,
+                width: 40,
+                height: 40,
                 bgcolor: alpha(theme.palette.primary.main, 0.12),
                 color: theme.palette.primary.main,
                 border: "1px solid",
-                borderColor: alpha(theme.palette.primary.main, 0.18),
+                borderColor: alpha(theme.palette.primary.main, 0.25),
               }}
             >
               {(user?.name || "U").slice(0, 1).toUpperCase()}
@@ -929,28 +936,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </Typography>
             </Box>
           </Stack>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ display: "block", mt: 1, textAlign: "center" }}
-          >
-            Use profile menu for account settings
-          </Typography>
         </Paper>
       </Box>
     </Box>
   );
 
-  const contentBg =
-    role === "superadmin"
-      ? "radial-gradient(1000px circle at 10% 20%, rgba(124,58,237,0.22), transparent 35%), radial-gradient(900px circle at 90% 10%, rgba(16,185,129,0.12), transparent 40%), linear-gradient(180deg, rgba(11,16,32,1) 0%, rgba(11,16,32,1) 55%, rgba(17,24,39,1) 100%)"
-      : "radial-gradient(1000px circle at 10% 20%, rgba(37,99,235,0.14), transparent 35%), radial-gradient(900px circle at 90% 20%, rgba(236,72,153,0.08), transparent 40%), linear-gradient(180deg, rgba(248,250,252,1) 0%, rgba(248,250,252,1) 70%, rgba(241,245,249,1) 100%)";
+  const contentBg = isDark
+    ? "linear-gradient(160deg, #0f172a 0%, #020617 100%)"
+    : "linear-gradient(160deg, #f8fafc 0%, #e2e8f0 100%)";
 
   return (
     <Box
       sx={{
         minHeight: "100dvh",
-        bgcolor: "background.default",
+        bgcolor: isDark ? "#0f172a" : "#f8fafc",
         backgroundImage: contentBg,
         overflowX: "hidden",
       }}
@@ -962,10 +961,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         sx={{
           top: 0,
           pt: "env(safe-area-inset-top)",
-          bgcolor: "background.default",
-          borderBottom: "1px solid",
-          borderColor: "divider",
-          backdropFilter: "blur(10px)",
+          bgcolor: isDark ? "rgba(15, 23, 42, 0.75)" : "rgba(248, 250, 252, 0.85)",
+          borderBottom: `1px solid ${borderColor}`,
+          backdropFilter: "blur(12px)",
           backgroundImage: "none",
           color: "text.primary",
         }}
@@ -1257,9 +1255,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               "& .MuiDrawer-paper": {
                 width: drawerWidth,
                 boxSizing: "border-box",
-                borderRight: "1px solid",
-                borderColor: "divider",
-                bgcolor: "background.default",
+                borderRight: `1px solid ${borderColor}`,
+                bgcolor: drawerBg,
                 backgroundImage: "none",
               },
             }}
@@ -1278,7 +1275,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               "& .MuiDrawer-paper": {
                 width: { xs: `min(88vw, ${drawerWidth}px)`, sm: drawerWidth },
                 boxSizing: "border-box",
-                bgcolor: "background.default",
+                bgcolor: drawerBg,
                 backgroundImage: "none",
               },
             }}

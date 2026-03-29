@@ -33,7 +33,6 @@ class Auth
     {
         $user = self::currentUser();
         if (!$user) {
-            error_log("Auth: Unauthorized access attempt (no user found)");
             header('Content-Type: application/json');
             http_response_code(401);
             echo json_encode(['error' => 'Unauthorized']);
@@ -53,14 +52,12 @@ class Auth
             exit;
         }
         if ($role === 'superadmin' && $user['role'] !== 'superadmin') {
-            error_log("Auth: Forbidden. Required superadmin, got {$user['role']}");
             header('Content-Type: application/json');
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             exit;
         }
         if ($role === 'tenant' && !in_array($user['role'], ['tenant_owner','hr_admin','payroll_admin','manager','employee'])) {
-            error_log("Auth: Forbidden. Required tenant role, got {$user['role']}");
             header('Content-Type: application/json');
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
@@ -106,6 +103,7 @@ class Auth
                 'leaves.approve',
                 'roster.read',
                 'roster.assign',
+                'roster.manage',
                 'payroll.read',
                 'geo.read',
             ],
@@ -137,24 +135,14 @@ class Auth
         }
 
         $pdo = Database::get();
-        if (!$pdo) {
-            error_log("Auth: Database connection failed during permission check");
-            return false;
-        }
+        if (!$pdo) return false;
         $stmt = $pdo->prepare('SELECT permissions FROM roles WHERE name=? LIMIT 1');
         $stmt->execute([$roleName]);
         $row = $stmt->fetch();
         if (!$row) {
-            error_log("Auth: Role '{$roleName}' not found in roles table");
             return isset($builtin[$roleName]) && (in_array('*', $builtin[$roleName], true) || in_array($perm, $builtin[$roleName], true));
         }
         $perms = json_decode($row['permissions'] ?? '[]', true) ?? [];
-        $has = in_array($perm, $perms, true);
-        
-        if (!$has) {
-             error_log("Auth: Permission check failed. Role: {$user['role']}, Required: $perm, Has: " . json_encode($perms));
-        }
-        
-        return $has;
+        return in_array($perm, $perms, true);
     }
 }

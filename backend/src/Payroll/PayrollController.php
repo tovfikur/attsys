@@ -27,6 +27,19 @@ class PayrollController
         $this->service = new PayrollService($this->tenantId);
     }
 
+    private function safeErrorMessage(\Throwable $e): string
+    {
+        $msg = (string)$e->getMessage();
+        $low = strtolower($msg);
+        if (str_contains($low, 'app_enc_key') || str_contains($low, 'app_key')) {
+            return 'Encryption is not configured. Please contact the system administrator.';
+        }
+        if (str_contains($low, 'encryption failed')) {
+            return 'Encryption is not configured. Please contact the system administrator.';
+        }
+        return $msg;
+    }
+
     public function createCycle()
     {
         Auth::requireRole('perm:payroll.manage');
@@ -174,7 +187,7 @@ class PayrollController
 
     public function getStructure()
     {
-        Auth::requireRole('admin');
+        Auth::requireRole('perm:employees.write');
         $empId = $_GET['employee_id'] ?? 0;
         
         if (!$empId) {
@@ -191,7 +204,7 @@ class PayrollController
 
     public function getStructureHistory()
     {
-        Auth::requireRole('admin');
+        Auth::requireRole('perm:employees.write');
         $empId = $_GET['employee_id'] ?? 0;
         
         if (!$empId) {
@@ -208,9 +221,84 @@ class PayrollController
 
     public function getComponents()
     {
-        Auth::requireRole('admin');
+        Auth::requireRole('perm:employees.write');
         $store = new PayrollStore($this->tenantId);
-        echo json_encode(['components' => $store->getComponents()]);
+        // Auto-seed default components if none exist
+        $components = $store->getComponents();
+        if (empty($components)) {
+            $defaults = [
+                ['name' => 'House Rent Allowance', 'type' => 'earning', 'is_taxable' => 0, 'is_recurring' => 1],
+                ['name' => 'Medical Allowance',    'type' => 'earning', 'is_taxable' => 0, 'is_recurring' => 1],
+                ['name' => 'Transport Allowance',  'type' => 'earning', 'is_taxable' => 0, 'is_recurring' => 1],
+                ['name' => 'Provident Fund',       'type' => 'deduction','is_taxable' => 0, 'is_recurring' => 1],
+                ['name' => 'Income Tax',           'type' => 'deduction','is_taxable' => 0, 'is_recurring' => 1],
+            ];
+            foreach ($defaults as $d) {
+                $store->createComponent($d);
+            }
+            $components = $store->getComponents();
+        }
+        echo json_encode(['components' => $components]);
+    }
+
+    public function createComponent()
+    {
+        Auth::requireRole('perm:payroll.settings');
+        $input = json_decode(file_get_contents('php://input'), true);
+        $name = trim((string)($input['name'] ?? ''));
+        $type = strtolower(trim((string)($input['type'] ?? '')));
+        if ($name === '' || !in_array($type, ['earning', 'deduction'], true)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'name and type (earning|deduction) are required']);
+            return;
+        }
+        $store = new PayrollStore($this->tenantId);
+        $id = $store->createComponent([
+            'name'         => $name,
+            'type'         => $type,
+            'is_taxable'   => (int)($input['is_taxable'] ?? 1),
+            'is_recurring' => (int)($input['is_recurring'] ?? 1),
+            'gl_code'      => $input['gl_code'] ?? null,
+        ]);
+        echo json_encode(['id' => $id, 'message' => 'Component created']);
+    }
+
+    public function updateComponent()
+    {
+        Auth::requireRole('perm:payroll.settings');
+        $input = json_decode(file_get_contents('php://input'), true);
+        $id   = (int)($input['id'] ?? 0);
+        $name = trim((string)($input['name'] ?? ''));
+        $type = strtolower(trim((string)($input['type'] ?? '')));
+        if ($id <= 0 || $name === '' || !in_array($type, ['earning', 'deduction'], true)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'id, name and type are required']);
+            return;
+        }
+        $store = new PayrollStore($this->tenantId);
+        $store->updateComponent($id, [
+            'name'         => $name,
+            'type'         => $type,
+            'is_taxable'   => (int)($input['is_taxable'] ?? 1),
+            'is_recurring' => (int)($input['is_recurring'] ?? 1),
+            'gl_code'      => $input['gl_code'] ?? null,
+        ]);
+        echo json_encode(['message' => 'Component updated']);
+    }
+
+    public function deleteComponent()
+    {
+        Auth::requireRole('perm:payroll.settings');
+        $input = json_decode(file_get_contents('php://input'), true);
+        $id = (int)($input['id'] ?? 0);
+        if ($id <= 0) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Component ID required']);
+            return;
+        }
+        $store = new PayrollStore($this->tenantId);
+        $store->deleteComponent($id);
+        echo json_encode(['message' => 'Component deleted']);
     }
 
     public function saveStructure()
@@ -228,16 +316,21 @@ class PayrollController
         // Validate bank details required for bank_transfer and cheque
         $paymentMethod = strtolower(trim($input['payment_method'] ?? 'bank_transfer'));
         if (in_array($paymentMethod, ['bank_transfer', 'cheque'], true)) {
-            $store = new PayrollStore($this->tenantId);
-            $bankAccounts = $store->getEmployeeBankAccounts((int)$empId);
-            
-            if (empty($bankAccounts)) {
-                http_response_code(400);
-                echo json_encode([
-                    'error' => 'Bank details required',
-                    'message' => 'Payment method "' . ucfirst(str_replace('_', ' ', $paymentMethod)) . '" requires bank account details. Please add bank account first.',
-                    'payment_method' => $paymentMethod
-                ]);
+            try {
+                $store = new PayrollStore($this->tenantId);
+                $bankAccounts = $store->getEmployeeBankAccounts((int)$empId);
+                if (empty($bankAccounts)) {
+                    http_response_code(400);
+                    echo json_encode([
+                        'error' => 'Bank details required',
+                        'message' => 'Payment method "' . ucfirst(str_replace('_', ' ', $paymentMethod)) . '" requires bank account details. Please add bank account first.',
+                        'payment_method' => $paymentMethod
+                    ]);
+                    return;
+                }
+            } catch (\Throwable $e) {
+                http_response_code(500);
+                echo json_encode(['error' => $this->safeErrorMessage($e)]);
                 return;
             }
         }
@@ -302,7 +395,7 @@ class PayrollController
             
             // Get employee's current salary structure
             $store = new PayrollStore($this->tenantId);
-            $structure = $store->getActiveSalaryStructure($empId);
+            $structure = $store->getSalaryStructure($empId);
             
             if ($structure) {
                 $baseSalary = (float)($structure['base_salary'] ?? 0);
@@ -929,9 +1022,9 @@ class PayrollController
             header('Content-Type: text/csv');
             header('Content-Disposition: attachment; filename="bank_transfer_cycle_' . $cycleId . '.csv"');
             echo $csv;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             http_response_code(500);
-            echo json_encode(['error' => $e->getMessage()]);
+            echo json_encode(['error' => $this->safeErrorMessage($e)]);
         }
     }
 
@@ -1091,8 +1184,13 @@ class PayrollController
             echo json_encode(['error' => 'Employee ID required']);
             return;
         }
-        $store = new PayrollStore($this->tenantId);
-        echo json_encode(['accounts' => $store->getEmployeeBankAccounts($employeeId)]);
+        try {
+            $store = new PayrollStore($this->tenantId);
+            echo json_encode(['accounts' => $store->getEmployeeBankAccounts($employeeId)]);
+        } catch (\Throwable $e) {
+            http_response_code(500);
+            echo json_encode(['error' => $this->safeErrorMessage($e)]);
+        }
     }
 
     public function upsertBankAccount()
@@ -1121,9 +1219,9 @@ class PayrollController
                 Auth::currentUser()
             );
             echo json_encode(['id' => $id, 'message' => 'Bank account saved']);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             http_response_code(500);
-            echo json_encode(['error' => $e->getMessage()]);
+            echo json_encode(['error' => $this->safeErrorMessage($e)]);
         }
     }
 

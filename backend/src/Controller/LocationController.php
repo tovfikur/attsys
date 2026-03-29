@@ -24,7 +24,7 @@ class LocationController
 
     private function ensureSettings(\PDO $pdo, int $tenantId): array
     {
-        $pdo->prepare('INSERT IGNORE INTO geo_settings(tenant_id) VALUES (?)')->execute([(int)$tenantId]);
+        $pdo->prepare('INSERT IGNORE INTO geo_settings(tenant_id, enabled) VALUES (?, 1)')->execute([(int)$tenantId]);
         $stmt = $pdo->prepare('SELECT enabled, update_interval_sec, min_accuracy_m, offline_after_sec, require_fence FROM geo_settings WHERE tenant_id=? LIMIT 1');
         $stmt->execute([(int)$tenantId]);
         $row = $stmt->fetch(\PDO::FETCH_ASSOC) ?: [];
@@ -302,4 +302,3 @@ class LocationController
         echo json_encode(['ok' => true]);
     }
 }
-
