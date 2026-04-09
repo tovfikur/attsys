@@ -4,7 +4,14 @@ const config: CapacitorConfig = {
   appId: "com.attsystem.tenant",
   appName: "AttSystem Tenant",
   webDir: "dist",
-  bundledWebRuntime: false,
+  server: {
+    cleartext: true,
+  },
+  plugins: {
+    CapacitorHttp: {
+      enabled: true,
+    },
+  },
 };
 
 export default config;

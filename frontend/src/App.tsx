@@ -59,17 +59,12 @@ function isIpHost(host: string): boolean {
   return h.includes(":");
 }
 
+import { Capacitor } from "@capacitor/core";
+
 function shouldShowRootLanding(): boolean {
   if (typeof window === "undefined") return false;
   // Never show landing page inside Capacitor native app.
-  // isNativePlatform() returns true only on Android/iOS, not in the browser.
-  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
-  if (
-    window.location.protocol === "capacitor:" ||
-    window.location.protocol === "file:" ||
-    cap?.isNativePlatform?.() === true
-  )
-    return false;
+  if (Capacitor.isNativePlatform()) return false;
   const host = (window.location.hostname || "").toLowerCase();
   if (!host) return false;
   if (host === "localhost" || isIpHost(host)) return true;
@@ -156,7 +151,6 @@ const float1 = keyframes`
 
 
 function TopNavbar({ scrollTo, isDark }: { scrollTo: (id: string) => void; isDark: boolean }) {
-  const theme = useTheme();
   const surfaceBorder = isDark ? "rgba(148, 163, 184, .18)" : "rgba(15, 23, 42, .08)";
   const surfaceBg = isDark ? "rgba(2, 6, 23, .85)" : "rgba(255, 255, 255, .85)";
 

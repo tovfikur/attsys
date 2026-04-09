@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "./api";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
 import {
   Box,
   Button,
@@ -127,10 +128,7 @@ export default function Login() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const isNative =
-    typeof window !== "undefined" &&
-    (window.location.protocol === "capacitor:" ||
-      window.location.protocol === "file:" ||
-      "Capacitor" in (window as unknown as Record<string, unknown>));
+    typeof window !== "undefined" && Capacitor.isNativePlatform();
 
   const rootDomain = (() => {
     const v = (
